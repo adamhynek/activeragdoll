@@ -8,6 +8,7 @@
 #include <limits>
 #include <atomic>
 
+#include "xbyak/xbyak.h"
 #include "common/IDebugLog.h"  // IDebugLog
 #include "skse64_common/skse_version.h"  // RUNTIME_VERSION
 #include "skse64/PluginAPI.h"  // SKSEInterface, PluginInfo
@@ -93,53 +94,6 @@ struct ContactListener : hkpContactListener
 	NiPointer<bhkWorld> world = nullptr;
 };
 ContactListener *contactListener = nullptr;
-
-bhkRigidBody *listenedBody = nullptr;
-bool isTriggerCreated = false;
-hkpRigidBodyCinfo triggerCInfo;
-hkpRigidBody *triggerRB = nullptr;
-hkpTriggerVolume *trigger = nullptr;
-
-const size_t vtblSize = 25; // 21 vfuncs + 4 typeinfos
-uintptr_t vtblCopy[vtblSize];
-uintptr_t *vfuncsCopy = vtblCopy + 1;
-uintptr_t g_triggerEventCallbackRigidBody = 0;
-uintptr_t g_triggerEventCallbackCharacterProxy = 0;
-bool isVtblCopied = false;
-
-typedef void(*_triggerEventCallbackRigidBody)(hkpTriggerVolume *_this, hkpRigidBody* body, hkpTriggerVolume::EventType type);
-void triggerEventCallbackRigidBody(hkpTriggerVolume *_this, hkpRigidBody* body, hkpTriggerVolume::EventType type)
-{
-	NiAVObject *node = GetNodeFromCollidable(&body->m_collidable);
-	if (node) {
-		TESObjectREFR *ref = GetRefFromCollidable(&body->m_collidable);
-		if (ref && ref->baseForm) {
-			TESFullName *refName = DYNAMIC_CAST(ref->baseForm, TESObjectREFR, TESFullName);
-			if (refName) {
-				_MESSAGE("RB Callback %d: %s ; %s", (UInt8)type, node->m_name, refName->name.data);
-			}
-			else {
-				_MESSAGE("RB Callback %d: %s", (UInt8)type, node->m_name);
-			}
-		}
-		else {
-			_MESSAGE("RB Callback %d: %s", (UInt8)type, node->m_name);
-		}
-	}
-	else {
-		_MESSAGE("RB Callback %d", (UInt8)type);
-	}
-
-	((_triggerEventCallbackRigidBody)g_triggerEventCallbackRigidBody)(_this, body, type);
-}
-
-typedef void(*_triggerEventCallbackCharacterProxy)(hkpTriggerVolume *_this, hkpCharacterProxy* proxy, hkpTriggerVolume::EventType type);
-void triggerEventCallbackCharacterProxy(hkpTriggerVolume *_this, hkpCharacterProxy* proxy, hkpTriggerVolume::EventType type)
-{
-	_MESSAGE("Proxy Callback");
-
-	((_triggerEventCallbackCharacterProxy)g_triggerEventCallbackCharacterProxy)(_this, proxy, type);
-}
 
 
 struct HavokHitJob
@@ -1019,173 +973,6 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 }
 
 
-bool g_enableRagdoll = false;
-std::unordered_set<Actor *> addedActors;
-bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)
-{
-	return true;
-
-	if (!initComplete) return true;
-
-	PlayerCharacter *player = *g_thePlayer;
-	if (!player || !player->GetNiNode()) return true;
-
-	TESObjectCELL *cell = player->parentCell;
-	if (!cell) return true;
-
-	NiPointer<bhkWorld> world = GetHavokWorldFromCell(cell);
-	if (!world) return true;
-
-	AIProcessManager *processManager = *g_aiProcessManager;
-	if (!processManager) return true;
-
-	if (!g_enableRagdoll) return true;
-
-	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++)
-	{
-		UInt32 actorHandle = processManager->actorsHigh[i];
-		NiPointer<TESObjectREFR> refr;
-		if (LookupREFRByHandle(actorHandle, refr) && refr != player) {
-			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
-			if (!actor || !actor->GetNiNode()) continue;
-
-			if (addedActors.count(actor) == 0) {
-				AddRagdollToWorld(actor);
-				addedActors.insert(actor);
-			}
-		}
-	}
-
-	return true;
-}
-
-
-bool _WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)
-{
-	// TODO REMOVE
-
-	return true;
-
-
-
-
-
-	if (!initComplete) return true;
-
-	PlayerCharacter *player = *g_thePlayer;
-	if (!player || !player->loadedState || !player->loadedState->node)
-		return true;
-
-	NiAVObject *rootObj = GetHighestParent(player->loadedState->node);
-	if (!rootObj)
-		return true;
-
-	TESObjectCELL* cell = player->parentCell;
-	if (!cell)
-		return true;
-
-	bhkWorld *world = GetHavokWorldFromCell(cell);
-	if (!world)
-		return true;
-
-	NiNode *rightMeleeWeaponNode = (NiNode*)player->unk608[(0x728 - 0x608) >> 3];
-	NiNode *rightMeleeOffsetNode = (NiNode*)player->unk608[(0x730 - 0x608) >> 3];
-	if (rightMeleeWeaponNode && rightMeleeOffsetNode) {
-		bhkRigidBody *body = GetRigidBody(rightMeleeWeaponNode);
-		if (body && body != listenedBody) {
-			listenedBody = body;
-
-			if (triggerRB->m_world) {
-				bhkWorld *oldWorld = (bhkWorld *)static_cast<ahkpWorld *>(triggerRB->m_world)->m_userData;
-				{
-					BSWriteLocker lock(&oldWorld->worldLock);
-					hkBool ret;
-					hkpWorld_RemoveEntity(triggerRB->m_world, &ret, triggerRB);
-				}
-			}
-
-			BSWriteLocker lock(&world->worldLock);
-
-			hkpRigidBodyCinfo_ctor(&triggerCInfo); // initialize with defaults
-			triggerCInfo.m_shape = body->hkBody->m_collidable.m_shape;
-			//cInfo->m_collisionFilterInfo = body->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo;
-			triggerCInfo.m_collisionFilterInfo = 0x00090005;
-			triggerCInfo.m_motionType = hkpMotion::MotionType::MOTION_KEYFRAMED;
-			triggerCInfo.m_enableDeactivation = false;
-			triggerCInfo.m_solverDeactivation = hkpRigidBodyCinfo::SolverDeactivation::SOLVER_DEACTIVATION_OFF;
-
-			hkpRigidBody_ctor(triggerRB, &triggerCInfo);
-
-			hkpWorld_AddEntity(world->world, triggerRB, HK_ENTITY_ACTIVATION_DO_ACTIVATE);
-
-			hkpTriggerVolume_ctor(trigger, triggerRB);
-
-			if (!isVtblCopied) {
-				isVtblCopied = true;
-
-				// Copy the vtable
-				uintptr_t *vtbl = *((uintptr_t **)trigger);
-				memcpy(vfuncsCopy - 1, vtbl - 1, vtblSize * sizeof(uintptr_t)); // Need to copy the typeinfo as well as the vfuncs
-
-				// Replace the vfuncs with our hooked ones
-				g_triggerEventCallbackRigidBody = vfuncsCopy[4];
-				g_triggerEventCallbackCharacterProxy = vfuncsCopy[3];
-				vfuncsCopy[4] = (uintptr_t)triggerEventCallbackRigidBody;
-				vfuncsCopy[3] = (uintptr_t)triggerEventCallbackCharacterProxy;
-			}
-
-			// Replace the vtable with the copied/modified one
-			((UInt64 **)trigger)[0] = ((UInt64 *)(vfuncsCopy));
-			//((UInt64 **)trigger)[2] = ((UInt64 *)(vfuncsCopy + 0x5));
-			//((UInt64 **)trigger)[3] = ((UInt64 *)(vfuncsCopy + 0xD));
-			//((UInt64 **)trigger)[4] = ((UInt64 *)(vfuncsCopy + 0x11));
-
-			//hkpWorld_AddEntity(world->world, triggerRB, HK_ENTITY_ACTIVATION_DO_ACTIVATE);
-
-			/*listenedBody = body;
-			{
-				BSWriteLocker lock(&world->worldLock);
-				hkpEntity_addContactListener(body->hkBody, &contactListener);
-			}*/
-		}
-
-		if (triggerRB) {
-			// Put our hand collision where we want it
-			// TODO: Update collision group to match player group? Maybe
-			NiTransform &newTransform = rightMeleeOffsetNode->m_worldTransform;
-
-			NiPoint3 desiredPos = newTransform.pos * *g_havokWorldScale;
-			hkRotation desiredRot;
-			NiMatrixToHkMatrix(newTransform.rot, desiredRot);
-			hkQuaternion desiredQuat;
-			desiredQuat.setFromRotationSimd(desiredRot);
-			hkpKeyFrameUtility_applyHardKeyFrame(NiPointToHkVector(desiredPos), desiredQuat, 1.0f / *g_deltaTime, triggerRB);
-		}
-	}
-
-	return true;
-}
-
-// Hit(Character *source, Character *target) is at 0x631AF0 - probably is Actor *source, Actor *target
-class HitEventHandler : public BSTEventSink <TESHitEvent>
-{
-public:
-	virtual	EventResult ReceiveEvent(TESHitEvent * evn, EventDispatcher<TESHitEvent> * dispatcher)
-	{
-		_MESSAGE("Hit");
-
-		if (evn->caster == *g_thePlayer) {
-			g_enableRagdoll = true;
-			addedActors.clear();
-		}
-
-		return kEvent_Continue;
-	}
-};
-HitEventHandler g_HitEventHandler;
-
-
-#include "xbyak/xbyak.h"
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
 auto processHavokHitJobsHookedFunc = RelocAddr<uintptr_t>(0x75AC20);
@@ -1379,19 +1166,6 @@ bool TryHook()
 extern "C" {
 	void OnDataLoaded()
 	{
-
-		EventDispatcherList* edl = GetEventDispatcherList();
-		if (edl)
-		{
-			auto hitEventDispatcher = (EventDispatcher<TESHitEvent>*)(&(edl->unk630));
-			hitEventDispatcher->AddEventSink(&g_HitEventHandler);
-		}
-
-		//auto cInfo = (hkpRigidBodyCinfo *)malloc(sizeof(hkpRigidBodyCinfo));
-		triggerRB = (hkpRigidBody *)malloc(sizeof(hkpRigidBody));
-		triggerRB->m_world = nullptr;
-		trigger = (hkpTriggerVolume *)malloc(sizeof(hkpTriggerVolume));
-
 		contactListener = new ContactListener;
 
 		initComplete = true;
@@ -1453,13 +1227,6 @@ extern "C" {
 		_MESSAGE("Registering for SKSE messages");
 		g_messaging = (SKSEMessagingInterface*)skse->QueryInterface(kInterface_Messaging);
 		g_messaging->RegisterListener(g_pluginHandle, "SKSE", OnSKSEMessage);
-
-		g_vrInterface = (SKSEVRInterface *)skse->QueryInterface(kInterface_VR);
-		if (!g_vrInterface) {
-			_ERROR("[CRITICAL] Couldn't get SKSE VR interface. You probably have an outdated SKSE version.");
-			return false;
-		}
-		g_vrInterface->RegisterForPoses(g_pluginHandle, 0, WaitPosesCB);
 
 		g_trampoline = (SKSETrampolineInterface *)skse->QueryInterface(kInterface_Trampoline);
 		if (!g_trampoline) {
