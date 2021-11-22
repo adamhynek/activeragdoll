@@ -43,6 +43,7 @@
 #include <Physics/Dynamics/Constraint/Bilateral/Ragdoll/hkpRagdollConstraintData.h>
 #include <Physics/Dynamics/Constraint/Bilateral/LimitedHinge/hkpLimitedHingeConstraintData.h>
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
+#include <Physics/Dynamics/World/Extensions/hkpWorldExtension.h>
 
 
 // SKSE globals
@@ -70,30 +71,6 @@ bool initComplete = false; // Whether hands have been initialized
 // ^^ It gets passed the location of the WEAPON node during a weapon swing
 
 // 60C808 - address of call to TESObjectREFR_EndHavokHit in Actor::KillImpl
-
-
-struct ContactListener : hkpContactListener
-{
-	virtual void contactPointCallback(const hkpContactPointEvent& evnt) override
-	{
-		if (evnt.m_contactPointProperties && (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED)) {
-			// Early out
-			return;
-		}
-
-		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
-		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
-
-		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
-
-		_MESSAGE("Collision");
-	}
-
-	NiPointer<bhkWorld> world = nullptr;
-};
-ContactListener *contactListener = nullptr;
 
 
 struct HavokHitJob
@@ -147,15 +124,14 @@ struct hkbRagdollDriver : hkReferencedObject
 	float lastFramePoweredOnFraction; // B8
 	float timeRigidBodyControllerActive; // BC
 	float ragdollBlendOutTimeElapsed; // C0
-	bool unkC4;
-	bool unkC5;
+	hkBool canAddRagdollToWorld; // C4
+	hkBool shouldReinitializeRagdollController; // C5
 	hkBool isEnabled; // C6
-	hkBool isPoweredControllerEnabled; // C7 - these two maybe could be swapped
-	hkBool isRigidBodyControllerEnabled; // C8 - these two maybe could be swapped
-	bool unkC9;
-	bool unkCA;
-	bool unkCB;
-	// more bools?
+	hkBool isPoweredControllerEnabled; // C7
+	hkBool isRigidBodyControllerEnabled; // C8
+	hkBool wasRigidBodyControllerEnabledLastFrame; // C9
+	hkBool ragdollPoseWasUsed; // CA
+	hkBool allBonesKeyframed; // CB
 };
 static_assert(offsetof(hkbRagdollDriver, character) == 0x80);
 static_assert(sizeof(hkbRagdollDriver) == 0xD0);
@@ -183,12 +159,12 @@ struct hkbCharacter : hkReferencedObject
 	hkStringPtr                 name;                       // 28
 	hkRefPtr<hkbRagdollDriver>  ragdollDriver;              // 30
 	hkRefVariant                characterControllerDriver;  // 38
-	hkRefVariant                footIkDriver;               // 40
-	hkRefVariant                handIkDriver;               // 48
+	hkRefPtr<struct hkbFootIkDriver> footIkDriver;               // 40
+	hkRefPtr<struct hkbHandIkDriver> handIkDriver;               // 48
 	hkRefPtr<hkbCharacterSetup> setup;                      // 50
 	hkRefPtr<struct hkbBehaviorGraph>  behaviorGraph;              // 58
 	hkRefPtr<struct hkbProjectData>    projectData;                // 60
-	hkRefVariant                animationBindingSet;        // 68
+	hkRefPtr<struct hkbAnimationBindingSet> animationBindingSet;        // 68
 	hkRefVariant                raycastInterface;           // 70
 	hkRefVariant                world;                      // 78
 	hkRefVariant                eventQueue;                 // 80
@@ -297,6 +273,32 @@ struct hkbGeneratorOutput
 	bool m_deleteTracks; // 08
 };
 
+struct hkbBindable : hkReferencedObject
+{
+	hkRefPtr<struct hkbVariableBindingSet> variableBindingSet;  // 10
+	hkArray<hkRefVariant>           cachedBindables;     // 18
+	bool                            areBindablesCached;  // 28
+	std::uint8_t                    pad29;               // 29
+	std::uint16_t                   pad2A;               // 2A
+	std::uint32_t                   pad2C;               // 2C
+};
+static_assert(sizeof(hkbBindable) == 0x30);
+
+struct hkbNode : hkbBindable
+{
+	std::uint32_t                              userData;    // 30
+	std::uint32_t                              pad34;       // 34
+	hkStringPtr                                name;        // 38
+	std::uint16_t                              id;          // 40
+	std::uint8_t                               cloneState;  // 42
+	std::uint8_t                               pad43;       // 43
+	std::uint32_t                              pad44;       // 44
+};
+static_assert(sizeof(hkbNode) == 0x48);
+
+struct hkbGenerator : hkbNode {};
+struct hkbBehaviorGraph : hkbGenerator {};
+
 struct BShkbAnimationGraph
 {
 	virtual ~BShkbAnimationGraph();
@@ -306,9 +308,16 @@ struct BShkbAnimationGraph
 
 	UInt8 unk08[0xC0 - 0x08];
 	hkbCharacter character; // C0
+	UInt8 unk160[0x208 - 0x160];
+	hkbBehaviorGraph *behaviorGraph; // 208
+	Actor *holder; // 210
+	NiNode *rootNode; // 218
+	UInt8 unk220[0x238 - 0x220];
+	bhkWorld *world; // 238
 	// more...
 };
 static_assert(offsetof(BShkbAnimationGraph, character) == 0xC0);
+static_assert(offsetof(BShkbAnimationGraph, holder) == 0x210);
 
 template <class T, UInt32 N = 1>
 struct BSTSmallArray
@@ -379,6 +388,34 @@ struct bhkMalleableConstraint : bhkConstraint
 };
 static_assert(sizeof(bhkMalleableConstraint) == 0x20);
 
+struct AIProcessManager
+{
+	UInt8  unk000;                   // 008
+	bool   enableDetection;          // 001 
+	bool   unk002;                   // 002 
+	UInt8  unk003;                   // 003
+	UInt32 unk004;                   // 004
+	bool   enableHighProcess;        // 008 
+	bool   enableLowProcess;         // 009 
+	bool   enableMiddleHighProcess;  // 00A 
+	bool   enableMiddleLowProcess;   // 00B 
+	bool   enableAISchedules;        // 00C 
+	UInt8  unk00D;                   // 00D
+	UInt8  unk00E;                   // 00E
+	UInt8  unk00F;                   // 00F
+	SInt32 numActorsInHighProcess;   // 010
+	UInt32 unk014[(0x30 - 0x014) / sizeof(UInt32)];
+	tArray<UInt32>  actorsHigh; // 030 
+	tArray<UInt32>  actorsLow;  // 048 
+	tArray<UInt32>  actorsMiddleLow; // 060
+	tArray<UInt32>  actorsMiddleHigh; // 078
+	UInt32  unk90[(0xF0 - 0x7C) / sizeof(UInt32)];
+	tArray<void*> activeEffectShaders; // 108
+									   //mutable BSUniqueLock			 activeEffectShadersLock; // 120
+};
+
+RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
+
 
 typedef bool(*_bhkRefObject_ctor)(bhkRefObject *_this);
 RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor(0xE306A0);
@@ -422,7 +459,116 @@ RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0x
 typedef bool(*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
 
+typedef bool(*_hkpCollisionCallbackUtil_requireCollisionCallbackUtil)(hkpWorld *world);
+RelocAddr<_hkpCollisionCallbackUtil_requireCollisionCallbackUtil> hkpCollisionCallbackUtil_requireCollisionCallbackUtil(0xAB8700);
+
+typedef bool(*_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil)(hkpWorld *world);
+RelocAddr<_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil> hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(0xB00C30);
+
+typedef hkpWorldExtension * (*_hkpWorld_findWorldExtension)(hkpWorld *world, int id);
+RelocAddr<_hkpWorld_findWorldExtension> hkpWorld_findWorldExtension(0xAB58F0);
+
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager>& a_out);
+
+
+std::unordered_map<UInt32, int> g_hitHandleCounts;
+struct ContactListener : hkpContactListener
+{
+	virtual void contactPointCallback(const hkpContactPointEvent& evnt) override
+	{
+		return;
+
+		if (evnt.m_contactPointProperties && (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED)) {
+			// Early out
+			return;
+		}
+
+		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
+		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
+
+		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+
+		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+
+		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+
+		hkpMotion::MotionType motionType = hitRigidBody->getMotionType();
+
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (!hitRefr) return;
+
+		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+			//g_hitActorHandle = GetOrCreateRefrHandle(hitRefr);
+			//_MESSAGE("Hit actor");
+		}
+
+		//_MESSAGE("Collision");
+	}
+
+	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
+	{
+		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
+		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
+
+		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+
+		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+
+		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (!hitRefr) return;
+
+		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+			UInt32 handle = GetOrCreateRefrHandle(hitRefr);
+			if (g_hitHandleCounts.count(handle) == 0) g_hitHandleCounts[handle] = 0;
+			++g_hitHandleCounts[handle];
+
+			//_MESSAGE("Collision added");
+		}
+	}
+
+	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
+	{
+		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
+		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
+
+		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+
+		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+
+		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (!hitRefr) return;
+
+		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+			UInt32 handle = GetOrCreateRefrHandle(hitRefr);
+
+			//ASSERT_STR(g_hitHandleCounts.count(handle) != 0, "Received collision removed callback with no corresponding added callback");
+			if (g_hitHandleCounts.count(handle) != 0) {
+				int count = g_hitHandleCounts[handle];
+				if (count <= 1) {
+					g_hitHandleCounts.erase(handle);
+				}
+				else {
+					g_hitHandleCounts[handle] = count - 1;
+				}
+
+				//_MESSAGE("Collision removed");
+			}
+		}
+	}
+
+	NiPointer<bhkWorld> world = nullptr;
+};
+ContactListener *contactListener = nullptr;
 
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo)
@@ -475,7 +621,7 @@ bool IsAddedToWorld(Actor *actor)
 
 		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 		if (!driver) return false;
-		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
+		hkaRagdollInstance *ragdoll = driver->ragdoll;
 		if (!ragdoll) return false;
 		if (!ragdoll->getWorld()) return false;
 	}
@@ -483,7 +629,7 @@ bool IsAddedToWorld(Actor *actor)
 	return true;
 }
 
-void RemoveHeadAndNeckConstraints(Actor *actor)
+void ModifyConstraints(Actor *actor)
 {
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
 	if (!GetAnimationGraphManager(actor, animGraphManager)) return;
@@ -499,159 +645,21 @@ void RemoveHeadAndNeckConstraints(Actor *actor)
 		if (!driver) return;
 		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 		if (!ragdoll) return;
+
+		// Make sure bones are NOT keyframed to begin with, so that they get properly set in drivetopose to keyframed reporting.
+		// Actually just set them all here anyways, just in case.
 		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
 			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
 			if (node) {
-				if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC Neck [Neck]") {
+				//if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
 					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
 					if (wrapper) {
-						for (int i = 0; i < wrapper->constraints.count; i++) {
-							bhkConstraint *constraint = wrapper->constraints.entries[i];
-							constraint->RemoveFromCurrentWorld();
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-void SwitchToFixedConstraints(Actor *actor)
-{
-	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-	if (!GetAnimationGraphManager(actor, animGraphManager)) return;
-
-	BSAnimationGraphManager *manager = animGraphManager.ptr;
-
-	SimpleLocker lock(&manager->updateLock);
-
-	for (int i = 0; i < manager->graphs.size; i++) {
-		BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-
-		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-		if (!driver) return;
-		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
-		if (!ragdoll) return;
-
-		for (hkpConstraintInstance *constraint : ragdoll->m_constraints) {
-			if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_RAGDOLL) {
-				hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->m_data;
-			}
-			else if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_LIMITEDHINGE) {
-				hkpLimitedHingeConstraintData *data = (hkpLimitedHingeConstraintData *)constraint->m_data;
-				NiAVObject *node = GetNodeFromCollidable(&constraint->getRigidBodyA()->m_collidable);
-				if (node && std::string(node->m_name) == "NPC R Forearm [RLar]") {
-					NiPoint3 pivotA = HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformA.m_translation);
-					NiPoint3 pivotB = HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformB.m_translation);
-					//PrintVector(pivotA);
-					//PrintVector(pivotB);
-					//data->m_atoms.m_transforms.m_transformB.m_translation = NiPointToHkVector({ 0, 0, 0.5f });
-					{
-						hkaSkeletonMapperData &mapping = driver->character->setup->m_animationToRagdollSkeletonMapper->m_mapping;
-						for (hkaSkeletonMapperData::SimpleMapping &simpleMapping : mapping.m_simpleMappings) {
-							hkaBone &bone = mapping.m_skeletonB->m_bones[simpleMapping.m_boneB];
-							if (std::string(bone.m_name.cString()) == "Ragdoll_NPC R Forearm [RLar]") {
-								PrintVector(HkVectorToNiPoint(simpleMapping.m_aFromBTransform.m_translation));
-								//simpleMapping.m_aFromBTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(simpleMapping.m_aFromBTransform.m_translation) + NiPoint3(0, 0, 100));
-							}
-						}
-					}
-					{
-						hkaSkeletonMapperData &mapping = driver->character->setup->m_ragdollToAnimationSkeletonMapper->m_mapping;
-						for (hkaSkeletonMapperData::SimpleMapping &simpleMapping : mapping.m_simpleMappings) {
-							hkaBone &bone = mapping.m_skeletonA->m_bones[simpleMapping.m_boneA];
-							if (std::string(bone.m_name.cString()) == "Ragdoll_NPC R Forearm [RLar]") {
-								PrintVector(HkVectorToNiPoint(simpleMapping.m_aFromBTransform.m_translation));
-								//simpleMapping.m_aFromBTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(simpleMapping.m_aFromBTransform.m_translation) + NiPoint3(0, 0, -100));
-							}
-						}
-					}
-				}
-			}
-		}
-
-		/*for (hkpConstraintInstance *constraint : ragdoll->m_constraints) {
-			if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_RAGDOLL) {
-				hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->m_data;
-				data->setAngularLimitsTauFactor(0.f);
-			}
-			else if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_LIMITEDHINGE) {
-				hkpLimitedHingeConstraintData *data = (hkpLimitedHingeConstraintData *)constraint->m_data;
-				data->setAngularLimitsTauFactor(0.f);
-			}
-		}*/
-
-		/*
-		for (hkpConstraintInstance *constraint : ragdoll->m_constraints) {
-			//hkpConstraintInstance_setEnabled(constraint, false);
-			if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_RAGDOLL) {
-				hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->m_data;
-				if (data->m_atoms.m_ragdollMotors.m_motors[0]->m_type == hkpConstraintMotor::TYPE_POSITION)
-					((hkpPositionConstraintMotor *)(data->m_atoms.m_ragdollMotors.m_motors[0]))->m_maxForce = 1.f;
-				else
-					_MESSAGE("%x", data->m_atoms.m_ragdollMotors.m_motors[0]->m_type);
-				if (data->m_atoms.m_ragdollMotors.m_motors[1]->m_type == hkpConstraintMotor::TYPE_POSITION)
-					((hkpPositionConstraintMotor *)(data->m_atoms.m_ragdollMotors.m_motors[1]))->m_maxForce = 1.f;
-				else
-					_MESSAGE("%x", data->m_atoms.m_ragdollMotors.m_motors[1]->m_type);
-				if (data->m_atoms.m_ragdollMotors.m_motors[2]->m_type == hkpConstraintMotor::TYPE_POSITION)
-					((hkpPositionConstraintMotor *)(data->m_atoms.m_ragdollMotors.m_motors[2]))->m_maxForce = 1.f;
-				else
-					_MESSAGE("%x", data->m_atoms.m_ragdollMotors.m_motors[2]->m_type);
-			}
-			else {
-				_MESSAGE("%x", constraint->m_data->getType());
-			}
-		}
-		*/
-
-		/*for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-			if (node) {
-				if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-					if (wrapper) {
+						//bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
 						bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_KEYFRAMED, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+						rigidBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+						bhkWorldObject_UpdateCollisionFilter(wrapper);
 					}
-				}
-			}
-		}*/
-
-		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-			if (node) {
-				//if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC Neck [Neck]") {// || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-				if (wrapper) {
-					//wrapper->hkBody->m_material.m_friction = 0.f;
-
-					//for (int i = 0; i < wrapper->constraints.count; i++) {
-					//	bhkConstraint *constraint = wrapper->constraints.entries[i];
-						//bhkConstraint *fixedConstraint = ConstraintToFixedConstraint(constraint, 0.3f, false);
-						//if (fixedConstraint) {
-							/*constraint->RemoveFromCurrentWorld();
-
-							hkpWorld *hkWorld = wrapper->GetHavokWorld_1();
-							bhkWorld *world = ((ahkpWorld*)hkWorld)->m_userData;
-							fixedConstraint->MoveToWorld(world);
-							wrapper->constraints.entries[i] = fixedConstraint;*/
-							//}
-					//}
-				}
 				//}
-			}
-		}
-
-		// Make sure head and hands are NOT keyframed to begin with, so that they get properly set in drivetopose to keyframed reporting
-		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-			if (node) {
-				if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-					if (wrapper) {
-						bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-					}
-				}
 			}
 		}
 
@@ -696,21 +704,11 @@ bool AddRagdollToWorld(Actor *actor)
 			bool x = false;
 			BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
 
-			SwitchToFixedConstraints(actor);
+			ModifyConstraints(actor);
 
 			x = false;
 			BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
 		}
-
-		/*NiPointer<NiNode> root = actor->GetNiNode();
-		if (root) {
-			NiNode_AddOrRemoveMalleableConstraints(root, true, true, false);
-		}
-
-		if (GetAnimationGraphManager(actor, animGraphManager)) {
-			bool x = false;
-			BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
-		}*/
 	}
 
 	return true;
@@ -740,35 +738,6 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	return true;
 }
 
-struct AIProcessManager
-{
-	UInt8  unk000;                   // 008
-	bool   enableDetection;          // 001 
-	bool   unk002;                   // 002 
-	UInt8  unk003;                   // 003
-	UInt32 unk004;                   // 004
-	bool   enableHighProcess;        // 008 
-	bool   enableLowProcess;         // 009 
-	bool   enableMiddleHighProcess;  // 00A 
-	bool   enableMiddleLowProcess;   // 00B 
-	bool   enableAISchedules;        // 00C 
-	UInt8  unk00D;                   // 00D
-	UInt8  unk00E;                   // 00E
-	UInt8  unk00F;                   // 00F
-	SInt32 numActorsInHighProcess;   // 010
-	UInt32 unk014[(0x30 - 0x014) / sizeof(UInt32)];
-	tArray<UInt32>  actorsHigh; // 030 
-	tArray<UInt32>  actorsLow;  // 048 
-	tArray<UInt32>  actorsMiddleLow; // 060
-	tArray<UInt32>  actorsMiddleHigh; // 078
-	UInt32  unk90[(0xF0 - 0x7C) / sizeof(UInt32)];
-	tArray<void*> activeEffectShaders; // 108
-									   //mutable BSUniqueLock			 activeEffectShadersLock; // 120
-};
-
-RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
-
-
 void VisitNodes(NiAVObject *obj, std::function<void(NiAVObject *)> f)
 {
 	f(obj);
@@ -784,6 +753,7 @@ void VisitNodes(NiAVObject *obj, std::function<void(NiAVObject *)> f)
 	}
 }
 
+std::unordered_set<hkbRagdollDriver *> g_hitDrivers;
 void ProcessHavokHitJobsHook()
 {
 	if (!initComplete) return;
@@ -806,6 +776,11 @@ void ProcessHavokHitJobsHook()
 			_MESSAGE("Removing listener from old havok world");
 			{
 				BSWriteLocker lock(&oldWorld->worldLock);
+				hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(world->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK);
+				if (collisionCallbackExtension) {
+					// There are times when the collision callback extension is gone even if we required it earlier...
+					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(world->world);
+				}
 				hkpWorld_removeContactListener(oldWorld->world, contactListener);
 			}
 		}
@@ -813,57 +788,56 @@ void ProcessHavokHitJobsHook()
 		_MESSAGE("Adding listener to new havok world");
 		{
 			BSWriteLocker lock(&world->worldLock);
+			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 			hkpWorld_addContactListener(world->world, contactListener);
 		}
 
 		contactListener->world = world;
 	}
 
+	if (g_hitHandleCounts.size() > 0) {
+		for (auto[handle, count] : g_hitHandleCounts) {
+			//_MESSAGE("%d:\t%d", handle, count);
+			NiPointer<TESObjectREFR> refr;
+			UInt32 handleCopy = handle;
+			if (LookupREFRByHandle(handleCopy, refr)) {
+				Actor *hitActor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+				if (hitActor) {
+					BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+					if (GetAnimationGraphManager(hitActor, animGraphManager)) {
+						BSAnimationGraphManager *manager = animGraphManager.ptr;
+						SimpleLocker lock(&manager->updateLock);
+						for (int i = 0; i < manager->graphs.size; i++) {
+							BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+							hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+							if (driver) {
+								g_hitDrivers.insert(driver);
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	else {
+		g_hitDrivers.clear();
+	}
+
 	// if (!g_enableRagdoll) return;
 
-	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++)
-	{
+	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(actorHandle, refr) && refr != player) {
 			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 			if (!actor || !actor->GetNiNode()) continue;
 
-			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < 3.f; // actor within 2m
+			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+
+			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < 3.f;
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
 			//_MESSAGE("%x %d", actor, isAddedToWorld);
-
-			if (isAddedToWorld && shouldAddToWorld) {
-				auto f = [](NiAVObject *node) {
-					if (node && std::string(node->m_name) == "NPC R Forearm [RLar]") {
-						//PrintVector(node->m_localTransform.pos);
-						//PrintVector(node->m_worldTransform.pos * *g_havokWorldScale);
-						bhkRigidBody *rb = GetRigidBody(node);
-						if (rb) {
-							hkVector4 pos;
-							NiPoint3 collObjTranslation = HkVectorToNiPoint(rb->getPosition(pos));
-							//PrintVector(collObjTranslation);
-						}
-						//_MESSAGE("");
-					}
-				};
-
-				auto g = [](NiAVObject *node) {
-					if (node) {
-						bhkCollisionObject *collObj = GetCollisionObject(node);
-						if (collObj) {
-							bhkBlendCollisionObject *blendCollObj = DYNAMIC_CAST(collObj, bhkCollisionObject, bhkBlendCollisionObject);
-							if (blendCollObj) {
-								//_MESSAGE("%.2f", blendCollObj->blendStrength);
-								//blendCollObj->blendStrength = 0.99f;
-							}
-						}
-					}
-				};
-
-				VisitNodes(actor->GetNiNode(), g);
-			}
 
 			if (!isAddedToWorld && shouldAddToWorld) {
 				AddRagdollToWorld(actor);
@@ -871,44 +845,79 @@ void ProcessHavokHitJobsHook()
 			else if (isAddedToWorld && !shouldAddToWorld) {
 				RemoveRagdollFromWorld(actor);
 			}
-
-			//if (addedActors.count(actor) == 0) {
-			//	AddRagdollToWorld(actor);
-			//	addedActors.insert(actor);
-			//}
 		}
 	}
 }
 
-hkbRagdollDriver *g_ragdollDriver = nullptr;
+inline hkReal * Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	return reinterpret_cast<hkReal*>(reinterpret_cast<char*>(output.m_tracks) + header.m_dataOffset);
+}
+
+inline hkInt8* Track_getIndices(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	// must be sparse or pallette track
+	int numDataBytes = HK_NEXT_MULTIPLE_OF(16, header.m_elementSizeBytes * header.m_capacity);
+	return reinterpret_cast<hkInt8*>(Track_getData(output, header)) + numDataBytes;
+}
+
+void TryForceControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	if (header.m_capacity > 0) {
+		hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(output, header));
+		data[0] = hkaKeyFrameHierarchyUtility::ControlData();
+
+		hkInt8 *indices = Track_getIndices(output, header);
+		for (int i = 0; i < header.m_capacity; i++) {
+			indices[i] = 0;
+		}
+
+		header.m_numData = 1;
+		header.m_onFraction = 1.f;
+	}
+}
+
+void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput& generatorOutput, hkbGeneratorOutput::TrackHeader &header)
+{
+	// - Set onFraction > 1.0f
+	// - Set value of keyframed bones tracks to > 1.0f for bones we want keyframed, <= 1.0f for bones we don't want keyframed. Index of track data == index of bone.
+	// - Set reportingWhenKeyframed in the ragdoll driver for the bones we care about
+
+	header.m_onFraction = 1.1f;
+	hkReal* data = Track_getData(generatorOutput, header);
+	const hkaSkeleton *skeleton = driver->ragdoll->m_skeleton;
+	for (int i = 0; i < skeleton->m_bones.getSize(); i++) { // TODO: We need to check the capacity of this track to see if we can fit all the bones? What about numData?
+		//const hkaBone &bone = skeleton->m_bones[i];
+		//if (std::string(bone.m_name.cString()) == "Ragdoll_NPC Head [Head]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC L Hand [LHnd]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC R Hand [RHnd]") {
+		data[i] = 1.1f;
+		// Indexed by (boneIdx >> 5), and then you >> (boneIdx & 0x1F) & 1 to extract the specific bit
+		driver->reportingWhenKeyframed[i >> 5] |= (1 << (i & 0x1F));
+		//}
+	}
+}
 
 void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& context, hkbGeneratorOutput& generatorOutput, hkReal deltaTime)
 {
 	int keyframedBonesTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES;
-	int keyframeTargetsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAME_TARGETS;
+	int rigidBodyControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS;
+	int poweredControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS;
 
 	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
-	if (numTracks > keyframedBonesTrackId) {
-		int trackId = keyframedBonesTrackId;
-		hkbGeneratorOutput::TrackHeader* header = &(generatorOutput.m_tracks->m_trackHeaders[trackId]);
 
-		// - Set onFraction > 1.0f
-		// - Set value of keyframed bones tracks to > 1.0f for bones we want keyframed, <= 1.0f for bones we don't want keyframed. Index of track data == index of bone.
-		// - Set reportingWhenKeyframed in the ragdoll driver for the bones we care about
+	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = numTracks > keyframedBonesTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[keyframedBonesTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = numTracks > rigidBodyControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[rigidBodyControlsTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *poweredHeader = numTracks > poweredControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[poweredControlsTrackId]) : nullptr;
 
-		if (header->m_onFraction > 0.f) {
-			header->m_onFraction = 1.1f;
-			hkReal* data = reinterpret_cast<hkReal*>(reinterpret_cast<char*>(generatorOutput.m_tracks) + generatorOutput.m_tracks->m_trackHeaders[trackId].m_dataOffset);
-			const hkaSkeleton *skeleton = driver->ragdoll->m_skeleton;
-			for (int i = 0; i < skeleton->m_bones.getSize(); i++) {
-				const hkaBone &bone = skeleton->m_bones[i];
-				if (std::string(bone.m_name.cString()) == "Ragdoll_NPC Head [Head]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC L Hand [LHnd]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC R Hand [RHnd]") {
-					data[i] = 1.1f;
-					// Indexed by (boneIdx >> 5), and then you >> (boneIdx & 0x1F) & 1 to extract the specific bit
-					driver->reportingWhenKeyframed[i >> 5] |= (1 << (i & 0x1F));
-				}
-			}
-		}
+	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f && g_hitDrivers.count(driver) == 0) { // Don't keyframe bones if we've collided with the actor
+		SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+	}
+
+	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
+	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
+
+	if (!isRigidBodyOn && !isPoweredOn) {
+		// No controls are active - try and force it to use the rigidbody controller
+		TryForceControls(generatorOutput, *rigidBodyHeader);
 	}
 }
 
@@ -922,31 +931,6 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 	hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 	if (!ragdoll) return;
 	if (!ragdoll->getWorld()) return;
-
-	/*for (hkpConstraintInstance *constraint : ragdoll->m_constraints) {
-		if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_RAGDOLL) {
-			hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->m_data;
-			NiAVObject *node = GetNodeFromCollidable(&constraint->getRigidBodyA()->m_collidable);
-			if (node && std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-				bool x;
-				hkpConstraintInstance_isEnabled(constraint, &x);
-				if (x) {
-					hkpConstraintInstance_setEnabled(constraint, false);
-				}
-			}
-		}
-		else if (constraint->m_data->getType() == hkpConstraintData::ConstraintType::CONSTRAINT_TYPE_LIMITEDHINGE) {
-			hkpLimitedHingeConstraintData *data = (hkpLimitedHingeConstraintData *)constraint->m_data;
-			NiAVObject *node = GetNodeFromCollidable(&constraint->getRigidBodyA()->m_collidable);
-			if (node && std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-				bool x;
-				hkpConstraintInstance_isEnabled(constraint, &x);
-				if (x) {
-					hkpConstraintInstance_setEnabled(constraint, false);
-				}
-			}
-		}
-	}*/
 
 	// Make head / hands keyframed to guarantee head tracking + hand positioning (for weapons, etc. - especially two-handed things)
 	for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
@@ -981,6 +965,8 @@ uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60);
 
+hkbRagdollDriver *g_ragdollDriver = nullptr;
+
 void PerformHooks(void)
 {
 	// First, set our addresses
@@ -998,37 +984,15 @@ void PerformHooks(void)
 				call(rax);
 
 				push(rax);
-				push(rcx);
-				push(rdx);
-				push(r8);
-				push(r9);
-				push(r10);
-				push(r11);
-				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
+				sub(rsp, 0x38); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
 				movsd(ptr[rsp + 0x20], xmm0);
-				movsd(ptr[rsp + 0x30], xmm1);
-				movsd(ptr[rsp + 0x40], xmm2);
-				movsd(ptr[rsp + 0x50], xmm3);
-				movsd(ptr[rsp + 0x60], xmm4);
-				movsd(ptr[rsp + 0x70], xmm5);
 
 				// Call our hook
 				mov(rax, (uintptr_t)ProcessHavokHitJobsHook);
 				call(rax);
 
 				movsd(xmm0, ptr[rsp + 0x20]);
-				movsd(xmm1, ptr[rsp + 0x30]);
-				movsd(xmm2, ptr[rsp + 0x40]);
-				movsd(xmm3, ptr[rsp + 0x50]);
-				movsd(xmm4, ptr[rsp + 0x60]);
-				movsd(xmm5, ptr[rsp + 0x70]);
-				add(rsp, 0x88);
-				pop(r11);
-				pop(r10);
-				pop(r9);
-				pop(r8);
-				pop(rdx);
-				pop(rcx);
+				add(rsp, 0x38);
 				pop(rax);
 
 				// Jump back to whence we came (+ the size of the initial branch instruction)
