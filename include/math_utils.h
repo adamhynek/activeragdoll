@@ -71,6 +71,7 @@ NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta);
 NiPoint3 MatrixToEuler(const NiMatrix33 &mat);
 NiMatrix33 EulerToMatrix(const NiPoint3 &euler);
 NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, float angle);
+NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal);
 void NiMatrixToHkMatrix(const NiMatrix33 &niMat, hkMatrix3 &hkMat);
 void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);

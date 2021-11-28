@@ -33,6 +33,7 @@
 #include "math_utils.h"
 #include "RE/havok.h"
 #include "havok_ref_ptr.h"
+#include "higgsinterface001.h"
 
 #include <Physics/Dynamics/Entity/hkpRigidBody.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
@@ -44,6 +45,11 @@
 #include <Physics/Dynamics/Constraint/Bilateral/LimitedHinge/hkpLimitedHingeConstraintData.h>
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
 #include <Physics/Dynamics/World/Extensions/hkpWorldExtension.h>
+#include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBodyListener.h>
+#include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBody.h>
+#include <Physics/Collide/Query/Collector/PointCollector/hkpAllCdPointCollector.h>
+#include <Physics/Utilities/CharacterControl/StateMachine/hkpCharacterState.h>
+#include <Physics/Utilities/CharacterControl/StateMachine/hkpCharacterContext.h>
 
 
 // SKSE globals
@@ -175,6 +181,7 @@ struct hkbCharacter : hkReferencedObject
 	bool                        deletePoseLocal;            // 9D
 	std::uint16_t               pad9E;                      // 9E
 };
+static_assert(offsetof(hkbCharacter, behaviorGraph) == 0x58);
 static_assert(sizeof(hkbCharacter) == 0xA0);
 
 struct hkbContext
@@ -286,26 +293,116 @@ static_assert(sizeof(hkbBindable) == 0x30);
 
 struct hkbNode : hkbBindable
 {
-	std::uint32_t                              userData;    // 30
-	std::uint32_t                              pad34;       // 34
+	UInt64 userData;    // 30
 	hkStringPtr                                name;        // 38
 	std::uint16_t                              id;          // 40
 	std::uint8_t                               cloneState;  // 42
 	std::uint8_t                               pad43;       // 43
 	std::uint32_t                              pad44;       // 44
 };
+static_assert(offsetof(hkbNode, userData) == 0x30);
 static_assert(sizeof(hkbNode) == 0x48);
 
 struct hkbGenerator : hkbNode {};
 struct hkbBehaviorGraph : hkbGenerator {};
 
+struct bhkCharacterController : NiRefObject
+{
+	UInt8 unk10[0x70 - 0x10];
+	hkVector4                                        forwardVec;                 // 070
+	hkStepInfo                                       stepInfo;                   // 080
+	hkVector4                                        outVelocity;                // 090
+	hkVector4                                        initialVelocity;            // 0A0
+	hkVector4                                        velocityMod;                // 0B0
+	hkVector4                                        direction;                  // 0C0
+	hkVector4                                        rotCenter;                  // 0D0
+	hkVector4                                        pushDelta;                  // 0E0
+	hkVector4                                        fakeSupportStart;           // 0F0
+	hkVector4                                        up;                         // 100
+	hkVector4                                        supportNorm;                // 110
+	UInt8                                          collisionBound[0x150 - 0x120];             // 120
+	UInt8                                          bumperCollisionBound[0x180 - 0x150];       // 150
+	std::uint64_t                                    unk180;                     // 180
+	std::uint64_t                                    unk188;                     // 188
+	struct bhkICharOrientationController*                   orientationCtrl;            // 190
+	std::uint64_t                                    pad198;                     // 198
+	hkpSurfaceInfo                                   surfaceInfo;                // 1A0
+	hkpCharacterContext                              context;                    // 1E0
+	UInt32 flags;                      // 218
+	hkpCharacterStateType                            wantState;                  // 218
+	float                                            velocityTime;               // 220
+	float                                            rotMod;                     // 224
+	float                                            rotModTime;                 // 228
+	float                                            calculatePitchTimer;        // 22C
+	float                                            acrobatics;                 // 230
+	float                                            center;                     // 234
+	float                                            waterHeight;                // 238
+	float                                            jumpHeight;                 // 23C
+	float                                            fallStartHeight;            // 240
+	float                                            fallTime;                   // 244
+	float                                            gravity;                    // 248
+	float                                            pitchAngle;                 // 24C
+	float                                            rollAngle;                  // 250
+	float                                            pitchMult;                  // 254
+	float                                            scale;                      // 258
+	float                                            swimFloatHeight;            // 25C
+	float                                            actorHeight;                // 260
+	float                                            speedPct;                   // 264
+	std::uint32_t                                    pushCount;                  // 268
+	std::uint32_t                                    unk26C;                     // 26C
+	std::uint64_t                                    unk270;                     // 270
+	std::uint64_t                                    unk278;                     // 278
+	NiPointer<bhkShape>                              shapes[2];                  // 280
+	std::uint64_t                                    unk290;                     // 290
+	std::uint64_t                                    unk298;                     // 298
+	std::uint64_t                                    unk2A0;                     // 2A0
+	std::uint64_t                                    unk2A8;                     // 2A8
+	hkRefPtr<hkpRigidBody>                           supportBody;                // 2B0
+	float                                            bumpedForce;                // 2B8
+	std::uint32_t                                    pad2BC;                     // 2BC
+	hkRefPtr<hkpRigidBody>                           bumpedBody;                 // 2C0
+	hkRefPtr<hkpRigidBody>                           bumpedCharCollisionObject;  // 2C8
+	UInt8                     unk2D0[0x300 - 0x2D0];                     // 2D0
+	std::uint64_t                                    unk300;                     // 300
+	std::uint64_t                                    unk308;                     // 308
+	std::uint64_t                                    unk310;                     // 310
+	std::uint64_t                                    unk318;                     // 318
+	std::uint64_t                                    unk320;                     // 320
+	std::uint64_t                                    unk328;                     // 328
+};
+static_assert(offsetof(bhkCharacterController, context) == 0x1E0);
+static_assert(sizeof(bhkCharacterController) == 0x330);
+
+class bhkCharacterPointCollector : public hkpAllCdPointCollector
+{
+	UInt64 unk220;  // 220
+	UInt64 unk228;  // 228
+	UInt64 unk230;  // 230
+	UInt64 unk238;  // 238
+};
+static_assert(sizeof(bhkCharacterPointCollector) == 0x240);
+
+struct bhkCharacterRigidBody : bhkSerializable
+{
+	hkpCharacterRigidBody *characterRigidBody; // 10
+	UInt64 unk18;
+	bhkRigidBody *rigidBody; // 20
+	NiAVObject *unk28; // 28 - MarkerX ??
+	bhkCharacterPointCollector ignoredCollisionStartCollector;  // 30
+};
+static_assert(offsetof(bhkCharacterRigidBody, ignoredCollisionStartCollector) == 0x30);
+
+struct bhkCharRigidBodyController :
+	bhkCharacterController, // 00
+	hkpCharacterRigidBodyListener // 330
+{
+	bhkCharacterRigidBody characterRigidBody; // 340
+};
+static_assert(offsetof(bhkCharRigidBodyController, characterRigidBody) == 0x340);
+
 struct BShkbAnimationGraph
 {
-	virtual ~BShkbAnimationGraph();
-	virtual bool HasRagdollInterface();
-	virtual bool AddRagdollToWorld();
-	virtual bool RemoveRagdollFromWorld();
-
+	void *vtbl; // 00
 	UInt8 unk08[0xC0 - 0x08];
 	hkbCharacter character; // C0
 	UInt8 unk160[0x208 - 0x160];
@@ -456,7 +553,7 @@ RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint(0xE63A20);
 typedef void(*_hkpConstraintInstance_setEnabled)(hkpConstraintInstance *_this, bool enable);
 RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0xAC06A0);
 
-typedef bool(*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
+typedef bool * (*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
 
 typedef bool(*_hkpCollisionCallbackUtil_requireCollisionCallbackUtil)(hkpWorld *world);
@@ -468,45 +565,21 @@ RelocAddr<_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil> hkpCollisionCa
 typedef hkpWorldExtension * (*_hkpWorld_findWorldExtension)(hkpWorld *world, int id);
 RelocAddr<_hkpWorld_findWorldExtension> hkpWorld_findWorldExtension(0xAB58F0);
 
+typedef void(*_ahkpCharacterProxy_setLinearVelocity)(hkpCharacterProxy *_this, const hkVector4& vel);
+RelocAddr<_ahkpCharacterProxy_setLinearVelocity> ahkpCharacterProxy_setLinearVelocity(0xAFA1F0);
+
+typedef void(*_ahkpCharacterRigidBody_setLinearVelocity)(hkpCharacterRigidBody *_this, const hkVector4& newVel, hkReal timestep);
+RelocAddr<_ahkpCharacterRigidBody_setLinearVelocity> ahkpCharacterRigidBody_setLinearVelocity(0xAF5B20);
+
+typedef hkVector4 & (*_ahkpCharacterRigidBody_getLinearVelocity)(hkpCharacterRigidBody *_this);
+RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getLinearVelocity(0xAF5BB0);
+
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager>& a_out);
 
 
 std::unordered_map<UInt32, int> g_hitHandleCounts;
 struct ContactListener : hkpContactListener
 {
-	virtual void contactPointCallback(const hkpContactPointEvent& evnt) override
-	{
-		return;
-
-		if (evnt.m_contactPointProperties && (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED)) {
-			// Early out
-			return;
-		}
-
-		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
-		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
-
-		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
-
-		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
-
-		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
-
-		hkpMotion::MotionType motionType = hitRigidBody->getMotionType();
-
-		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
-
-		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-			//g_hitActorHandle = GetOrCreateRefrHandle(hitRefr);
-			//_MESSAGE("Hit actor");
-		}
-
-		//_MESSAGE("Collision");
-	}
-
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
@@ -552,7 +625,7 @@ struct ContactListener : hkpContactListener
 			UInt32 handle = GetOrCreateRefrHandle(hitRefr);
 
 			//ASSERT_STR(g_hitHandleCounts.count(handle) != 0, "Received collision removed callback with no corresponding added callback");
-			if (g_hitHandleCounts.count(handle) != 0) {
+			if (g_hitHandleCounts.count(handle) > 0) {
 				int count = g_hitHandleCounts[handle];
 				if (count <= 1) {
 					g_hitHandleCounts.erase(handle);
@@ -570,6 +643,21 @@ struct ContactListener : hkpContactListener
 };
 ContactListener *contactListener = nullptr;
 
+enum class RagdollState
+{
+	Anim,
+	Collide,
+	StopCollide,
+	BlendOut
+};
+
+struct RagdollData
+{
+	double stopCollideTime = 0.0;
+	RagdollState state = RagdollState::Anim;
+};
+
+std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo)
 {
@@ -629,6 +717,8 @@ bool IsAddedToWorld(Actor *actor)
 	return true;
 }
 
+std::unordered_map<hkbRagdollDriver *, hkQsTransform> g_hipBoneTransforms;
+
 void ModifyConstraints(Actor *actor)
 {
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
@@ -643,6 +733,7 @@ void ModifyConstraints(Actor *actor)
 
 		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 		if (!driver) return;
+
 		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 		if (!ragdoll) return;
 
@@ -701,6 +792,20 @@ bool AddRagdollToWorld(Actor *actor)
 
 	if (hasRagdollInterface) {
 		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+					if (driver) {
+						g_hipBoneTransforms.erase(driver);
+						g_ragdollData[driver] = RagdollData();
+					}
+				}
+			}
+
 			bool x = false;
 			BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
 
@@ -727,6 +832,19 @@ bool RemoveRagdollFromWorld(Actor *actor)
 
 	if (hasRagdollInterface) {
 		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+					if (driver) {
+						g_ragdollData.erase(driver);
+					}
+				}
+			}
+
 			bool x = false;
 			BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
 
@@ -753,7 +871,37 @@ void VisitNodes(NiAVObject *obj, std::function<void(NiAVObject *)> f)
 	}
 }
 
+Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
+{
+	hkbCharacter *character = driver->character;
+	if (!character) return nullptr;
+
+	hkbBehaviorGraph *behaviorGraph = character->behaviorGraph;
+	if (!behaviorGraph) return nullptr;
+
+	BShkbAnimationGraph *graph = (BShkbAnimationGraph *)behaviorGraph->userData;
+	if (!graph) return nullptr;
+
+	return graph->holder;
+}
+
+bhkCharRigidBodyController * GetCharRigidBodyController(Actor *actor)
+{
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return nullptr;
+
+	MiddleProcess *middleProcess = process->middleProcess;
+	if (!middleProcess) return nullptr;
+
+	NiPointer<bhkCharacterController> controller = *((NiPointer<bhkCharacterController> *)&middleProcess->unk250);
+	if (!controller) return nullptr;
+
+	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharRigidBodyController);
+}
+
 std::unordered_set<hkbRagdollDriver *> g_hitDrivers;
+std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
+
 void ProcessHavokHitJobsHook()
 {
 	if (!initComplete) return;
@@ -769,6 +917,12 @@ void ProcessHavokHitJobsHook()
 
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
+
+	if (g_higgsInterface) {
+		if (!g_higgsInterface->GetGrabbedObject(false) && !g_higgsInterface->GetGrabbedObject(true)) {
+			g_higgsDrivers.clear();
+		}
+	}
 
 	if (world != contactListener->world) {
 		bhkWorld *oldWorld = contactListener->world;
@@ -795,6 +949,10 @@ void ProcessHavokHitJobsHook()
 		contactListener->world = world;
 	}
 
+	if (g_hitDrivers.size() > 0) {
+		g_hitDrivers.clear(); // clear first, then add any that are hit. Not thread-safe.
+	}
+
 	if (g_hitHandleCounts.size() > 0) {
 		for (auto[handle, count] : g_hitHandleCounts) {
 			//_MESSAGE("%d:\t%d", handle, count);
@@ -819,9 +977,6 @@ void ProcessHavokHitJobsHook()
 			}
 		}
 	}
-	else {
-		g_hitDrivers.clear();
-	}
 
 	// if (!g_enableRagdoll) return;
 
@@ -834,7 +989,7 @@ void ProcessHavokHitJobsHook()
 
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 
-			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < 3.f;
+			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < 4.f;
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
 			//_MESSAGE("%x %d", actor, isAddedToWorld);
@@ -896,19 +1051,64 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput& ge
 	}
 }
 
+int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
+{
+	hkaSkeleton *animSkeleton = character->setup->m_animationSkeleton;
+	for (int i = 0; i < animSkeleton->m_bones.getSize(); i++) {
+		const hkaBone &bone = animSkeleton->m_bones[i];
+		if (boneName == bone.m_name.cString()) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
+
 void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& context, hkbGeneratorOutput& generatorOutput, hkReal deltaTime)
 {
+	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
+	int worldFromModelTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL;
 	int keyframedBonesTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES;
 	int rigidBodyControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS;
 	int poweredControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS;
 
 	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
 
+	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = numTracks > worldFromModelTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[worldFromModelTrackId]) : nullptr;
 	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = numTracks > keyframedBonesTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[keyframedBonesTrackId]) : nullptr;
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = numTracks > rigidBodyControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[rigidBodyControlsTrackId]) : nullptr;
 	hkbGeneratorOutput::TrackHeader *poweredHeader = numTracks > poweredControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[poweredControlsTrackId]) : nullptr;
 
-	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f && g_hitDrivers.count(driver) == 0) { // Don't keyframe bones if we've collided with the actor
+	bool isCollidedWith = g_hitDrivers.count(driver) || g_higgsDrivers.count(driver);
+
+	RagdollData &ragdollData = g_ragdollData[driver];
+	RagdollState state = ragdollData.state;
+	if (state == RagdollState::Anim) {
+		if (isCollidedWith) {
+			state = RagdollState::Collide;
+		}
+	}
+	if (state == RagdollState::Collide) {
+		if (!isCollidedWith) {
+			ragdollData.stopCollideTime = GetTime();
+			state = RagdollState::StopCollide;
+		}
+	}
+	if (state == RagdollState::StopCollide) {
+		if (isCollidedWith) {
+			state = RagdollState::Collide;
+		}
+	}
+	if (state == RagdollState::BlendOut) {
+		if (isCollidedWith) {
+			state = RagdollState::Collide;
+		}
+	}
+	ragdollData.state = state;
+
+	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f && state == RagdollState::Anim) { // Don't keyframe bones if we've collided with the actor
 		SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 	}
 
@@ -919,14 +1119,108 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 		// No controls are active - try and force it to use the rigidbody controller
 		TryForceControls(generatorOutput, *rigidBodyHeader);
 	}
+
+	Actor *actor = GetActorFromRagdollDriver(driver);
+	if (actor) {
+		NiPointer<NiNode> root = actor->GetNiNode();
+		if (root) {
+			bhkCharRigidBodyController *controller = GetCharRigidBodyController(actor);
+			if (controller) {
+
+				if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+					NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root);
+					if (rb) {
+						NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
+						//std::string boneName = std::string("Ragdoll_") + collNode->m_name;
+						_MESSAGE(collNode->m_name);
+
+						int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name);
+						if (boneIndex >= 0) {
+							const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+
+							hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+							// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this _is_ the 'root' collision node...
+							hkQsTransform poseT;
+							poseT.setMul(worldFromModel, poseData[boneIndex]);
+							
+							if (state == RagdollState::Collide && g_hipBoneTransforms.count(driver)) {
+								hkTransform actualT;
+								rb->getTransform(actualT);
+
+								NiPoint3 posePos = HkVectorToNiPoint(g_hipBoneTransforms[driver].m_translation) * *g_havokWorldScale;
+								NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
+								NiPoint3 posDiff = actualPos - posePos;
+
+								PrintVector(posDiff);
+								hkpSurfaceInfo &surface = controller->surfaceInfo;
+								if (surface.m_supportedState == hkpSurfaceInfo::SupportedState::SUPPORTED) {
+									NiPoint3 supportNorm = HkVectorToNiPoint(surface.m_surfaceNormal);
+									NiPoint3 posDiffInSupportPlane = ProjectVectorOntoPlane(posDiff, supportNorm);
+
+									//PrintToFile(std::to_string(VectorLength(posDiffInSupportPlane)), "posdiff.txt");
+
+									if (VectorLength(posDiffInSupportPlane) > 0.02f) { // TODO: Config
+										float deltaTime = *g_deltaTime;
+										NiPoint3 vel = posDiffInSupportPlane / deltaTime;
+										vel *= 0.03f;
+										vel += HkVectorToNiPoint(ahkpCharacterRigidBody_getLinearVelocity(controller->characterRigidBody.characterRigidBody));
+										ahkpCharacterRigidBody_setLinearVelocity(controller->characterRigidBody.characterRigidBody, NiPointToHkVector(vel), deltaTime);
+									}
+								}
+							}
+
+							g_hipBoneTransforms[driver] = poseT;
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 void PostDriveToPoseHook(hkbRagdollDriver *driver)
 {
+	// This hook is called right after hkbRagdollDriver::driveToPose()
+
+	int numBones = driver->ragdoll->getNumBones();
+	if (numBones <= 0) return;
+
+	float totalStress = 0.f;
+	for (int i = 0; i < driver->ragdoll->getNumBones(); i++) {
+		totalStress += sqrtf(g_stressOut[i].m_stressSquared);
+	}
+
+	float avgStress = totalStress / numBones;
+	_MESSAGE("stress: %.2f", avgStress);
+	//PrintToFile(std::to_string(avgStress), "stress.txt");
+
+	double frameTime = GetTime();
+
+	RagdollData &ragdollData = g_ragdollData[driver];
+	RagdollState state = ragdollData.state;
+	if (state == RagdollState::StopCollide) {
+		if (avgStress <= 8.f || frameTime - ragdollData.stopCollideTime >= 5.0) { // TODO: Config
+			state = RagdollState::BlendOut;
+		}
+	}
+	if (state == RagdollState::BlendOut) {
+		if (avgStress <= 0.5f || frameTime - ragdollData.stopCollideTime >= 5.0) { // TODO: Config
+			state = RagdollState::Anim;
+		}
+	}
+	ragdollData.state = state;
+
+	if (state == RagdollState::BlendOut) {
+		bool x;
+		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+			if (*hkpConstraintInstance_isEnabled(constraint, &x)) {
+				hkpConstraintInstance_setEnabled(constraint, false);
+			}
+		}
+	}
+
 	return;
 
-
-	// This hook is called right after hkbRagdollDriver::driveToPose()
 
 	hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 	if (!ragdoll) return;
@@ -965,6 +1259,10 @@ uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60);
 
+uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
+auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
+auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0);
+
 hkbRagdollDriver *g_ragdollDriver = nullptr;
 
 void PerformHooks(void)
@@ -972,6 +1270,7 @@ void PerformHooks(void)
 	// First, set our addresses
 	processHavokHitJobsHookedFuncAddr = processHavokHitJobsHookedFunc.GetUIntPtr();
 	driveToPoseHookedFuncAddr = driveToPoseHookedFunc.GetUIntPtr();
+	controllerDriveToPoseHookedFuncAddr = controllerDriveToPoseHookedFunc.GetUIntPtr();
 
 	{
 		struct Code : Xbyak::CodeGenerator {
@@ -1086,6 +1385,38 @@ void PerformHooks(void)
 
 		_MESSAGE("hkbRagdollDriver::driveToPose hook complete");
 	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				// The 4th arg to hkaRagdollRigidBodyController::driveToPose is a ptr which it sets to the output stress on the ragdoll.
+				// The game passes 0 in this arg normally, which means the stress is not extracted. I want to know the stress though.
+				mov(rax, (uintptr_t)&g_stressOut);
+				mov(ptr[rsp + 0x20], rax);
+
+				// Original code
+				mov(rax, controllerDriveToPoseHookedFuncAddr);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(controllerDriveToPoseHookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(controllerDriveToPoseHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("hkaRagdollRigidBodyController::driveToPose hook complete");
+	}
 }
 
 bool TryHook()
@@ -1126,6 +1457,24 @@ bool TryHook()
 	return true;
 }
 
+void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
+{
+	Actor *actor = DYNAMIC_CAST(grabbedRefr, TESObjectREFR, Actor);
+	if (actor) {
+		BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			SimpleLocker lock(&manager->updateLock);
+			for (int i = 0; i < manager->graphs.size; i++) {
+				BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+				hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+				if (driver) {
+					g_higgsDrivers.insert(driver);
+				}
+			}
+		}
+	}
+}
 
 extern "C" {
 	void OnDataLoaded()
@@ -1151,9 +1500,16 @@ extern "C" {
 			else if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
 				OnDataLoaded();
 			}
-			else if (msg->type == SKSEMessagingInterface::kMessage_PostLoad) {
-				// Get the VRIK plugin API
-				//g_vrikInterface = vrikPluginApi::getVrikInterface001(g_pluginHandle, g_messaging);
+			else if (msg->type == SKSEMessagingInterface::kMessage_PostPostLoad) {
+				// Get the HIGGS plugin API
+				HiggsPluginAPI::GetHiggsInterface001(g_pluginHandle, g_messaging);
+				if (g_higgsInterface) {
+					_MESSAGE("Got higgs interface!");
+					g_higgsInterface->AddGrabbedCallback(HiggsGrab);
+				}
+				else {
+					_MESSAGE("Did not get higgs interface. This is okay.");
+				}
 			}
 		}
 	}
@@ -1167,7 +1523,7 @@ extern "C" {
 		_MESSAGE("MeleeVR v%s", DWBVR_VERSION_VERSTRING);
 
 		info->infoVersion = PluginInfo::kInfoVersion;
-		info->name = "ForcePullVR";
+		info->name = "MeleeVR";
 		info->version = DWBVR_VERSION_MAJOR;
 
 		g_pluginHandle = skse->GetPluginHandle();
@@ -1200,6 +1556,8 @@ extern "C" {
 			_ERROR("[CRITICAL] Failed to perform hooks");
 			return false;
 		}
+
+		g_timer.Start();
 
 		return true;
 	}

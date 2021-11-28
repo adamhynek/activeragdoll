@@ -109,6 +109,12 @@ NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, f
 	return vector * cosTheta + (CrossProduct(axis, vector) * sinf(angle)) + axis * DotProduct(axis, vector) * (1.0f - cosTheta);
 }
 
+NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal)
+{
+	NiPoint3 vectorAlongNormal = normal * DotProduct(vector, normal); // project above vector onto normal
+	return vector - vectorAlongNormal;
+}
+
 void NiMatrixToHkMatrix(const NiMatrix33 &niMat, hkMatrix3 &hkMat)
 {
 	hkMat.setCols({ niMat.data[0][0], niMat.data[1][0], niMat.data[2][0], 0 },

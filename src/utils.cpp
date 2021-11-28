@@ -17,6 +17,13 @@
 #include "math_utils.h"
 
 
+ITimer g_timer;
+double g_currentFrameTime;
+double GetTime()
+{
+	return g_timer.GetElapsedTime();
+}
+
 NiAVObject * GetHighestParent(NiAVObject *node)
 {
 	if (!node->m_parent) {
@@ -528,6 +535,26 @@ void GetAllSkinnedNodes(NiAVObject *root, std::unordered_set<NiAVObject *> &skin
 			}
 		}
 	}
+}
+
+NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
+{
+	auto rigidBody = GetRigidBody(root);
+	if (rigidBody) {
+		return rigidBody;
+	}
+
+	NiNode *node = root->GetAsNiNode();
+	if (node) {
+		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
+			auto child = node->m_children.m_data[i];
+			if (child) {
+				return GetFirstRigidBody(child);
+			}
+		}
+	}
+
+	return nullptr;
 }
 
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location)

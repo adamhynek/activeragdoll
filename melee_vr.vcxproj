@@ -67,12 +67,12 @@
       <PrecompiledHeader>
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <ForcedIncludeFiles>common/IPrefix.h</ForcedIncludeFiles>
       <ExceptionHandling>Sync</ExceptionHandling>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
-      <ControlFlowGuard>Guard</ControlFlowGuard>
+      <ControlFlowGuard>false</ControlFlowGuard>
       <FloatingPointExceptions>true</FloatingPointExceptions>
       <CompileAs>CompileAsCpp</CompileAs>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
@@ -84,7 +84,7 @@
       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);winmm.lib</AdditionalDependencies>
       <OutputFile>D:\Steam\steamapps\common\SkyrimVR\Data\SKSE\Plugins\$(TargetName)$(TargetExt)</OutputFile>
     </Link>
     <PreBuildEvent>
@@ -133,7 +133,7 @@
       <SubSystem>Windows</SubSystem>
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);winmm.lib</AdditionalDependencies>
       <OutputFile>D:\Steam\steamapps\common\SkyrimVR\Data\SKSE\Plugins\$(TargetName)$(TargetExt)</OutputFile>
     </Link>
     <PreBuildEvent>
@@ -162,6 +162,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\config.cpp" />
+    <ClCompile Include="src\higgsinterface001.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\math_utils.cpp" />
     <ClCompile Include="src\offsets.cpp" />
@@ -170,6 +171,7 @@
   <ItemGroup>
     <ClInclude Include="include\config.h" />
     <ClInclude Include="include\havok_ref_ptr.h" />
+    <ClInclude Include="include\higgsinterface001.h" />
     <ClInclude Include="include\main.h" />
     <ClInclude Include="include\math_utils.h" />
     <ClInclude Include="include\RE\havok.h" />

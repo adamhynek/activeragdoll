@@ -59,8 +59,8 @@ struct bhkSerializable : bhkRefObject
 	virtual void	  Unk_2B(void); // 2B
 	virtual void	  Unk_2C(void); // 2C
 	virtual void	  Unk_2D(void); // 2D
-	virtual void	  InitHavokFromCinfo(void *cInfo) = 0; // 2E
-	virtual void	  GetSerializable(void) = 0; // 2F
+	virtual void	  InitHavokFromCinfo(void *cInfo); // 2E
+	virtual void	  GetSerializable(void); // 2F
 	virtual void	  Unk_30(void); // 30
 	virtual void	  Unk_31(void); // 31
 };

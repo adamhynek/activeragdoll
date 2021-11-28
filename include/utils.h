@@ -42,6 +42,7 @@ void PrintToFile(std::string entry, std::string filename);
 
 bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
+NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
 bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);
 bool DoesRefrHaveNode(TESObjectREFR *ref, NiAVObject *node);
