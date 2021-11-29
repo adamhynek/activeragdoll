@@ -7,6 +7,7 @@
 #include <chrono>
 #include <limits>
 #include <atomic>
+#include <set>
 
 #include "xbyak/xbyak.h"
 #include "common/IDebugLog.h"  // IDebugLog
@@ -580,6 +581,13 @@ typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnima
 std::unordered_map<UInt32, int> g_hitHandleCounts;
 struct ContactListener : hkpContactListener
 {
+	std::set<std::pair<hkpRigidBody *, hkpRigidBody*>> activeCollisions;
+
+	std::pair<hkpRigidBody *, hkpRigidBody *> SortedPair(hkpRigidBody *a, hkpRigidBody *b) {
+		if ((uint64_t)a <= (uint64_t)b) return { a, b };
+		else return { b, a };
+	}
+
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
@@ -601,6 +609,9 @@ struct ContactListener : hkpContactListener
 			if (g_hitHandleCounts.count(handle) == 0) g_hitHandleCounts[handle] = 0;
 			++g_hitHandleCounts[handle];
 
+			//hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+			activeCollisions.insert(SortedPair(rigidBodyA, rigidBodyB));
+
 			//_MESSAGE("Collision added");
 		}
 	}
@@ -610,31 +621,30 @@ struct ContactListener : hkpContactListener
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
-		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+		auto pair = SortedPair(rigidBodyA, rigidBodyB);
+		if (activeCollisions.count(pair)) {
+			activeCollisions.erase(pair);
 
-		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+			UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+			hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 
-		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+			if (!hitRefr) return;
 
-		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
+			if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+				UInt32 handle = GetOrCreateRefrHandle(hitRefr);
 
-		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-			UInt32 handle = GetOrCreateRefrHandle(hitRefr);
+				if (g_hitHandleCounts.count(handle) > 0) {
+					int count = g_hitHandleCounts[handle];
+					if (count <= 1) {
+						g_hitHandleCounts.erase(handle);
+					}
+					else {
+						g_hitHandleCounts[handle] = count - 1;
+					}
 
-			//ASSERT_STR(g_hitHandleCounts.count(handle) != 0, "Received collision removed callback with no corresponding added callback");
-			if (g_hitHandleCounts.count(handle) > 0) {
-				int count = g_hitHandleCounts[handle];
-				if (count <= 1) {
-					g_hitHandleCounts.erase(handle);
+					//_MESSAGE("Collision removed");
 				}
-				else {
-					g_hitHandleCounts[handle] = count - 1;
-				}
-
-				//_MESSAGE("Collision removed");
 			}
 		}
 	}
@@ -645,7 +655,7 @@ ContactListener *contactListener = nullptr;
 
 enum class RagdollState
 {
-	Anim,
+	Keyframed,
 	Collide,
 	StopCollide,
 	BlendOut
@@ -654,7 +664,7 @@ enum class RagdollState
 struct RagdollData
 {
 	double stopCollideTime = 0.0;
-	RagdollState state = RagdollState::Anim;
+	RagdollState state = RagdollState::Keyframed;
 };
 
 std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
@@ -1085,7 +1095,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 
 	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
-	if (state == RagdollState::Anim) {
+	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
 			state = RagdollState::Collide;
 		}
@@ -1108,8 +1118,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 	}
 	ragdollData.state = state;
 
-	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f && state == RagdollState::Anim) { // Don't keyframe bones if we've collided with the actor
-		SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
+		if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
+			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+		}
+		else {
+			// Explicitly make bones not keyframed
+			keyframedBonesHeader->m_onFraction = 0.f;
+		}
 	}
 
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
@@ -1205,7 +1221,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 	}
 	if (state == RagdollState::BlendOut) {
 		if (avgStress <= 0.5f || frameTime - ragdollData.stopCollideTime >= 5.0) { // TODO: Config
-			state = RagdollState::Anim;
+			state = RagdollState::Keyframed;
 		}
 	}
 	ragdollData.state = state;
