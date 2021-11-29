@@ -999,7 +999,7 @@ void ProcessHavokHitJobsHook()
 
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 
-			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < 4.f;
+			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollDistance;
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
 			//_MESSAGE("%x %d", actor, isAddedToWorld);
@@ -1175,10 +1175,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 
 									//PrintToFile(std::to_string(VectorLength(posDiffInSupportPlane)), "posdiff.txt");
 
-									if (VectorLength(posDiffInSupportPlane) > 0.02f) { // TODO: Config
+									if (VectorLength(posDiffInSupportPlane) > Config::options.rootMotionMinOffset) {
 										float deltaTime = *g_deltaTime;
 										NiPoint3 vel = posDiffInSupportPlane / deltaTime;
-										vel *= 0.03f;
+										vel *= Config::options.rootMotionVelocityMultiplier;
 										vel += HkVectorToNiPoint(ahkpCharacterRigidBody_getLinearVelocity(controller->characterRigidBody.characterRigidBody));
 										ahkpCharacterRigidBody_setLinearVelocity(controller->characterRigidBody.characterRigidBody, NiPointToHkVector(vel), deltaTime);
 									}
@@ -1215,12 +1215,15 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
 	if (state == RagdollState::StopCollide) {
-		if (avgStress <= 8.f || frameTime - ragdollData.stopCollideTime >= 5.0) { // TODO: Config
+		// TODO: Perhaps we could make the required stress get more lenient the longer we've been blending out?
+		if (avgStress <= Config::options.stopCollideStressThreshold || frameTime - ragdollData.stopCollideTime >= Config::options.stopCollideMaxTime) {
+			ragdollData.stopCollideTime = frameTime;
 			state = RagdollState::BlendOut;
 		}
 	}
 	if (state == RagdollState::BlendOut) {
-		if (avgStress <= 0.5f || frameTime - ragdollData.stopCollideTime >= 5.0) { // TODO: Config
+		// TODO: Perhaps we could make the required stress get more lenient the longer we've been blending out?
+		if (avgStress <= Config::options.blendOutStressThreshold || frameTime - ragdollData.stopCollideTime >= Config::options.blendOutMaxTime) {
 			state = RagdollState::Keyframed;
 		}
 	}
@@ -1559,6 +1562,13 @@ extern "C" {
 	bool SKSEPlugin_Load(const SKSEInterface * skse)
 	{	// Called by SKSE to load this plugin
 		_MESSAGE("MeleeVR loaded");
+
+		if (Config::ReadConfigOptions()) {
+			_MESSAGE("Successfully read config parameters");
+		}
+		else {
+			_WARNING("[WARNING] Failed to read config options. Using defaults instead.");
+		}
 
 		_MESSAGE("Registering for SKSE messages");
 		g_messaging = (SKSEMessagingInterface*)skse->QueryInterface(kInterface_Messaging);
