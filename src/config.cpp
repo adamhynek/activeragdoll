@@ -90,8 +90,14 @@ namespace Config {
 
 		if (!ReadFloat("StopCollideStressThresholdStart", options.stopCollideStressThresholdStart)) return false;
 		if (!ReadFloat("StopCollideStressThresholdEnd", options.stopCollideStressThresholdEnd)) return false;
-		if (!ReadFloat("BlendOutStressThresholdStart", options.blendOutStressThresholdStart)) return false;
-		if (!ReadFloat("BlendOutStressThresholdEnd", options.blendOutStressThresholdEnd)) return false;
+
+		if (!ReadFloat("CollideHierarchyGain", options.collideHierarchyGain)) return false;
+		if (!ReadFloat("CollideVelocityGain", options.collideVelocityGain)) return false;
+		if (!ReadFloat("CollidePositionGain", options.collidePositionGain)) return false;
+
+		if (!ReadFloat("StopCollideHierarchyGain", options.stopCollideHierarchyGain)) return false;
+		if (!ReadFloat("StopCollideVelocityGain", options.stopCollideVelocityGain)) return false;
+		if (!ReadFloat("StopCollidePositionGain", options.stopCollidePositionGain)) return false;
 
 		if (!ReadBool("DoRootMotion", options.doRootMotion)) return false;
 		if (!ReadFloat("RootMotionMinOffset", options.rootMotionMinOffset)) return false;

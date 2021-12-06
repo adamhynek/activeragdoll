@@ -671,6 +671,7 @@ struct RagdollData
 	std::vector<hkQsTransform> blendInOutInitialPose;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;
+	bool isOn = false;
 	bool firstFrameBlendInOut = false;
 };
 
@@ -1108,6 +1109,17 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	double frameTime = GetTime();
 
 	RagdollData &ragdollData = g_ragdollData[driver];
+
+	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
+	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
+
+	ragdollData.isOn = true;
+	if (!isRigidBodyOn) {
+		ragdollData.isOn = false;
+		ragdollData.state = RagdollState::Keyframed; // reset state
+		return;
+	}
+
 	RagdollState state = ragdollData.state;
 	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
@@ -1118,6 +1130,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 	if (state == RagdollState::BlendIn) {
 		if (!isCollidedWith) {
+			// TODO: We need to make sure to blend out from the current lerped blended in pose. Currently we blend out from the actual ragdoll pose which has not been fully blended in (as we are currently still in the blendin state)
 			ragdollData.stateChangedTime = frameTime;
 			ragdollData.firstFrameBlendInOut = true;
 			state = RagdollState::BlendOut;
@@ -1151,9 +1164,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
-	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
-
 	if (!isRigidBodyOn && !isPoweredOn) {
 		// No controls are active - try and force it to use the rigidbody controller
 		if (rigidBodyHeader) {
@@ -1163,14 +1173,28 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::StopCollide) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
 		if (rigidBodyHeader->m_numData > 0) {
-			float elapsedTime = frameTime - ragdollData.stateChangedTime;
+			float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
+
+			float hierarchyGain, velocityGain, positionGain;
+			if (state == RagdollState::StopCollide) {
+				float lerpAmount = elapsedTime / Config::options.stopCollideMaxTime;
+				lerpAmount = std::clamp(lerpAmount, 0.f, 1.f);
+				hierarchyGain = lerp(Config::options.collideHierarchyGain, Config::options.stopCollideHierarchyGain, lerpAmount);
+				velocityGain = lerp(Config::options.collideVelocityGain, Config::options.stopCollideVelocityGain, lerpAmount);
+				positionGain = lerp(Config::options.collidePositionGain, Config::options.stopCollidePositionGain, lerpAmount);
+			}
+			else {
+				hierarchyGain = Config::options.collideHierarchyGain;
+				velocityGain = Config::options.collideVelocityGain;
+				positionGain = Config::options.collidePositionGain;
+			}
 
 			hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
 			for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
 				hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
-				elem.m_hierarchyGain = Config::options.hierarchyGain;
-				elem.m_velocityGain = Config::options.blendOutVelocityGain;
-				elem.m_positionGain = Config::options.blendOutPositionGain;
+				elem.m_hierarchyGain = hierarchyGain;
+				elem.m_velocityGain = velocityGain;
+				elem.m_positionGain = positionGain;
 			}
 		}
 	}
@@ -1237,6 +1261,9 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
+	RagdollData &ragdollData = g_ragdollData[driver];
+	if (!ragdollData.isOn) return;
+
 	int numBones = driver->ragdoll->getNumBones();
 	if (numBones <= 0) return;
 
@@ -1249,14 +1276,13 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	_MESSAGE("stress: %.2f", avgStress);
 	PrintToFile(std::to_string(avgStress), "stress.txt");
 
-	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
 
 	PrintToFile(std::to_string((int)state), "state.txt");
 
 	if (state == RagdollState::StopCollide) {
 		double frameTime = GetTime();
-		float elapsedTime = frameTime - ragdollData.stateChangedTime;
+		float elapsedTime = (frameTime - ragdollData.stateChangedTime)  * *g_globalTimeMultiplier;
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
 		if (avgStress <= stressThreshold || elapsedTime >= Config::options.stopCollideMaxTime) {
 			ragdollData.stateChangedTime = frameTime;
@@ -1280,9 +1306,12 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 hkQsTransform g_animPose[200]; // set in a hook before postPhysics(). Just reserve a bunch of space so it can handle any number of bones.
 
-void PrePostPhysicsHook(hkbRagdollDriver &driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right before hkbRagdollDriver::postPhysics()
+
+	RagdollData &ragdollData = g_ragdollData[driver];
+	if (!ragdollData.isOn) return;
 
 	hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
 
@@ -1302,10 +1331,12 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
 	RagdollData &ragdollData = g_ragdollData[driver];
+	if (!ragdollData.isOn) return;
+
 	RagdollState state = ragdollData.state;
 
 	if (state == RagdollState::BlendIn || state == RagdollState::BlendOut) {
-		double elapsedTime = GetTime() - ragdollData.stateChangedTime;
+		double elapsedTime = (GetTime() - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
 
 		bool isBlendIn = state == RagdollState::BlendIn;
 

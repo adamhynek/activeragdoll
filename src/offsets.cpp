@@ -15,7 +15,7 @@ RelocPtr<CrosshairPickData *> g_pickData(0x2FC60C0);
 
 RelocPtr<float> g_deltaTime(0x1EC8278);
 
-RelocPtr<float> g_globalTimeMultiplier(0xC42710);
+RelocPtr<float> g_globalTimeMultiplier(0x1EC5698);
 
 RelocPtr<float> fMaxTime(0x1EC82B0);
 RelocPtr<float> fMaxTimeComplex(0x1EC8448);
