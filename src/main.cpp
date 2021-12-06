@@ -669,6 +669,7 @@ enum class RagdollState
 struct RagdollData
 {
 	std::vector<hkQsTransform> blendInOutInitialPose;
+	std::vector<hkQsTransform> blendInPose;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
@@ -1130,9 +1131,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 	if (state == RagdollState::BlendIn) {
 		if (!isCollidedWith) {
-			// TODO: We need to make sure to blend out from the current lerped blended in pose. Currently we blend out from the actual ragdoll pose which has not been fully blended in (as we are currently still in the blendin state)
+			// Set the initial pose to blend from to the current pose we've blended into so far
+			int numPoses = poseHeader->m_numData;
+			ragdollData.blendInOutInitialPose.reserve(numPoses);
+			memcpy(ragdollData.blendInOutInitialPose.data(), ragdollData.blendInPose.data(), numPoses * sizeof(hkQsTransform));
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.firstFrameBlendInOut = true;
 			state = RagdollState::BlendOut;
 		}
 	}
@@ -1304,7 +1307,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	*/
 }
 
-hkQsTransform g_animPose[200]; // set in a hook before postPhysics(). Just reserve a bunch of space so it can handle any number of bones.
+std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics(). Just reserve a bunch of space so it can handle any number of bones.
 
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
@@ -1321,11 +1324,12 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
-		memcpy(g_animPose, animPose, numPoses * sizeof(hkQsTransform));
+		g_animPose.reserve(numPoses);
+		memcpy(g_animPose.data(), animPose, numPoses * sizeof(hkQsTransform));
 	}
 }
 
-hkQsTransform g_scratchPose[200];
+std::vector<hkQsTransform> g_scratchPose;
 void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
@@ -1352,19 +1356,25 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 			if (ragdollData.firstFrameBlendInOut) {
 				ragdollData.firstFrameBlendInOut = false;
-				ragdollData.blendInOutInitialPose.reserve(numPoses);
 
-				hkQsTransform *initialPose = isBlendIn ? g_animPose : poseOut;
+				hkQsTransform *initialPose = isBlendIn ? g_animPose.data() : poseOut;
+
+				ragdollData.blendInOutInitialPose.reserve(numPoses);
 				memcpy(ragdollData.blendInOutInitialPose.data(), initialPose, numPoses * sizeof(hkQsTransform));
 			}
 
 			if (isBlendIn) {
 				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
-				memcpy(g_scratchPose, poseOut, numPoses * sizeof(hkQsTransform));
-				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_scratchPose, lerpAmount, poseOut);
+				g_scratchPose.reserve(numPoses);
+				memcpy(g_scratchPose.data(), poseOut, numPoses * sizeof(hkQsTransform));
+
+				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_scratchPose.data(), lerpAmount, poseOut);
+
+				ragdollData.blendInPose.reserve(numPoses);
+				memcpy(ragdollData.blendInPose.data(), poseOut, numPoses * sizeof(hkQsTransform)); // save the blended pose in case we need to blend out from here
 			}
 			else {
-				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_animPose, lerpAmount, poseOut);
+				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_animPose.data(), lerpAmount, poseOut);
 			}
 		}
 
