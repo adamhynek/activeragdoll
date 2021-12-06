@@ -9,16 +9,22 @@
 namespace Config {
 	struct Options {
 		double stopCollideMaxTime = 2.0;
-		double blendOutMaxTime = 3.0;
+		double blendOutMaxTime = 0.15;
 
-		float stopCollideStressThreshold = 8.f;
-		float blendOutStressThreshold = 0.5f;
+		float stopCollideStressThresholdStart = 8.f;
+		float stopCollideStressThresholdEnd = 12.f;
+		float blendOutStressThresholdStart = 0.5f;
+		float blendOutStressThresholdEnd = 0.5f;
 
 		bool doRootMotion = true;
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
 		float activeRagdollDistance = 4.f;
+
+		float hierarchyGain = 0.17f;
+		float blendOutVelocityGain = 0.3f;
+		float blendOutPositionGain = 0.1f;
 	};
 	extern Options options; // global object containing options
 

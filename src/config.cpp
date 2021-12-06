@@ -87,8 +87,10 @@ namespace Config {
 		if (!ReadDouble("StopCollideMaxTime", options.stopCollideMaxTime)) return false;
 		if (!ReadDouble("BlendOutMaxTime", options.blendOutMaxTime)) return false;
 
-		if (!ReadFloat("StopCollideStressThreshold", options.stopCollideStressThreshold)) return false;
-		if (!ReadFloat("BlendOutStressThreshold", options.blendOutStressThreshold)) return false;
+		if (!ReadFloat("StopCollideStressThresholdStart", options.stopCollideStressThresholdStart)) return false;
+		if (!ReadFloat("StopCollideStressThresholdEnd", options.stopCollideStressThresholdEnd)) return false;
+		if (!ReadFloat("BlendOutStressThresholdStart", options.blendOutStressThresholdStart)) return false;
+		if (!ReadFloat("BlendOutStressThresholdEnd", options.blendOutStressThresholdEnd)) return false;
 
 		if (!ReadBool("DoRootMotion", options.doRootMotion)) return false;
 		if (!ReadFloat("RootMotionMinOffset", options.rootMotionMinOffset)) return false;

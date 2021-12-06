@@ -513,6 +513,7 @@ struct AIProcessManager
 };
 
 RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
+RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
 
 
 typedef bool(*_bhkRefObject_ctor)(bhkRefObject *_this);
@@ -575,6 +576,9 @@ RelocAddr<_ahkpCharacterRigidBody_setLinearVelocity> ahkpCharacterRigidBody_setL
 typedef hkVector4 & (*_ahkpCharacterRigidBody_getLinearVelocity)(hkpCharacterRigidBody *_this);
 RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getLinearVelocity(0xAF5BB0);
 
+typedef hkVector4 & (*_hkbBlendPoses)(UInt32 numData, const hkQsTransform *src, const hkQsTransform *dst, float amount, hkQsTransform *out);
+RelocAddr<_hkbBlendPoses> hkbBlendPoses(0xB4DD80);
+
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager>& a_out);
 
 
@@ -583,7 +587,7 @@ struct ContactListener : hkpContactListener
 {
 	std::set<std::pair<hkpRigidBody *, hkpRigidBody*>> activeCollisions;
 
-	std::pair<hkpRigidBody *, hkpRigidBody *> SortedPair(hkpRigidBody *a, hkpRigidBody *b) {
+	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
 	}
@@ -610,7 +614,7 @@ struct ContactListener : hkpContactListener
 			++g_hitHandleCounts[handle];
 
 			//hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-			activeCollisions.insert(SortedPair(rigidBodyA, rigidBodyB));
+			activeCollisions.insert(SortPair(rigidBodyA, rigidBodyB));
 
 			//_MESSAGE("Collision added");
 		}
@@ -621,7 +625,7 @@ struct ContactListener : hkpContactListener
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
-		auto pair = SortedPair(rigidBodyA, rigidBodyB);
+		auto pair = SortPair(rigidBodyA, rigidBodyB);
 		if (activeCollisions.count(pair)) {
 			activeCollisions.erase(pair);
 
@@ -663,8 +667,10 @@ enum class RagdollState
 
 struct RagdollData
 {
+	std::vector<hkQsTransform> blendOutInitialPose;
 	double stopCollideTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;
+	bool firstFrameBlendOut = false;
 };
 
 std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
@@ -1075,7 +1081,7 @@ int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
-void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& context, hkbGeneratorOutput& generatorOutput, hkReal deltaTime)
+void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
 	int worldFromModelTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL;
@@ -1119,7 +1125,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 	ragdollData.state = state;
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
+		if (state == RagdollState::Keyframed || state == RagdollState::BlendOut) { // Don't keyframe bones if we've collided with the actor
 			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
@@ -1133,7 +1139,23 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 
 	if (!isRigidBodyOn && !isPoweredOn) {
 		// No controls are active - try and force it to use the rigidbody controller
-		TryForceControls(generatorOutput, *rigidBodyHeader);
+		if (rigidBodyHeader) {
+			TryForceControls(generatorOutput, *rigidBodyHeader);
+		}
+	}
+
+	if ((state == RagdollState::Collide || state == RagdollState::StopCollide) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
+		if (rigidBodyHeader->m_numData > 0) {
+			float elapsedTime = GetTime() - ragdollData.stopCollideTime;
+
+			hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
+			for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
+				hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
+				elem.m_hierarchyGain = Config::options.hierarchyGain;
+				elem.m_velocityGain = Config::options.blendOutVelocityGain;
+				elem.m_positionGain = Config::options.blendOutPositionGain;
+			}
+		}
 	}
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
@@ -1159,7 +1181,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 							hkQsTransform poseT;
 							poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
-							if (state == RagdollState::Collide && g_hipBoneTransforms.count(driver)) {
+							if (Config::options.doRootMotion && state == RagdollState::Collide && g_hipBoneTransforms.count(driver)) {
 								hkTransform actualT;
 								rb->getTransform(actualT);
 
@@ -1194,7 +1216,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, UInt64 pad, const hkbContext& 
 	}
 }
 
-void PostDriveToPoseHook(hkbRagdollDriver *driver)
+void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
@@ -1208,27 +1230,26 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 
 	float avgStress = totalStress / numBones;
 	_MESSAGE("stress: %.2f", avgStress);
-	//PrintToFile(std::to_string(avgStress), "stress.txt");
-
-	double frameTime = GetTime();
+	PrintToFile(std::to_string(avgStress), "stress.txt");
 
 	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
+
+	PrintToFile(std::to_string((int)state), "state.txt");
+
 	if (state == RagdollState::StopCollide) {
-		// TODO: Perhaps we could make the required stress get more lenient the longer we've been blending out?
-		if (avgStress <= Config::options.stopCollideStressThreshold || frameTime - ragdollData.stopCollideTime >= Config::options.stopCollideMaxTime) {
+		double frameTime = GetTime();
+		float elapsedTime = frameTime - ragdollData.stopCollideTime;
+		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
+		if (avgStress <= stressThreshold || elapsedTime >= Config::options.stopCollideMaxTime) {
 			ragdollData.stopCollideTime = frameTime;
+			ragdollData.firstFrameBlendOut = true;
 			state = RagdollState::BlendOut;
-		}
-	}
-	if (state == RagdollState::BlendOut) {
-		// TODO: Perhaps we could make the required stress get more lenient the longer we've been blending out?
-		if (avgStress <= Config::options.blendOutStressThreshold || frameTime - ragdollData.stopCollideTime >= Config::options.blendOutMaxTime) {
-			state = RagdollState::Keyframed;
 		}
 	}
 	ragdollData.state = state;
 
+	/*
 	if (state == RagdollState::BlendOut) {
 		bool x;
 		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
@@ -1237,35 +1258,63 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver)
 			}
 		}
 	}
+	*/
+}
 
-	return;
+hkQsTransform g_animPose[200]; // set in a hook before postPhysics(). Just reserve a bunch of space so it can handle any number of bones.
 
+void PrePostPhysicsHook(hkbRagdollDriver &driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+{
+	// This hook is called right before hkbRagdollDriver::postPhysics()
 
-	hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
-	if (!ragdoll) return;
-	if (!ragdoll->getWorld()) return;
+	hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
 
-	// Make head / hands keyframed to guarantee head tracking + hand positioning (for weapons, etc. - especially two-handed things)
-	for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-		NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-		if (node) {
-			if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-				if (wrapper && wrapper->hkBody->m_motion.m_type != hkpMotion::MotionType::MOTION_KEYFRAMED) {
-					//bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_KEYFRAMED, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-					//wrapper->hkBody->m_collidable.setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-					//bhkWorld_UpdateCollisionFilterOnEntity(((ahkpWorld *)ragdoll->getWorld())->m_userData, wrapper->hkBody);
-				}
-			}
-		}
+	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
+	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+	if (poseHeader && poseHeader->m_onFraction > 0.f) {
+		int numPoses = poseHeader->m_numData;
+		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
+		memcpy(g_animPose, animPose, numPoses * sizeof(hkQsTransform));
 	}
+}
 
-	for (hkpConstraintInstance *constraint : ragdoll->m_constraints) {
-		bool x;
-		hkpConstraintInstance_isEnabled(constraint, &x);
-		if (x) {
-			//hkpConstraintInstance_setEnabled(constraint, false);
+//hkQsTransform g_ragdollPoseHiResLocal[200];
+
+void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
+{
+	// This hook is called right after hkbRagdollDriver::postPhysics()
+
+	RagdollData &ragdollData = g_ragdollData[driver];
+	RagdollState state = ragdollData.state;
+
+	if (state == RagdollState::BlendOut) {
+		double elapsedTime = GetTime() - ragdollData.stopCollideTime;
+		float lerpAmount = std::clamp(elapsedTime / Config::options.blendOutMaxTime, 0.0, 1.0);
+
+		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
+
+		int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
+		hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+			int numPoses = poseHeader->m_numData;
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
+			//memcpy(g_ragdollPoseHiResLocal, poseOut, numPoses * sizeof(hkQsTransform));
+			if (ragdollData.firstFrameBlendOut) {
+				ragdollData.firstFrameBlendOut = false;
+				ragdollData.blendOutInitialPose.reserve(numPoses);
+				memcpy(ragdollData.blendOutInitialPose.data(), poseOut, numPoses * sizeof(hkQsTransform));
+			}
+
+			hkbBlendPoses(numPoses, ragdollData.blendOutInitialPose.data(), g_animPose, lerpAmount, poseOut);
 		}
+
+		// Need to change states only after acting on the previous state
+		if (elapsedTime >= Config::options.blendOutMaxTime) {
+			state = RagdollState::Keyframed;
+		}
+		ragdollData.state = state;
 	}
 }
 
@@ -1274,21 +1323,24 @@ uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
 auto processHavokHitJobsHookedFunc = RelocAddr<uintptr_t>(0x75AC20);
 
+uintptr_t postPhysicsHookedFuncAddr = 0;
+auto postPhysicsHookLoc = RelocAddr<uintptr_t>(0xB268DC);
+auto postPhysicsHookedFunc = RelocAddr<uintptr_t>(0xA27730); // hkbRagdollDriver::postPhysics()
+
 uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
-auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60);
+auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver::driveToPose()
 
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
-auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0);
-
-hkbRagdollDriver *g_ragdollDriver = nullptr;
+auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRagdollRigidBodyController::driveToPose()
 
 void PerformHooks(void)
 {
 	// First, set our addresses
 	processHavokHitJobsHookedFuncAddr = processHavokHitJobsHookedFunc.GetUIntPtr();
 	driveToPoseHookedFuncAddr = driveToPoseHookedFunc.GetUIntPtr();
+	postPhysicsHookedFuncAddr = postPhysicsHookedFunc.GetUIntPtr();
 	controllerDriveToPoseHookedFuncAddr = controllerDriveToPoseHookedFunc.GetUIntPtr();
 
 	{
@@ -1336,12 +1388,6 @@ void PerformHooks(void)
 			{
 				Xbyak::Label jumpBack;
 
-				// Save ragdoll driver
-				push(rax);
-				mov(rax, (uintptr_t)&g_ragdollDriver);
-				mov(ptr[rax], rcx);
-				pop(rax);
-
 				push(rax);
 				push(rcx);
 				push(rdx);
@@ -1380,9 +1426,9 @@ void PerformHooks(void)
 				mov(rax, driveToPoseHookedFuncAddr);
 				call(rax);
 
-				// Restore original ragdoll driver to pass to our hook
-				mov(rax, (uintptr_t)&g_ragdollDriver);
-				mov(rcx, ptr[rax]);
+				// Restore args to pass to our post hook
+				mov(rcx, ptr[rsi + 0xF0]); // hkbRagdollDriver
+				lea(rdx, ptr[rsp + 0x60]); // hkbGeneratorOutput
 
 				// Call our post hook
 				mov(rax, (uintptr_t)PostDriveToPoseHook);
@@ -1403,6 +1449,75 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("hkbRagdollDriver::driveToPose hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				push(rax);
+				push(rcx);
+				push(rdx);
+				push(r8);
+				push(r9);
+				push(r10);
+				push(r11);
+				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
+				movsd(ptr[rsp + 0x20], xmm0);
+				movsd(ptr[rsp + 0x30], xmm1);
+				movsd(ptr[rsp + 0x40], xmm2);
+				movsd(ptr[rsp + 0x50], xmm3);
+				movsd(ptr[rsp + 0x60], xmm4);
+				movsd(ptr[rsp + 0x70], xmm5);
+
+				// Call our pre hook
+				mov(rax, (uintptr_t)PrePostPhysicsHook);
+				call(rax);
+
+				movsd(xmm0, ptr[rsp + 0x20]);
+				movsd(xmm1, ptr[rsp + 0x30]);
+				movsd(xmm2, ptr[rsp + 0x40]);
+				movsd(xmm3, ptr[rsp + 0x50]);
+				movsd(xmm4, ptr[rsp + 0x60]);
+				movsd(xmm5, ptr[rsp + 0x70]);
+				add(rsp, 0x88);
+				pop(r11);
+				pop(r10);
+				pop(r9);
+				pop(r8);
+				pop(rdx);
+				pop(rcx);
+				pop(rax);
+
+				// Original code
+				mov(rax, postPhysicsHookedFuncAddr);
+				call(rax);
+
+				// Restore args to pass to our post hook
+				mov(rcx, ptr[rsi + 0xF0]); // hkbRagdollDriver
+				lea(rdx, ptr[rsp + 0x30]); // hkbGeneratorOutput
+
+				// Call our post hook
+				mov(rax, (uintptr_t)PostPostPhysicsHook);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(postPhysicsHookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("hkbRagdollDriver::postPhysics hook complete");
 	}
 
 	{
