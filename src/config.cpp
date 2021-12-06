@@ -85,7 +85,8 @@ namespace Config {
 	bool ReadConfigOptions()
 	{
 		if (!ReadDouble("StopCollideMaxTime", options.stopCollideMaxTime)) return false;
-		if (!ReadDouble("BlendOutMaxTime", options.blendOutMaxTime)) return false;
+		if (!ReadDouble("BlendInTime", options.blendInTime)) return false;
+		if (!ReadDouble("BlendOutTime", options.blendOutTime)) return false;
 
 		if (!ReadFloat("StopCollideStressThresholdStart", options.stopCollideStressThresholdStart)) return false;
 		if (!ReadFloat("StopCollideStressThresholdEnd", options.stopCollideStressThresholdEnd)) return false;
@@ -97,6 +98,8 @@ namespace Config {
 		if (!ReadFloat("RootMotionVelocityMultiplier", options.rootMotionVelocityMultiplier)) return false;
 
 		if (!ReadFloat("ActiveRagdollDistance", options.activeRagdollDistance)) return false;
+
+		if (!ReadBool("EnableBipedCollision", options.enableBipedCollision)) return false;
 
 		return true;
 	}

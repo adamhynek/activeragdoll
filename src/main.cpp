@@ -660,6 +660,7 @@ ContactListener *contactListener = nullptr;
 enum class RagdollState
 {
 	Keyframed,
+	BlendIn,
 	Collide,
 	StopCollide,
 	BlendOut
@@ -667,10 +668,10 @@ enum class RagdollState
 
 struct RagdollData
 {
-	std::vector<hkQsTransform> blendOutInitialPose;
-	double stopCollideTime = 0.0;
+	std::vector<hkQsTransform> blendInOutInitialPose;
+	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;
-	bool firstFrameBlendOut = false;
+	bool firstFrameBlendInOut = false;
 };
 
 std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
@@ -960,6 +961,11 @@ void ProcessHavokHitJobsHook()
 			BSWriteLocker lock(&world->worldLock);
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 			hkpWorld_addContactListener(world->world, contactListener);
+
+			if (Config::options.enableBipedCollision) {
+				bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
+				filter->layerBitfields[8] |= (1 << 8); // enable biped->biped collision;
+			}
 		}
 
 		contactListener->world = world;
@@ -1099,16 +1105,27 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	bool isCollidedWith = g_hitDrivers.count(driver) || g_higgsDrivers.count(driver);
 
+	double frameTime = GetTime();
+
 	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
 	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
-			state = RagdollState::Collide;
+			ragdollData.stateChangedTime = frameTime;
+			ragdollData.firstFrameBlendInOut = true;
+			state = RagdollState::BlendIn;
+		}
+	}
+	if (state == RagdollState::BlendIn) {
+		if (!isCollidedWith) {
+			ragdollData.stateChangedTime = frameTime;
+			ragdollData.firstFrameBlendInOut = true;
+			state = RagdollState::BlendOut;
 		}
 	}
 	if (state == RagdollState::Collide) {
 		if (!isCollidedWith) {
-			ragdollData.stopCollideTime = GetTime();
+			ragdollData.stateChangedTime = frameTime;
 			state = RagdollState::StopCollide;
 		}
 	}
@@ -1119,13 +1136,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 	if (state == RagdollState::BlendOut) {
 		if (isCollidedWith) {
-			state = RagdollState::Collide;
+			state = RagdollState::BlendIn;
 		}
 	}
 	ragdollData.state = state;
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed || state == RagdollState::BlendOut) { // Don't keyframe bones if we've collided with the actor
+		if (state == RagdollState::Keyframed || (state == RagdollState::BlendOut && !ragdollData.firstFrameBlendInOut)) { // Don't keyframe bones if we've collided with the actor
 			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
@@ -1144,9 +1161,9 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if ((state == RagdollState::Collide || state == RagdollState::StopCollide) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
+	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::StopCollide) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
 		if (rigidBodyHeader->m_numData > 0) {
-			float elapsedTime = GetTime() - ragdollData.stopCollideTime;
+			float elapsedTime = frameTime - ragdollData.stateChangedTime;
 
 			hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
 			for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
@@ -1239,11 +1256,11 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	if (state == RagdollState::StopCollide) {
 		double frameTime = GetTime();
-		float elapsedTime = frameTime - ragdollData.stopCollideTime;
+		float elapsedTime = frameTime - ragdollData.stateChangedTime;
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
 		if (avgStress <= stressThreshold || elapsedTime >= Config::options.stopCollideMaxTime) {
-			ragdollData.stopCollideTime = frameTime;
-			ragdollData.firstFrameBlendOut = true;
+			ragdollData.stateChangedTime = frameTime;
+			ragdollData.firstFrameBlendInOut = true;
 			state = RagdollState::BlendOut;
 		}
 	}
@@ -1279,8 +1296,7 @@ void PrePostPhysicsHook(hkbRagdollDriver &driver, const hkbContext &context, hkb
 	}
 }
 
-//hkQsTransform g_ragdollPoseHiResLocal[200];
-
+hkQsTransform g_scratchPose[200];
 void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
@@ -1288,9 +1304,13 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	RagdollData &ragdollData = g_ragdollData[driver];
 	RagdollState state = ragdollData.state;
 
-	if (state == RagdollState::BlendOut) {
-		double elapsedTime = GetTime() - ragdollData.stopCollideTime;
-		float lerpAmount = std::clamp(elapsedTime / Config::options.blendOutMaxTime, 0.0, 1.0);
+	if (state == RagdollState::BlendIn || state == RagdollState::BlendOut) {
+		double elapsedTime = GetTime() - ragdollData.stateChangedTime;
+
+		bool isBlendIn = state == RagdollState::BlendIn;
+
+		double blendTime = isBlendIn ? Config::options.blendInTime : Config::options.blendOutTime;
+		float lerpAmount = std::clamp(elapsedTime / blendTime, 0.0, 1.0);
 
 		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
 
@@ -1299,21 +1319,29 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
-			//memcpy(g_ragdollPoseHiResLocal, poseOut, numPoses * sizeof(hkQsTransform));
-			if (ragdollData.firstFrameBlendOut) {
-				ragdollData.firstFrameBlendOut = false;
-				ragdollData.blendOutInitialPose.reserve(numPoses);
-				memcpy(ragdollData.blendOutInitialPose.data(), poseOut, numPoses * sizeof(hkQsTransform));
+			if (ragdollData.firstFrameBlendInOut) {
+				ragdollData.firstFrameBlendInOut = false;
+				ragdollData.blendInOutInitialPose.reserve(numPoses);
+
+				hkQsTransform *initialPose = isBlendIn ? g_animPose : poseOut;
+				memcpy(ragdollData.blendInOutInitialPose.data(), initialPose, numPoses * sizeof(hkQsTransform));
 			}
 
-			hkbBlendPoses(numPoses, ragdollData.blendOutInitialPose.data(), g_animPose, lerpAmount, poseOut);
+			if (isBlendIn) {
+				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
+				memcpy(g_scratchPose, poseOut, numPoses * sizeof(hkQsTransform));
+				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_scratchPose, lerpAmount, poseOut);
+			}
+			else {
+				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_animPose, lerpAmount, poseOut);
+			}
 		}
 
-		// Need to change states only after acting on the previous state
-		if (elapsedTime >= Config::options.blendOutMaxTime) {
-			state = RagdollState::Keyframed;
+		// Need to change states only after acting on the previous state)
+		if (elapsedTime >= blendTime) {
+			state = isBlendIn ? RagdollState::Collide : RagdollState::Keyframed;
 		}
+
 		ragdollData.state = state;
 	}
 }

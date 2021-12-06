@@ -9,7 +9,8 @@
 namespace Config {
 	struct Options {
 		double stopCollideMaxTime = 2.0;
-		double blendOutMaxTime = 0.15;
+		double blendInTime = 0.15;
+		double blendOutTime = 0.15;
 
 		float stopCollideStressThresholdStart = 8.f;
 		float stopCollideStressThresholdEnd = 12.f;
@@ -25,6 +26,8 @@ namespace Config {
 		float hierarchyGain = 0.17f;
 		float blendOutVelocityGain = 0.3f;
 		float blendOutPositionGain = 0.1f;
+
+		bool enableBipedCollision = true;
 	};
 	extern Options options; // global object containing options
 
