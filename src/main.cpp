@@ -46,6 +46,7 @@
 #include <Physics/Dynamics/Constraint/Bilateral/LimitedHinge/hkpLimitedHingeConstraintData.h>
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
 #include <Physics/Dynamics/World/Extensions/hkpWorldExtension.h>
+#include <Physics/Dynamics/World/Simulation/hkpSimulation.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBodyListener.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBody.h>
 #include <Physics/Collide/Query/Collector/PointCollector/hkpAllCdPointCollector.h>
@@ -671,9 +672,11 @@ struct RagdollData
 	std::vector<hkQsTransform> blendInOutInitialPose;
 	std::vector<hkQsTransform> blendInPose;
 	double stateChangedTime = 0.0;
+	hkTime driveToPoseTime = 0.f; // time is the time from hkpWorld
+	float stress = 0.f;
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
-	bool firstFrameBlendInOut = false;
+	bool isFirstFrameBlendInOut = false;
 };
 
 std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
@@ -782,7 +785,7 @@ void ModifyConstraints(Actor *actor)
 					for (int i = 0; i < wrapper->constraints.count; i++) {
 						bhkConstraint *constraint = wrapper->constraints.entries[i];
 						//bhkConstraint *fixedConstraint = ConstraintToFixedConstraint(constraint, 0.3f, false);
-						bhkConstraint *malleableConstraint = CreateMalleableConstraint(constraint, 0.3f);
+						bhkConstraint *malleableConstraint = CreateMalleableConstraint(constraint, Config::options.malleableConstraintStrength);
 						if (malleableConstraint) {
 							constraint->RemoveFromCurrentWorld();
 
@@ -820,7 +823,8 @@ bool AddRagdollToWorld(Actor *actor)
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
 						g_hipBoneTransforms.erase(driver);
-						g_ragdollData[driver] = RagdollData();
+						RagdollData data = RagdollData();
+						g_ragdollData[driver] = data;
 					}
 				}
 			}
@@ -1114,6 +1118,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
 
+	if (!isRigidBodyOn && !isPoweredOn) {
+		// No controls are active - try and force it to use the rigidbody controller
+		if (rigidBodyHeader) {
+			TryForceControls(generatorOutput, *rigidBodyHeader);
+			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
+		}
+	}
+
 	ragdollData.isOn = true;
 	if (!isRigidBodyOn) {
 		ragdollData.isOn = false;
@@ -1125,7 +1137,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.firstFrameBlendInOut = true;
+			ragdollData.isFirstFrameBlendInOut = true;
 			state = RagdollState::BlendIn;
 		}
 	}
@@ -1158,19 +1170,12 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	ragdollData.state = state;
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed || (state == RagdollState::BlendOut && !ragdollData.firstFrameBlendInOut)) { // Don't keyframe bones if we've collided with the actor
+		if (state == RagdollState::Keyframed || (state == RagdollState::BlendOut && !ragdollData.isFirstFrameBlendInOut)) { // Don't keyframe bones if we've collided with the actor
 			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
 			// Explicitly make bones not keyframed
 			keyframedBonesHeader->m_onFraction = 0.f;
-		}
-	}
-
-	if (!isRigidBodyOn && !isPoweredOn) {
-		// No controls are active - try and force it to use the rigidbody controller
-		if (rigidBodyHeader) {
-			TryForceControls(generatorOutput, *rigidBodyHeader);
 		}
 	}
 
@@ -1214,7 +1219,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 					if (rb) {
 						NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
 						//std::string boneName = std::string("Ragdoll_") + collNode->m_name;
-						_MESSAGE(collNode->m_name);
+						//_MESSAGE(collNode->m_name);
 
 						int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name);
 						if (boneIndex >= 0) {
@@ -1260,7 +1265,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 }
 
-void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
+void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
@@ -1271,29 +1276,48 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	if (numBones <= 0) return;
 
 	float totalStress = 0.f;
-	for (int i = 0; i < driver->ragdoll->getNumBones(); i++) {
+	for (int i = 0; i < numBones; i++) {
 		totalStress += sqrtf(g_stressOut[i].m_stressSquared);
 	}
 
 	float avgStress = totalStress / numBones;
-	_MESSAGE("stress: %.2f", avgStress);
+	//_MESSAGE("stress: %.2f", avgStress);
 	PrintToFile(std::to_string(avgStress), "stress.txt");
 
 	RagdollState state = ragdollData.state;
 
-	PrintToFile(std::to_string((int)state), "state.txt");
+	hkTime worldTime = context.world->m_simulation->getCurrentTime();
 
 	if (state == RagdollState::StopCollide) {
+		hkTime lastTime = ragdollData.driveToPoseTime;
+		hkTime deltaTime = worldTime - lastTime;
+		if (deltaTime < 0.f) {
+			// hkpWorld time reset has occurred. Just take the ms.
+			deltaTime = fmodf(worldTime, 1.f);
+		}
+
+		float prevStress = ragdollData.stress;
+		float dstress = fabs((avgStress - prevStress) / deltaTime);
+		PrintToFile(std::to_string(dstress), "dstress.txt");
+		_MESSAGE("%.2f", dstress);
+
 		double frameTime = GetTime();
-		float elapsedTime = (frameTime - ragdollData.stateChangedTime)  * *g_globalTimeMultiplier;
+		float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
-		if (avgStress <= stressThreshold || elapsedTime >= Config::options.stopCollideMaxTime) {
+
+		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) ||
+			avgStress <= Config::options.stopCollideStressThresholdAbsolute ||
+			elapsedTime >= Config::options.stopCollideMaxTime) {
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.firstFrameBlendInOut = true;
+			ragdollData.isFirstFrameBlendInOut = true;
 			state = RagdollState::BlendOut;
 		}
 	}
+
 	ragdollData.state = state;
+
+	ragdollData.stress = avgStress;
+	ragdollData.driveToPoseTime = worldTime;
 
 	/*
 	if (state == RagdollState::BlendOut) {
@@ -1307,7 +1331,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	*/
 }
 
-std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics(). Just reserve a bunch of space so it can handle any number of bones.
+std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics()
 
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
@@ -1354,8 +1378,8 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			if (ragdollData.firstFrameBlendInOut) {
-				ragdollData.firstFrameBlendInOut = false;
+			if (ragdollData.isFirstFrameBlendInOut) {
+				ragdollData.isFirstFrameBlendInOut = false;
 
 				hkQsTransform *initialPose = isBlendIn ? g_animPose.data() : poseOut;
 
@@ -1497,7 +1521,8 @@ void PerformHooks(void)
 
 				// Restore args to pass to our post hook
 				mov(rcx, ptr[rsi + 0xF0]); // hkbRagdollDriver
-				lea(rdx, ptr[rsp + 0x60]); // hkbGeneratorOutput
+				lea(rdx, ptr[rsp + 0x60]); // hkbContext
+				mov(r8, r12); // hkbGeneratorOutput
 
 				// Call our post hook
 				mov(rax, (uintptr_t)PostDriveToPoseHook);

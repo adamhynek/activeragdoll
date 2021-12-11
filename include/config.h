@@ -12,8 +12,10 @@ namespace Config {
 		double blendInTime = 0.15;
 		double blendOutTime = 0.15;
 
-		float stopCollideStressThresholdStart = 8.f;
-		float stopCollideStressThresholdEnd = 12.f;
+		float stopCollideStressThresholdStart = 20.f;
+		float stopCollideStressThresholdEnd = 40.f;
+		float stopCollideStressThresholdAbsolute = 8.f;
+		float stopCollideDeltaStressThreshold = 10.f;
 
 		bool doRootMotion = true;
 		float rootMotionMinOffset = 0.02f;
@@ -28,6 +30,8 @@ namespace Config {
 		float stopCollideHierarchyGain = 0.17f;
 		float stopCollideVelocityGain = 0.3f;
 		float stopCollidePositionGain = 0.1f;
+
+		float malleableConstraintStrength = 0.5f;
 
 		bool enableBipedCollision = true;
 	};
