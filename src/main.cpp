@@ -682,13 +682,14 @@ enum class RagdollState : UInt8
 std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics()
 struct Blender
 {
-	enum class BlendDirection : UInt8
+	enum class BlendType : UInt8
 	{
-		In,
-		Out
+		AnimToRagdoll,
+		RagdollToAnim,
+		CurrentRagdollToAnim
 	};
 
-	void StartBlend(BlendDirection direction, double time, RagdollState endState)
+	void StartBlend(BlendType blendType, double currentTime, double blendDuration)
 	{
 		if (isActive) {
 			// We were already blending before, so set the initial pose to the current blend pose
@@ -699,19 +700,21 @@ struct Blender
 			isFirstBlendFrame = true;
 		}
 
-		startTime = time;
-		blendDirection = direction;
-		doneState = endState;
+		startTime = currentTime;
+		blendTime = blendDuration;
+		type = blendType;
 		isActive = true;
+	}
+
+	inline void StopBlend()
+	{
+		isActive = false;
 	}
 
 	bool Update(hkbGeneratorOutput &inOut, double frameTime)
 	{
 		double elapsedTime = (frameTime - startTime) * *g_globalTimeMultiplier;
 
-		bool isBlendIn = blendDirection == BlendDirection::In;
-
-		double blendTime = isBlendIn ? Config::options.blendInTime : Config::options.blendOutTime;
 		float lerpAmount = std::clamp(elapsedTime / blendTime, 0.0, 1.0);
 
 		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
@@ -721,20 +724,31 @@ struct Blender
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			if (isFirstBlendFrame) {
-				isFirstBlendFrame = false;
 
-				hkQsTransform *fromPose = isBlendIn ? g_animPose.data() : poseOut; // anim pose vs ragdoll pose
+			// Save initial pose if necessary
+			if ((type == BlendType::AnimToRagdoll || type == BlendType::RagdollToAnim) && isFirstBlendFrame) {
+				hkQsTransform *fromPose = nullptr;
+				if (type == BlendType::AnimToRagdoll)
+					fromPose = g_animPose.data();
+				else if (type == BlendType::RagdollToAnim)
+					fromPose = poseOut; // ragdoll pose
 				initialPose.assign(fromPose, fromPose + numPoses);
 			}
+			isFirstBlendFrame = false;
 
-			if (isBlendIn) {
+			// Blend poses
+			if (type == BlendType::AnimToRagdoll) {
 				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
 				scratchPose.assign(poseOut, poseOut + numPoses);
 				hkbBlendPoses(numPoses, initialPose.data(), scratchPose.data(), lerpAmount, poseOut);
 			}
-			else {
+			else if (type == BlendType::RagdollToAnim) {
 				hkbBlendPoses(numPoses, initialPose.data(), g_animPose.data(), lerpAmount, poseOut);
+			}
+			else if (type == BlendType::CurrentRagdollToAnim) {
+				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
+				scratchPose.assign(poseOut, poseOut + numPoses);
+				hkbBlendPoses(numPoses, scratchPose.data(), g_animPose.data(), lerpAmount, poseOut);
 			}
 
 			currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here
@@ -751,15 +765,15 @@ struct Blender
 
 	inline bool IsBlendingOut()
 	{
-		return isActive && blendDirection == BlendDirection::Out && !isFirstBlendFrame;
+		return isActive && (type == BlendType::RagdollToAnim) && !isFirstBlendFrame;
 	}
 
 	std::vector<hkQsTransform> initialPose{};
 	std::vector<hkQsTransform> currentPose{};
 	std::vector<hkQsTransform> scratchPose{};
 	double startTime = 0.0;
-	RagdollState doneState = RagdollState::Keyframed;
-	BlendDirection blendDirection = BlendDirection::In;
+	double blendTime = 0.0;
+	BlendType type = BlendType::AnimToRagdoll;
 	bool isFirstBlendFrame = false;
 	bool isActive = false;
 };
@@ -1222,30 +1236,33 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.blender.StartBlend(Blender::BlendDirection::In, frameTime, RagdollState::Collide);
+			ragdollData.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
 			state = RagdollState::BlendIn;
 		}
 	}
 	if (state == RagdollState::BlendIn) {
 		if (!isCollidedWith) {
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.blender.StartBlend(Blender::BlendDirection::Out, frameTime, RagdollState::Keyframed);
+			ragdollData.blender.StartBlend(Blender::BlendType::RagdollToAnim, frameTime, Config::options.blendOutTime);
 			state = RagdollState::BlendOut;
 		}
 	}
 	if (state == RagdollState::Collide) {
 		if (!isCollidedWith) {
 			ragdollData.stateChangedTime = frameTime;
+			ragdollData.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Config::options.stopCollideMaxTime);
 			state = RagdollState::StopCollide;
 		}
 	}
 	if (state == RagdollState::StopCollide) {
 		if (isCollidedWith) {
-			state = RagdollState::Collide;
+			ragdollData.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
+			state = RagdollState::BlendIn;
 		}
 	}
 	if (state == RagdollState::BlendOut) {
 		if (isCollidedWith) {
+			ragdollData.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
 			state = RagdollState::BlendIn;
 		}
 	}
@@ -1388,10 +1405,8 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
 		float stressThresholdAbsolute = lerp(Config::options.stopCollideStressThresholdAbsoluteStart, Config::options.stopCollideStressThresholdAbsoluteEnd, elapsedTime);
 
-		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) ||
-			avgStress <= stressThresholdAbsolute ||
-			elapsedTime >= Config::options.stopCollideMaxTime) {
-			ragdollData.blender.StartBlend(Blender::BlendDirection::Out, frameTime, RagdollState::Keyframed);
+		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) || avgStress <= stressThresholdAbsolute) {
+			ragdollData.blender.StartBlend(Blender::BlendType::RagdollToAnim, frameTime, Config::options.blendOutTime);
 			ragdollData.stateChangedTime = frameTime;
 			state = RagdollState::BlendOut;
 		}
@@ -1442,11 +1457,18 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	RagdollState state = ragdollData.state;
 
+	PrintToFile(std::to_string((int)state), "state.txt");
+
 	Blender &blender = ragdollData.blender;
 	if (blender.isActive) {
 		bool done = blender.Update(inOut, ragdollData.frameTime);
 		if (done) {
-			state = blender.doneState;
+			if (state == RagdollState::BlendIn)
+				state = RagdollState::Collide;
+			else if (state == RagdollState::BlendOut)
+				state = RagdollState::Keyframed;
+			else if (state == RagdollState::StopCollide)
+				state = RagdollState::Keyframed; // This means that the full StopCollideMaxTime has passed, so we are now fully blended in and thus don't need to go into BlendOut
 		}
 	}
 

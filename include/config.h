@@ -8,7 +8,7 @@
 
 namespace Config {
 	struct Options {
-		double stopCollideMaxTime = 2.0;
+		double stopCollideMaxTime = 1.0;
 		double blendInTime = 0.15;
 		double blendOutTime = 0.15;
 
