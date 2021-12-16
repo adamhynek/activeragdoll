@@ -14,7 +14,8 @@ namespace Config {
 
 		float stopCollideStressThresholdStart = 20.f;
 		float stopCollideStressThresholdEnd = 40.f;
-		float stopCollideStressThresholdAbsolute = 8.f;
+		float stopCollideStressThresholdAbsoluteStart = 8.f;
+		float stopCollideStressThresholdAbsoluteEnd = 15.f;
 		float stopCollideDeltaStressThreshold = 10.f;
 
 		bool doRootMotion = true;
@@ -23,7 +24,7 @@ namespace Config {
 
 		float activeRagdollDistance = 4.f;
 
-		float collideHierarchyGain = 0.17f;
+		float collideHierarchyGain = 0.6f;
 		float collideVelocityGain = 0.6f;
 		float collidePositionGain = 0.05f;
 
@@ -31,7 +32,7 @@ namespace Config {
 		float stopCollideVelocityGain = 0.3f;
 		float stopCollidePositionGain = 0.1f;
 
-		float malleableConstraintStrength = 0.5f;
+		float malleableConstraintStrength = 1.f;
 
 		bool enableBipedCollision = true;
 	};

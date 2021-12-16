@@ -615,7 +615,7 @@ struct ContactListener : hkpContactListener
 			++g_hitHandleCounts[handle];
 
 			//hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-			activeCollisions.insert(SortPair(rigidBodyA, rigidBodyB));
+			activeCollisions.insert(SortPair(rigidBodyA, rigidBodyB)); // TODO: Can there be multiple collisions between the same entity pair?
 
 			//_MESSAGE("Collision added");
 		}
@@ -1304,9 +1304,10 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		double frameTime = GetTime();
 		float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
+		float stressThresholdAbsolute = lerp(Config::options.stopCollideStressThresholdAbsoluteStart, Config::options.stopCollideStressThresholdAbsoluteEnd, elapsedTime);
 
 		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) ||
-			avgStress <= Config::options.stopCollideStressThresholdAbsolute ||
+			avgStress <= stressThresholdAbsolute ||
 			elapsedTime >= Config::options.stopCollideMaxTime) {
 			ragdollData.stateChangedTime = frameTime;
 			ragdollData.isFirstFrameBlendInOut = true;
