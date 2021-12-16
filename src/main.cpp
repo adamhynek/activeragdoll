@@ -583,6 +583,18 @@ RelocAddr<_hkbBlendPoses> hkbBlendPoses(0xB4DD80);
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager>& a_out);
 
 
+inline hkReal * Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	return reinterpret_cast<hkReal*>(reinterpret_cast<char*>(output.m_tracks) + header.m_dataOffset);
+}
+
+inline hkInt8* Track_getIndices(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	// must be sparse or pallette track
+	int numDataBytes = HK_NEXT_MULTIPLE_OF(16, header.m_elementSizeBytes * header.m_capacity);
+	return reinterpret_cast<hkInt8*>(Track_getData(output, header)) + numDataBytes;
+}
+
 std::unordered_map<UInt32, int> g_hitHandleCounts;
 struct ContactListener : hkpContactListener
 {
@@ -658,7 +670,7 @@ struct ContactListener : hkpContactListener
 };
 ContactListener *contactListener = nullptr;
 
-enum class RagdollState
+enum class RagdollState : UInt8
 {
 	Keyframed,
 	BlendIn,
@@ -667,16 +679,100 @@ enum class RagdollState
 	BlendOut
 };
 
+std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics()
+struct Blender
+{
+	enum class BlendDirection : UInt8
+	{
+		In,
+		Out
+	};
+
+	void StartBlend(BlendDirection direction, double time, RagdollState endState)
+	{
+		if (isActive) {
+			// We were already blending before, so set the initial pose to the current blend pose
+			initialPose = currentPose;
+			isFirstBlendFrame = false;
+		}
+		else {
+			isFirstBlendFrame = true;
+		}
+
+		startTime = time;
+		blendDirection = direction;
+		doneState = endState;
+		isActive = true;
+	}
+
+	bool Update(hkbGeneratorOutput &inOut, double frameTime)
+	{
+		double elapsedTime = (frameTime - startTime) * *g_globalTimeMultiplier;
+
+		bool isBlendIn = blendDirection == BlendDirection::In;
+
+		double blendTime = isBlendIn ? Config::options.blendInTime : Config::options.blendOutTime;
+		float lerpAmount = std::clamp(elapsedTime / blendTime, 0.0, 1.0);
+
+		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
+
+		int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
+		hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+			int numPoses = poseHeader->m_numData;
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			if (isFirstBlendFrame) {
+				isFirstBlendFrame = false;
+
+				hkQsTransform *fromPose = isBlendIn ? g_animPose.data() : poseOut; // anim pose vs ragdoll pose
+				initialPose.assign(fromPose, fromPose + numPoses);
+			}
+
+			if (isBlendIn) {
+				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
+				scratchPose.assign(poseOut, poseOut + numPoses);
+				hkbBlendPoses(numPoses, initialPose.data(), scratchPose.data(), lerpAmount, poseOut);
+			}
+			else {
+				hkbBlendPoses(numPoses, initialPose.data(), g_animPose.data(), lerpAmount, poseOut);
+			}
+
+			currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here
+		}
+
+		// Need to change states only after acting on the previous state)
+		if (elapsedTime >= blendTime) {
+			isActive = false;
+			return true;
+		}
+
+		return false;
+	}
+
+	inline bool IsBlendingOut()
+	{
+		return isActive && blendDirection == BlendDirection::Out && !isFirstBlendFrame;
+	}
+
+	std::vector<hkQsTransform> initialPose{};
+	std::vector<hkQsTransform> currentPose{};
+	std::vector<hkQsTransform> scratchPose{};
+	double startTime = 0.0;
+	RagdollState doneState = RagdollState::Keyframed;
+	BlendDirection blendDirection = BlendDirection::In;
+	bool isFirstBlendFrame = false;
+	bool isActive = false;
+};
+
 struct RagdollData
 {
-	std::vector<hkQsTransform> blendInOutInitialPose;
-	std::vector<hkQsTransform> blendInPose;
+	Blender blender{};
+	double frameTime = 0.0;
 	double stateChangedTime = 0.0;
 	hkTime driveToPoseTime = 0.f; // time is the time from hkpWorld
 	float stress = 0.f;
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
-	bool isFirstFrameBlendInOut = false;
 };
 
 std::unordered_map<hkbRagdollDriver *, RagdollData> g_ragdollData;
@@ -1032,18 +1128,6 @@ void ProcessHavokHitJobsHook()
 	}
 }
 
-inline hkReal * Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
-{
-	return reinterpret_cast<hkReal*>(reinterpret_cast<char*>(output.m_tracks) + header.m_dataOffset);
-}
-
-inline hkInt8* Track_getIndices(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
-{
-	// must be sparse or pallette track
-	int numDataBytes = HK_NEXT_MULTIPLE_OF(16, header.m_elementSizeBytes * header.m_capacity);
-	return reinterpret_cast<hkInt8*>(Track_getData(output, header)) + numDataBytes;
-}
-
 void TryForceControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
 {
 	if (header.m_capacity > 0) {
@@ -1111,9 +1195,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	bool isCollidedWith = g_hitDrivers.count(driver) || g_higgsDrivers.count(driver);
 
-	double frameTime = GetTime();
-
 	RagdollData &ragdollData = g_ragdollData[driver];
+
+	double frameTime = GetTime();
+	ragdollData.frameTime = frameTime;
 
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
@@ -1137,17 +1222,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (state == RagdollState::Keyframed) {
 		if (isCollidedWith) {
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.isFirstFrameBlendInOut = true;
+			ragdollData.blender.StartBlend(Blender::BlendDirection::In, frameTime, RagdollState::Collide);
 			state = RagdollState::BlendIn;
 		}
 	}
 	if (state == RagdollState::BlendIn) {
 		if (!isCollidedWith) {
-			// Set the initial pose to blend from to the current pose we've blended into so far
-			int numPoses = poseHeader->m_numData;
-			ragdollData.blendInOutInitialPose.reserve(numPoses);
-			memcpy(ragdollData.blendInOutInitialPose.data(), ragdollData.blendInPose.data(), numPoses * sizeof(hkQsTransform));
 			ragdollData.stateChangedTime = frameTime;
+			ragdollData.blender.StartBlend(Blender::BlendDirection::Out, frameTime, RagdollState::Keyframed);
 			state = RagdollState::BlendOut;
 		}
 	}
@@ -1170,7 +1252,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	ragdollData.state = state;
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed || (state == RagdollState::BlendOut && !ragdollData.isFirstFrameBlendInOut)) { // Don't keyframe bones if we've collided with the actor
+		if (state == RagdollState::Keyframed || ragdollData.blender.IsBlendingOut()) { // Don't keyframe bones if we've collided with the actor
 			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
@@ -1301,7 +1383,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		PrintToFile(std::to_string(dstress), "dstress.txt");
 		_MESSAGE("%.2f", dstress);
 
-		double frameTime = GetTime();
+		double frameTime = ragdollData.frameTime;
 		float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
 		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
 		float stressThresholdAbsolute = lerp(Config::options.stopCollideStressThresholdAbsoluteStart, Config::options.stopCollideStressThresholdAbsoluteEnd, elapsedTime);
@@ -1309,8 +1391,8 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) ||
 			avgStress <= stressThresholdAbsolute ||
 			elapsedTime >= Config::options.stopCollideMaxTime) {
+			ragdollData.blender.StartBlend(Blender::BlendDirection::Out, frameTime, RagdollState::Keyframed);
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.isFirstFrameBlendInOut = true;
 			state = RagdollState::BlendOut;
 		}
 	}
@@ -1332,8 +1414,6 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	*/
 }
 
-std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics()
-
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right before hkbRagdollDriver::postPhysics()
@@ -1349,12 +1429,10 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
-		g_animPose.reserve(numPoses);
-		memcpy(g_animPose.data(), animPose, numPoses * sizeof(hkQsTransform));
+		g_animPose.assign(animPose, animPose + numPoses);
 	}
 }
 
-std::vector<hkQsTransform> g_scratchPose;
 void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
@@ -1364,52 +1442,15 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	RagdollState state = ragdollData.state;
 
-	if (state == RagdollState::BlendIn || state == RagdollState::BlendOut) {
-		double elapsedTime = (GetTime() - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
-
-		bool isBlendIn = state == RagdollState::BlendIn;
-
-		double blendTime = isBlendIn ? Config::options.blendInTime : Config::options.blendOutTime;
-		float lerpAmount = std::clamp(elapsedTime / blendTime, 0.0, 1.0);
-
-		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
-
-		int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
-		hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
-		if (poseHeader && poseHeader->m_onFraction > 0.f) {
-			int numPoses = poseHeader->m_numData;
-			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			if (ragdollData.isFirstFrameBlendInOut) {
-				ragdollData.isFirstFrameBlendInOut = false;
-
-				hkQsTransform *initialPose = isBlendIn ? g_animPose.data() : poseOut;
-
-				ragdollData.blendInOutInitialPose.reserve(numPoses);
-				memcpy(ragdollData.blendInOutInitialPose.data(), initialPose, numPoses * sizeof(hkQsTransform));
-			}
-
-			if (isBlendIn) {
-				// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
-				g_scratchPose.reserve(numPoses);
-				memcpy(g_scratchPose.data(), poseOut, numPoses * sizeof(hkQsTransform));
-
-				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_scratchPose.data(), lerpAmount, poseOut);
-
-				ragdollData.blendInPose.reserve(numPoses);
-				memcpy(ragdollData.blendInPose.data(), poseOut, numPoses * sizeof(hkQsTransform)); // save the blended pose in case we need to blend out from here
-			}
-			else {
-				hkbBlendPoses(numPoses, ragdollData.blendInOutInitialPose.data(), g_animPose.data(), lerpAmount, poseOut);
-			}
+	Blender &blender = ragdollData.blender;
+	if (blender.isActive) {
+		bool done = blender.Update(inOut, ragdollData.frameTime);
+		if (done) {
+			state = blender.doneState;
 		}
-
-		// Need to change states only after acting on the previous state)
-		if (elapsedTime >= blendTime) {
-			state = isBlendIn ? RagdollState::Collide : RagdollState::Keyframed;
-		}
-
-		ragdollData.state = state;
 	}
+
+	ragdollData.state = state;
 }
 
 
