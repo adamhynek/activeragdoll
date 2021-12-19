@@ -91,9 +91,9 @@ namespace Config {
 		if (!ReadFloat("CollideVelocityGain", options.collideVelocityGain)) return false;
 		if (!ReadFloat("CollidePositionGain", options.collidePositionGain)) return false;
 
-		if (!ReadFloat("StopCollideHierarchyGain", options.stopCollideHierarchyGain)) return false;
-		if (!ReadFloat("StopCollideVelocityGain", options.stopCollideVelocityGain)) return false;
-		if (!ReadFloat("StopCollidePositionGain", options.stopCollidePositionGain)) return false;
+		if (!ReadFloat("BlendOutHierarchyGain", options.blendOutHierarchyGain)) return false;
+		if (!ReadFloat("BlendOutVelocityGain", options.blendOutVelocityGain)) return false;
+		if (!ReadFloat("BlendOutPositionGain", options.blendOutPositionGain)) return false;
 
 		if (!ReadBool("DoRootMotion", options.doRootMotion)) return false;
 		if (!ReadFloat("RootMotionMinOffset", options.rootMotionMinOffset)) return false;

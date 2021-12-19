@@ -691,8 +691,7 @@ enum class RagdollState : UInt8
 	Keyframed,
 	BlendIn,
 	Collide,
-	StopCollide,
-	BlendOut
+	BlendOut,
 };
 
 std::vector<hkQsTransform> g_animPose; // set in a hook before postPhysics()
@@ -808,11 +807,6 @@ struct Blender
 		}
 
 		return false;
-	}
-
-	inline bool IsBlendingOut()
-	{
-		return isActive && (type == BlendType::RagdollToAnim) && !isFirstBlendFrame;
 	}
 
 	std::vector<hkQsTransform> initialPose{};
@@ -1300,26 +1294,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			state = RagdollState::BlendIn;
 		}
 	}
-	if (state == RagdollState::BlendIn) {
-		if (!isCollidedWith) {
-			ragdollData.stateChangedTime = frameTime;
-			ragdollData.blender.StartBlend(Blender::BlendType::RagdollToAnim, frameTime, Config::options.blendOutTime);
-			state = RagdollState::BlendOut;
-		}
-	}
 	if (state == RagdollState::Collide) {
 		if (!isCollidedWith) {
-			double stressLerp = max(0.0, (double)ragdollData.stress - Config::options.stopCollideBlendStressMin) / (Config::options.stopCollideBlendStressMax - Config::options.stopCollideBlendStressMin);
-			double blendDuration = lerp(Config::options.stopCollideBlendDurationMin, Config::options.stopCollideBlendDurationMax, stressLerp);
-			ragdollData.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Blender::PowerCurve(blendDuration, Config::options.stopCollideBlendPower));
+			double stressLerp = max(0.0, (double)ragdollData.stress - Config::options.blendOutDurationStressMin) / (Config::options.blendOutDurationStressMax - Config::options.blendOutDurationStressMin);
+			double blendDuration = lerp(Config::options.blendOutDurationMin, Config::options.blendOutDurationMax, stressLerp);
+			ragdollData.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Blender::PowerCurve(blendDuration, Config::options.blendOutBlendPower));
 			ragdollData.stateChangedTime = frameTime;
-			state = RagdollState::StopCollide;
-		}
-	}
-	if (state == RagdollState::StopCollide) {
-		if (isCollidedWith) {
-			ragdollData.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
-			state = RagdollState::BlendIn;
+			state = RagdollState::BlendOut;
 		}
 	}
 	if (state == RagdollState::BlendOut) {
@@ -1331,7 +1312,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	ragdollData.state = state;
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed || ragdollData.blender.IsBlendingOut()) { // Don't keyframe bones if we've collided with the actor
+		if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
 			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
@@ -1340,15 +1321,15 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::StopCollide) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
+	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::BlendOut) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
 		if (rigidBodyHeader->m_numData > 0) {
 			float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
 
 			float hierarchyGain, velocityGain, positionGain;
-			if (state == RagdollState::StopCollide) {
-				hierarchyGain = Config::options.stopCollideHierarchyGain;
-				velocityGain = Config::options.stopCollideVelocityGain;
-				positionGain = Config::options.stopCollidePositionGain;
+			if (state == RagdollState::BlendOut) {
+				hierarchyGain = Config::options.blendOutHierarchyGain;
+				velocityGain = Config::options.blendOutVelocityGain;
+				positionGain = Config::options.blendOutPositionGain;
 			}
 			else {
 				hierarchyGain = Config::options.collideHierarchyGain;
@@ -1481,8 +1462,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 			if (state == RagdollState::BlendIn)
 				state = RagdollState::Collide;
 			else if (state == RagdollState::BlendOut)
-				state = RagdollState::Keyframed;
-			else if (state == RagdollState::StopCollide)
 				state = RagdollState::Keyframed;
 		}
 	}

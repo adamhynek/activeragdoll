@@ -8,11 +8,11 @@
 
 namespace Config {
 	struct Options {
-		double stopCollideBlendDurationMin = 0.2;
-		double stopCollideBlendDurationMax = 0.4;
-		double stopCollideBlendStressMin = 0.0;
-		double stopCollideBlendStressMax = 40.0;
-		double stopCollideBlendPower = 2.5;
+		double blendOutDurationMin = 0.2;
+		double blendOutDurationMax = 0.4;
+		double blendOutDurationStressMin = 0.0;
+		double blendOutDurationStressMax = 40.0;
+		double blendOutBlendPower = 2.5;
 		double blendInTime = 0.15;
 		double blendOutTime = 0.15;
 
@@ -26,9 +26,9 @@ namespace Config {
 		float collideVelocityGain = 0.6f;
 		float collidePositionGain = 0.05f;
 
-		float stopCollideHierarchyGain = 0.6f;
-		float stopCollideVelocityGain = 0.6f;
-		float stopCollidePositionGain = 0.05f;
+		float blendOutHierarchyGain = 0.6f;
+		float blendOutVelocityGain = 0.6f;
+		float blendOutPositionGain = 0.05f;
 
 		float malleableConstraintStrength = 1.f;
 
