@@ -84,12 +84,8 @@ namespace Config {
 
 	bool ReadConfigOptions()
 	{
-		if (!ReadDouble("StopCollideMaxTime", options.stopCollideMaxTime)) return false;
 		if (!ReadDouble("BlendInTime", options.blendInTime)) return false;
 		if (!ReadDouble("BlendOutTime", options.blendOutTime)) return false;
-
-		if (!ReadFloat("StopCollideStressThresholdStart", options.stopCollideStressThresholdStart)) return false;
-		if (!ReadFloat("StopCollideStressThresholdEnd", options.stopCollideStressThresholdEnd)) return false;
 
 		if (!ReadFloat("CollideHierarchyGain", options.collideHierarchyGain)) return false;
 		if (!ReadFloat("CollideVelocityGain", options.collideVelocityGain)) return false;

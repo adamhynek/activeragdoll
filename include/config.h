@@ -8,15 +8,13 @@
 
 namespace Config {
 	struct Options {
-		double stopCollideMaxTime = 1.0;
+		double stopCollideBlendDurationMin = 0.2;
+		double stopCollideBlendDurationMax = 0.4;
+		double stopCollideBlendStressMin = 0.0;
+		double stopCollideBlendStressMax = 40.0;
+		double stopCollideBlendPower = 2.5;
 		double blendInTime = 0.15;
 		double blendOutTime = 0.15;
-
-		float stopCollideStressThresholdStart = 20.f;
-		float stopCollideStressThresholdEnd = 40.f;
-		float stopCollideStressThresholdAbsoluteStart = 8.f;
-		float stopCollideStressThresholdAbsoluteEnd = 15.f;
-		float stopCollideDeltaStressThreshold = 10.f;
 
 		bool doRootMotion = true;
 		float rootMotionMinOffset = 0.02f;
@@ -28,9 +26,9 @@ namespace Config {
 		float collideVelocityGain = 0.6f;
 		float collidePositionGain = 0.05f;
 
-		float stopCollideHierarchyGain = 0.17f;
-		float stopCollideVelocityGain = 0.3f;
-		float stopCollidePositionGain = 0.1f;
+		float stopCollideHierarchyGain = 0.6f;
+		float stopCollideVelocityGain = 0.6f;
+		float stopCollidePositionGain = 0.05f;
 
 		float malleableConstraintStrength = 1.f;
 

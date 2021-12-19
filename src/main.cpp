@@ -47,6 +47,7 @@
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
 #include <Physics/Dynamics/World/Extensions/hkpWorldExtension.h>
 #include <Physics/Dynamics/World/Simulation/hkpSimulation.h>
+#include <Physics/Utilities/CharacterControl/CharacterProxy/hkpCharacterProxyListener.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBodyListener.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBody.h>
 #include <Physics/Collide/Query/Collector/PointCollector/hkpAllCdPointCollector.h>
@@ -384,6 +385,13 @@ class bhkCharacterPointCollector : public hkpAllCdPointCollector
 };
 static_assert(sizeof(bhkCharacterPointCollector) == 0x240);
 
+struct bhkCharacterProxy : bhkSerializable
+{
+	hkpCharacterProxy *characterProxy; // 10
+	UInt64 unk18;
+	bhkCharacterPointCollector ignoredCollisionStartCollector; // 020
+};
+
 struct bhkCharacterRigidBody : bhkSerializable
 {
 	hkpCharacterRigidBody *characterRigidBody; // 10
@@ -393,6 +401,14 @@ struct bhkCharacterRigidBody : bhkSerializable
 	bhkCharacterPointCollector ignoredCollisionStartCollector;  // 30
 };
 static_assert(offsetof(bhkCharacterRigidBody, ignoredCollisionStartCollector) == 0x30);
+
+struct bhkCharProxyController :
+	hkpCharacterProxyListener, // 000
+	bhkCharacterController // 010
+{
+	bhkCharacterProxy proxy; // 340
+};
+static_assert(offsetof(bhkCharProxyController, proxy) == 0x340);
 
 struct bhkCharRigidBodyController :
 	bhkCharacterController, // 00
@@ -689,7 +705,39 @@ struct Blender
 		CurrentRagdollToAnim
 	};
 
-	void StartBlend(BlendType blendType, double currentTime, double blendDuration)
+	struct Curve
+	{
+		Curve(double duration) : duration(duration) {};
+
+		virtual float GetBlendValueAtTime(double time)
+		{
+			// Linear by default
+			// y = (1/d)*t
+			return std::clamp(time / duration, 0.0, 1.0);
+		}
+
+		double duration = 1.0;
+	};
+
+	struct PowerCurve : Curve
+	{
+		PowerCurve(double duration, double power) :
+			a(pow(power, -duration)), // a = b^(-d)
+			b(power),
+			Curve(duration)
+		{}
+
+		virtual float GetBlendValueAtTime(double time) override
+		{
+			// y = a * t^b
+			return std::clamp(a * pow(time, b), 0.0, 1.0);
+		}
+
+		double a;
+		double b;
+	};
+
+	void StartBlend(BlendType blendType, double currentTime, const Curve &blendCurve)
 	{
 		if (isActive) {
 			// We were already blending before, so set the initial pose to the current blend pose
@@ -701,8 +749,8 @@ struct Blender
 		}
 
 		startTime = currentTime;
-		blendTime = blendDuration;
 		type = blendType;
+		curve = blendCurve;
 		isActive = true;
 	}
 
@@ -715,7 +763,7 @@ struct Blender
 	{
 		double elapsedTime = (frameTime - startTime) * *g_globalTimeMultiplier;
 
-		float lerpAmount = std::clamp(elapsedTime / blendTime, 0.0, 1.0);
+		float lerpAmount = curve.GetBlendValueAtTime(elapsedTime);
 
 		hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
 
@@ -754,8 +802,7 @@ struct Blender
 			currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here
 		}
 
-		// Need to change states only after acting on the previous state)
-		if (elapsedTime >= blendTime) {
+		if (elapsedTime >= curve.duration) {
 			isActive = false;
 			return true;
 		}
@@ -772,8 +819,8 @@ struct Blender
 	std::vector<hkQsTransform> currentPose{};
 	std::vector<hkQsTransform> scratchPose{};
 	double startTime = 0.0;
-	double blendTime = 0.0;
 	BlendType type = BlendType::AnimToRagdoll;
+	Curve curve{ 1.0 };
 	bool isFirstBlendFrame = false;
 	bool isActive = false;
 };
@@ -783,7 +830,6 @@ struct RagdollData
 	Blender blender{};
 	double frameTime = 0.0;
 	double stateChangedTime = 0.0;
-	hkTime driveToPoseTime = 0.f; // time is the time from hkpWorld
 	float stress = 0.f;
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
@@ -1032,6 +1078,20 @@ bhkCharRigidBodyController * GetCharRigidBodyController(Actor *actor)
 	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharRigidBodyController);
 }
 
+bhkCharProxyController * GetCharProxyController(Actor *actor)
+{
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return nullptr;
+
+	MiddleProcess *middleProcess = process->middleProcess;
+	if (!middleProcess) return nullptr;
+
+	NiPointer<bhkCharacterController> controller = *((NiPointer<bhkCharacterController> *)&middleProcess->unk250);
+	if (!controller) return nullptr;
+
+	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharProxyController);
+}
+
 std::unordered_set<hkbRagdollDriver *> g_hitDrivers;
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
 
@@ -1249,8 +1309,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 	if (state == RagdollState::Collide) {
 		if (!isCollidedWith) {
+			double stressLerp = max(0.0, (double)ragdollData.stress - Config::options.stopCollideBlendStressMin) / (Config::options.stopCollideBlendStressMax - Config::options.stopCollideBlendStressMin);
+			double blendDuration = lerp(Config::options.stopCollideBlendDurationMin, Config::options.stopCollideBlendDurationMax, stressLerp);
+			ragdollData.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Blender::PowerCurve(blendDuration, Config::options.stopCollideBlendPower));
 			ragdollData.stateChangedTime = frameTime;
-			ragdollData.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Config::options.stopCollideMaxTime);
 			state = RagdollState::StopCollide;
 		}
 	}
@@ -1284,11 +1346,9 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 			float hierarchyGain, velocityGain, positionGain;
 			if (state == RagdollState::StopCollide) {
-				float lerpAmount = elapsedTime / Config::options.stopCollideMaxTime;
-				lerpAmount = std::clamp(lerpAmount, 0.f, 1.f);
-				hierarchyGain = lerp(Config::options.collideHierarchyGain, Config::options.stopCollideHierarchyGain, lerpAmount);
-				velocityGain = lerp(Config::options.collideVelocityGain, Config::options.stopCollideVelocityGain, lerpAmount);
-				positionGain = lerp(Config::options.collidePositionGain, Config::options.stopCollidePositionGain, lerpAmount);
+				hierarchyGain = Config::options.stopCollideHierarchyGain;
+				velocityGain = Config::options.stopCollideVelocityGain;
+				positionGain = Config::options.stopCollidePositionGain;
 			}
 			else {
 				hierarchyGain = Config::options.collideHierarchyGain;
@@ -1379,54 +1439,9 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		totalStress += sqrtf(g_stressOut[i].m_stressSquared);
 	}
 
-	float avgStress = totalStress / numBones;
+	ragdollData.stress = totalStress / numBones;
 	//_MESSAGE("stress: %.2f", avgStress);
-	PrintToFile(std::to_string(avgStress), "stress.txt");
-
-	RagdollState state = ragdollData.state;
-
-	hkTime worldTime = context.world->m_simulation->getCurrentTime();
-
-	if (state == RagdollState::StopCollide) {
-		hkTime lastTime = ragdollData.driveToPoseTime;
-		hkTime deltaTime = worldTime - lastTime;
-		if (deltaTime < 0.f) {
-			// hkpWorld time reset has occurred. Just take the ms.
-			deltaTime = fmodf(worldTime, 1.f);
-		}
-
-		float prevStress = ragdollData.stress;
-		float dstress = fabs((avgStress - prevStress) / deltaTime);
-		PrintToFile(std::to_string(dstress), "dstress.txt");
-		_MESSAGE("%.2f", dstress);
-
-		double frameTime = ragdollData.frameTime;
-		float elapsedTime = (frameTime - ragdollData.stateChangedTime) * *g_globalTimeMultiplier;
-		float stressThreshold = lerp(Config::options.stopCollideStressThresholdStart, Config::options.stopCollideStressThresholdEnd, elapsedTime);
-		float stressThresholdAbsolute = lerp(Config::options.stopCollideStressThresholdAbsoluteStart, Config::options.stopCollideStressThresholdAbsoluteEnd, elapsedTime);
-
-		if ((dstress <= Config::options.stopCollideDeltaStressThreshold && avgStress <= stressThreshold) || avgStress <= stressThresholdAbsolute) {
-			ragdollData.blender.StartBlend(Blender::BlendType::RagdollToAnim, frameTime, Config::options.blendOutTime);
-			ragdollData.stateChangedTime = frameTime;
-			state = RagdollState::BlendOut;
-		}
-	}
-
-	ragdollData.state = state;
-
-	ragdollData.stress = avgStress;
-	ragdollData.driveToPoseTime = worldTime;
-
-	/*
-	if (state == RagdollState::BlendOut) {
-		bool x;
-		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
-			if (*hkpConstraintInstance_isEnabled(constraint, &x)) {
-				hkpConstraintInstance_setEnabled(constraint, false);
-			}
-		}
-	}
-	*/
+	PrintToFile(std::to_string(ragdollData.stress), "stress.txt");
 }
 
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
@@ -1468,7 +1483,7 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 			else if (state == RagdollState::BlendOut)
 				state = RagdollState::Keyframed;
 			else if (state == RagdollState::StopCollide)
-				state = RagdollState::Keyframed; // This means that the full StopCollideMaxTime has passed, so we are now fully blended in and thus don't need to go into BlendOut
+				state = RagdollState::Keyframed;
 		}
 	}
 

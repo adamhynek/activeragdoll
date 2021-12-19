@@ -88,6 +88,7 @@ inline float QuaternionAngle(const NiQuaternion &qa, const NiQuaternion &qb) { r
 NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t);
 inline NiPoint3 lerp(const NiPoint3 &a, const NiPoint3 &b, float t) { return a * (1.0f - t) + b * t; }
 inline float lerp(float a, float b, float t) { return a * (1.0f - t) + b * t; }
+inline double lerp(double a, double b, double t) { return a * (1.0f - t) + b * t; }
 float Determinant33(const NiMatrix33 &m);
 NiPoint3 QuadraticFromPoints(const NiPoint2 &p1, const NiPoint2 &p2, const NiPoint2 &p3);
 
