@@ -1,18 +1,20 @@
 #pragma once
 
-#include "skse64_common/Relocation.h"
-#include "skse64/PapyrusVM.h"
-#include "skse64/GameReferences.h"
-
 #include <Common/Base/hkBase.h>
-#include <Physics/Collide/Filter/hkpCollisionFilter.h>
 #include <Physics/Dynamics/Entity/hkpRigidBody.h>
 #include <Physics/Dynamics/Phantom/hkpSimpleShapePhantom.h>
 #include <Physics/Collide/Agent/hkpProcessCollisionInput.h>
+#include <Physics/Collide/Filter/hkpCollisionFilter.h>
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Collide/Agent/Collidable/hkpCdPoint.h>
 #include <Physics/Collide/Shape/Query/hkpShapeRayCastCollectorOutput.h>
 #include <Physics/Collide/Shape/Compound/Tree/Mopp/hkpMoppBvTreeShape.h>
+
+#include "skse64_common/Relocation.h"
+#include "skse64/PapyrusVM.h"
+#include "skse64/GameReferences.h"
+
+#include "havok_ref_ptr.h"
 
 
 struct bhkCollisionFilter : hkpCollisionFilter
@@ -208,3 +210,35 @@ struct bhkRigidBodyCinfo
 static_assert(offsetof(bhkRigidBodyCinfo, shape) == 0x08);
 static_assert(offsetof(bhkRigidBodyCinfo, hkCinfo) == 0x30);
 static_assert(sizeof(bhkRigidBodyCinfo) == 0x110);
+
+struct hkConstraintCinfo
+{
+	~hkConstraintCinfo();
+
+	void *vtbl = 0; // 00
+	havokRefPtr<hkpConstraintData> constraintData = 0; // 08
+	UInt32 unk10 = 0;
+	UInt32 unk14 = 0;
+	hkpRigidBody *rigidBodyA = nullptr; // 18
+	hkpRigidBody *rigidBodyB = nullptr; // 20
+};
+
+struct hkMalleableConstraintCinfo : hkConstraintCinfo
+{
+	hkMalleableConstraintCinfo();
+};
+
+struct hkFixedConstraintCinfo : hkConstraintCinfo
+{
+	UInt64 unk28 = 0;
+	UInt8 unk30 = 0; // type or something
+};
+
+struct bhkMalleableConstraint : bhkConstraint
+{
+	UInt64 unk18 = 0;
+};
+static_assert(sizeof(bhkMalleableConstraint) == 0x20);
+
+void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);
+bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, float strength);

@@ -1,11 +1,14 @@
 #pragma once
 
-#include "RE/offsets.h"
-
-
 /*
 This is a refcounted ptr class to mimic havok's, using function offsets for add/remove reference instead of havok member functions
 */
+
+typedef void(*_hkReferencedObject_addReference)(hkReferencedObject *_this);
+extern RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReference;
+
+typedef void(*_hkReferencedObject_removeReference)(hkReferencedObject *_this);
+extern RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReference;
 
 template <class TYPE>
 class havokRefPtr

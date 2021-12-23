@@ -1,7 +1,7 @@
 #pragma once
-
-#include "RE/havok.h"
-#include "RE/misc.h"
+#include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
+#include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
+#include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -10,9 +10,9 @@
 #include "skse64/GameVR.h"
 #include "skse64/NiGeometry.h"
 
-#include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
-#include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
-#include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
+#include "RE/havok.h"
+#include "RE/havok_behavior.h"
+#include "RE/misc.h"
 
 
 // Multiply skyrim coords by this to get havok coords
@@ -329,3 +329,74 @@ extern RelocAddr<_BSFixedString_Copy> BSFixedString_Copy;
 
 typedef void(*_RefreshActivateButtonArt)(void *wsActivateRollover);
 extern RelocAddr<_RefreshActivateButtonArt> RefreshActivateButtonArt;
+
+
+extern RelocPtr<AIProcessManager *> g_aiProcessManager;
+extern RelocPtr<float> g_bAlwaysDriveRagdoll;
+
+
+typedef bool(*_bhkRefObject_ctor)(bhkRefObject *_this);
+extern RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor;
+
+typedef bool(*_hkMalleableConstraintCinfo_Func4)(hkMalleableConstraintCinfo *_this);
+extern RelocAddr<_hkMalleableConstraintCinfo_Func4> hkMalleableConstraintCinfo_Func4;
+
+typedef bool(*_hkMalleableConstraintCinfo_setWrappedConstraintData)(hkMalleableConstraintCinfo *_this, hkpConstraintData *data);
+extern RelocAddr<_hkMalleableConstraintCinfo_setWrappedConstraintData> hkMalleableConstraintCinfo_setWrappedConstraintData;
+
+typedef bool(*_hkMalleableConstraintCinfo_setStrength)(hkMalleableConstraintCinfo *_this, float strength);
+extern RelocAddr<_hkMalleableConstraintCinfo_setStrength> hkMalleableConstraintCinfo_setStrength;
+
+typedef bool(*_Actor_IsInRagdollState)(Actor *_this);
+extern RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState;
+
+typedef void(*_BSAnimationGraphManager_HasRagdollInterface)(BSAnimationGraphManager *_this, bool *out);
+extern RelocAddr<_BSAnimationGraphManager_HasRagdollInterface> BSAnimationGraphManager_HasRagdollInterface;
+
+typedef void(*_BSAnimationGraphManager_AddRagdollToWorld)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphManager_AddRagdollToWorld;
+
+typedef void(*_BSAnimationGraphManager_RemoveRagdollFromWorld)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGraphManager_RemoveRagdollFromWorld;
+
+typedef void(*_NiNode_AddOrRemoveMalleableConstraints)(NiNode *_this, bool a1, bool a2, bool a3);
+extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableConstraints;
+
+typedef void(*_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints;
+
+typedef hkaRagdollInstance * (*_hkbRagdollDriver_getRagdollInterface)(hkbRagdollDriver *_this);
+extern RelocAddr<_hkbRagdollDriver_getRagdollInterface> hkbRagdollDriver_getRagdollInterface;
+
+typedef bhkConstraint * (*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
+extern RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint;
+
+typedef void(*_hkpConstraintInstance_setEnabled)(hkpConstraintInstance *_this, bool enable);
+extern RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled;
+
+typedef bool * (*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
+extern RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled;
+
+typedef bool(*_hkpCollisionCallbackUtil_requireCollisionCallbackUtil)(hkpWorld *world);
+extern RelocAddr<_hkpCollisionCallbackUtil_requireCollisionCallbackUtil> hkpCollisionCallbackUtil_requireCollisionCallbackUtil;
+
+typedef bool(*_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil)(hkpWorld *world);
+extern RelocAddr<_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil> hkpCollisionCallbackUtil_releaseCollisionCallbackUtil;
+
+typedef hkpWorldExtension * (*_hkpWorld_findWorldExtension)(hkpWorld *world, int id);
+extern RelocAddr<_hkpWorld_findWorldExtension> hkpWorld_findWorldExtension;
+
+typedef void(*_ahkpCharacterProxy_setLinearVelocity)(hkpCharacterProxy *_this, const hkVector4& vel);
+extern RelocAddr<_ahkpCharacterProxy_setLinearVelocity> ahkpCharacterProxy_setLinearVelocity;
+
+typedef void(*_ahkpCharacterRigidBody_setLinearVelocity)(hkpCharacterRigidBody *_this, const hkVector4& newVel, hkReal timestep);
+extern RelocAddr<_ahkpCharacterRigidBody_setLinearVelocity> ahkpCharacterRigidBody_setLinearVelocity;
+
+typedef hkVector4 & (*_ahkpCharacterRigidBody_getLinearVelocity)(hkpCharacterRigidBody *_this);
+extern RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getLinearVelocity;
+
+typedef hkVector4 & (*_hkbBlendPoses)(UInt32 numData, const hkQsTransform *src, const hkQsTransform *dst, float amount, hkQsTransform *out);
+extern RelocAddr<_hkbBlendPoses> hkbBlendPoses;
+
+typedef bool(*_hkConstraintCinfo_setConstraintData)(struct hkConstraintCinfo *_this, hkpConstraintData *data);
+extern RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData;

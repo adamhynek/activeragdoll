@@ -120,6 +120,46 @@ struct BGSImpactManager
 	// sound event passes in ptr to skyrimhavokmaterial id in rdx (actually it's the 2 material ids, then at 0x14 (I think?) is the magnitude of the impact or something - it's used to determine which sound to play, high or low)
 };
 
+struct AIProcessManager
+{
+	UInt8  unk000;                   // 008
+	bool   enableDetection;          // 001 
+	bool   unk002;                   // 002 
+	UInt8  unk003;                   // 003
+	UInt32 unk004;                   // 004
+	bool   enableHighProcess;        // 008 
+	bool   enableLowProcess;         // 009 
+	bool   enableMiddleHighProcess;  // 00A 
+	bool   enableMiddleLowProcess;   // 00B 
+	bool   enableAISchedules;        // 00C 
+	UInt8  unk00D;                   // 00D
+	UInt8  unk00E;                   // 00E
+	UInt8  unk00F;                   // 00F
+	SInt32 numActorsInHighProcess;   // 010
+	UInt32 unk014[(0x30 - 0x014) / sizeof(UInt32)];
+	tArray<UInt32>  actorsHigh; // 030 
+	tArray<UInt32>  actorsLow;  // 048 
+	tArray<UInt32>  actorsMiddleLow; // 060
+	tArray<UInt32>  actorsMiddleHigh; // 078
+	UInt32  unk90[(0xF0 - 0x7C) / sizeof(UInt32)];
+	tArray<void*> activeEffectShaders; // 108
+	//mutable BSUniqueLock			 activeEffectShadersLock; // 120
+};
+
+template <class T, UInt32 N = 1>
+struct BSTSmallArray
+{
+	union Data
+	{
+		T* heap;
+		T local[N];
+	};
+
+	SInt32 heapSize = 0x80000000; // 00
+	UInt32 unk04; // 04
+	Data data; // 08
+	UInt32 size;
+};
 
 typedef void(*Actor_RemoveItem)(TESObjectREFR *_this, UInt32 *outHandle, TESBoundObject* a_item, SInt32 a_count, UInt32 a_reason, BaseExtraList* a_extraList, TESObjectREFR* a_moveToRef, const NiPoint3* a_dropLoc, const NiPoint3* a_rotate);
 typedef TESAmmo * (*Actor_GetCurrentAmmo)(Actor *_this);

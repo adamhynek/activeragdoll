@@ -14,7 +14,8 @@ namespace Config {
 		double blendOutDurationStressMax = 40.0;
 		double blendOutBlendPower = 2.5;
 		double blendInTime = 0.15;
-		double blendOutTime = 0.15;
+
+		float blendStressWeight = 8.f;
 
 		bool doRootMotion = true;
 		float rootMotionMinOffset = 0.02f;

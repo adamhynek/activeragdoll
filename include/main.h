@@ -1,18 +1,27 @@
 #pragma once
 
-#include "skse64_common/Relocation.h"
-#include "skse64/PapyrusVM.h"
 #include "skse64/GameReferences.h"
 
+#include "blender.h"
 
-typedef bool(*_GetAnimationVariableBool)(VMClassRegistry* registry, UInt32 stackId, TESObjectREFR* obj, const BSFixedString &asVariableName);
-RelocAddr<_GetAnimationVariableBool> GetAnimationVariableBool(0x009CE880);
 
-typedef int(*_GetAnimationVariableInt)(VMClassRegistry* registry, UInt32 stackId, TESObjectREFR* obj, const BSFixedString &asVariableName);
-RelocAddr<_GetAnimationVariableInt> GetAnimationVariableInt(0x009CE950);
+enum class RagdollState : UInt8
+{
+	Keyframed,
+	BlendIn,
+	Collide,
+	BlendOut,
+};
 
-typedef void(*_DebugSendAnimationEvent)(VMClassRegistry* registry, UInt32 stackId, void* unk1, TESObjectREFR* objectRefr, const BSFixedString &animEvent);
-RelocAddr<_DebugSendAnimationEvent> DebugSendAnimationEvent(0x009A7F40);
-
-typedef bool(*_IsInMenuMode)(VMClassRegistry* registry, UInt32 stackId);
-RelocAddr<_IsInMenuMode> IsInMenuMode(0x009F32A0);
+struct ActiveRagdoll
+{
+	Blender blender{};
+	std::vector<hkQsTransform> animPose{};
+	std::vector<float> stress{};
+	std::vector<float> restStress{};
+	float avgStress = 0.f;
+	double frameTime = 0.0;
+	double stateChangedTime = 0.0;
+	RagdollState state = RagdollState::Keyframed;
+	bool isOn = false;
+};

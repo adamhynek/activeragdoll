@@ -85,7 +85,6 @@ namespace Config {
 	bool ReadConfigOptions()
 	{
 		if (!ReadDouble("BlendInTime", options.blendInTime)) return false;
-		if (!ReadDouble("BlendOutTime", options.blendOutTime)) return false;
 
 		if (!ReadFloat("CollideHierarchyGain", options.collideHierarchyGain)) return false;
 		if (!ReadFloat("CollideVelocityGain", options.collideVelocityGain)) return false;
