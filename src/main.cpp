@@ -613,6 +613,39 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
+	if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+		const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+
+		int numPosesHigh = poseHeader->m_numData;
+		hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+
+		int numPosesLow = driver->ragdoll->getNumBones();
+		std::vector<hkQsTransform> poseWorld(numPosesLow);
+		hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+
+		// Set rigidbody transforms to the anim pose ones and save the old values
+		std::vector<hkTransform> savedTransforms{};
+		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+			hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+			hkQsTransform &transform = poseWorld[i];
+
+			savedTransforms.push_back(rb->getTransform());
+			rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
+			hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
+		}
+
+		// Loosen ragdoll constraints to allow the anim pose
+		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+			hkpConstraintUtils_loosenConstraintLimits(constraint);
+		}
+
+		// Restore rigidbody transforms
+		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+			hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+			rb->m_motion.getMotionState()->m_transform = savedTransforms[i];
+		}
+	}
+
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (actor) {
 		NiPointer<NiNode> root = actor->GetNiNode();

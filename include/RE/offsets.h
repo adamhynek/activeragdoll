@@ -418,3 +418,12 @@ extern RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintD
 
 typedef bool(*_bhkRagdollConstraint_ctor)(bhkRagdollConstraint *_this, hkRagdollConstraintCinfo *cInfo);
 extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;
+
+typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, const hkQsTransform& worldFromModel, hkQsTransform* lowResPoseWorld);
+extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld;
+
+typedef void(*_hkRotation_setFromQuat)(hkRotation *_this, hkQuaternionParameter q);
+extern RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat;
+
+typedef void(*_hkpConstraintUtils_loosenConstraintLimits)(hkpConstraintInstance* constraint);
+extern RelocAddr<_hkpConstraintUtils_loosenConstraintLimits> hkpConstraintUtils_loosenConstraintLimits;

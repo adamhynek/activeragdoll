@@ -186,3 +186,6 @@ RelocAddr<_hkbBlendPoses> hkbBlendPoses(0xB4DD80);
 RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData(0xE3E6F0);
 RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace(0xAC16E0);
 RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor(0xE4A6C0);
+RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(0xA280C0);
+RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat(0xA02C30);
+RelocAddr<_hkpConstraintUtils_loosenConstraintLimits> hkpConstraintUtils_loosenConstraintLimits(0xB09940);
