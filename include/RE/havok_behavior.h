@@ -294,6 +294,15 @@ public:
 static_assert(offsetof(BSAnimationGraphManager, graphs) == 0x40);
 static_assert(offsetof(BSAnimationGraphManager, updateLock) == 0x98);
 
+struct hkbPoweredRagdollControlData
+{
+	HK_ALIGN16(hkReal m_maxForce) = 50.f; // 00
+	hkReal m_tau = 0.8f; // 04
+	hkReal m_damping = 1.f; // 08
+	hkReal m_proportionalRecoveryVelocity = 2.f; // 0C
+	hkReal m_constantRecoveryVelocity = 1.f; // 10
+};
+
 struct hkbGeneratorOutput
 {
 	enum class StandardTracks

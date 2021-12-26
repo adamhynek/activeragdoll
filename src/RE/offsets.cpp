@@ -161,6 +161,7 @@ RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
 
 RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor(0xE306A0);
 RelocAddr<_hkMalleableConstraintCinfo_Func4> hkMalleableConstraintCinfo_Func4(0xE3DD20);
+RelocAddr<_hkRagdollConstraintCinfo_Func4> hkRagdollConstraintCinfo_Func4(0xE64960);
 RelocAddr<_hkMalleableConstraintCinfo_setWrappedConstraintData> hkMalleableConstraintCinfo_setWrappedConstraintData(0xE3DE70);
 RelocAddr<_hkMalleableConstraintCinfo_setStrength> hkMalleableConstraintCinfo_setStrength(0xE3DE90);
 RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState(0x5EBA50);
@@ -173,6 +174,8 @@ RelocAddr<_hkbRagdollDriver_getRagdollInterface> hkbRagdollDriver_getRagdollInte
 RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint(0xE63A20);
 RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0xAC06A0);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
+RelocAddr<_hkpConstraintInstance_ctor> hkpConstraintInstance_ctor(0xABFA90);
+RelocAddr<_hkpRagdollConstraintData_ctor> hkpRagdollConstraintData_ctor(0xAC1290);
 RelocAddr<_hkpCollisionCallbackUtil_requireCollisionCallbackUtil> hkpCollisionCallbackUtil_requireCollisionCallbackUtil(0xAB8700);
 RelocAddr<_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil> hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(0xB00C30);
 RelocAddr<_hkpWorld_findWorldExtension> hkpWorld_findWorldExtension(0xAB58F0);
@@ -181,3 +184,5 @@ RelocAddr<_ahkpCharacterRigidBody_setLinearVelocity> ahkpCharacterRigidBody_setL
 RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getLinearVelocity(0xAF5BB0);
 RelocAddr<_hkbBlendPoses> hkbBlendPoses(0xB4DD80);
 RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData(0xE3E6F0);
+RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace(0xAC16E0);
+RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor(0xE4A6C0);

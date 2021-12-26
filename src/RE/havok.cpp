@@ -4,6 +4,7 @@
 
 #include "RE/havok.h"
 #include "RE/offsets.h"
+#include "math_utils.h"
 
 hkConstraintCinfo::~hkConstraintCinfo()
 {
@@ -14,6 +15,12 @@ auto hkMalleableConstraintCinfo_vtbl = RelocAddr<void *>(0x182C5F8);
 hkMalleableConstraintCinfo::hkMalleableConstraintCinfo()
 {
 	this->vtbl = hkMalleableConstraintCinfo_vtbl;
+}
+
+auto hkRagdollConstraintCinfo_vtbl = RelocAddr<void *>(0x1830F38);
+hkRagdollConstraintCinfo::hkRagdollConstraintCinfo()
+{
+	this->vtbl = hkRagdollConstraintCinfo_vtbl;
 }
 
 auto bhkMalleableConstraint_vtbl = RelocAddr<void *>(0x182C628);
@@ -31,7 +38,7 @@ bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, fl
 	if (DYNAMIC_CAST(constraint, bhkConstraint, bhkMalleableConstraint)) return nullptr; // already a malleable constraint
 
 	hkMalleableConstraintCinfo cInfo;
-	hkMalleableConstraintCinfo_Func4(&cInfo);
+	hkMalleableConstraintCinfo_Func4(&cInfo); // Creates constraintData
 	hkMalleableConstraintCinfo_setWrappedConstraintData(&cInfo, constraint->constraint->m_data);
 	cInfo.rigidBodyA = constraint->constraint->getRigidBodyA();
 	cInfo.rigidBodyB = constraint->constraint->getRigidBodyB();
@@ -41,6 +48,96 @@ bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, fl
 	if (malleableConstraint) {
 		bhkMalleableConstraint_ctor(malleableConstraint, &cInfo);
 		return malleableConstraint;
+	}
+
+	return nullptr;
+}
+
+hkpConstraintInstance * LimitedHingeToRagdollConstraint(hkpConstraintInstance *constraint)
+{
+	// gather data from limited hinge constraint
+	hkpLimitedHingeConstraintData* limitedHingeData = static_cast<hkpLimitedHingeConstraintData*>(const_cast<hkpConstraintData*>(constraint->getData()));
+	hkVector4& childPivot = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(3);
+	hkVector4& parentPivot = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(3);
+	hkVector4& childPlane = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(0);
+	hkVector4& parentPlane = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(0);
+
+	// get childTwist axis and compute a parentTwist axis which closely matches the limited hinge's min/max limits.
+	hkReal minAng = limitedHingeData->getMinAngularLimit();
+	hkReal maxAng = limitedHingeData->getMaxAngularLimit();
+	hkReal angExtents = (maxAng - minAng) / 2.0f;
+
+	//hkQuaternion minAngRotation; minAngRotation.setAxisAngle(parentPlane, -angExtents + maxAng);
+	hkQuaternion minAngRotation = NiQuatToHkQuat(MatrixToQuaternion(MatrixFromAxisAngle(HkVectorToNiPoint(parentPlane), -angExtents + maxAng)));
+	minAngRotation.normalize();
+
+	hkVector4& childTwist = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(2);
+	hkVector4& parentLimitedAxis = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(2);
+	hkVector4 parentTwist; parentTwist.setRotatedDir(minAngRotation, parentLimitedAxis);
+
+	hkpRagdollConstraintData *ragdollData = (hkpRagdollConstraintData *)Heap_Allocate(sizeof(hkpRagdollConstraintData));
+	hkpRagdollConstraintData_ctor(ragdollData);
+	hkpRagdollConstraintData_setInBodySpace(ragdollData, childPivot, parentPivot, childPlane, parentPlane, childTwist, parentTwist);
+
+	// adjust limits to make it like the hinge constraint
+	ragdollData->setConeAngularLimit(angExtents);
+	ragdollData->setTwistMinAngularLimit(0.0f);
+	ragdollData->setTwistMaxAngularLimit(0.0f);
+	ragdollData->m_atoms.m_angFriction.m_maxFrictionTorque = limitedHingeData->getMaxFrictionTorque();
+	ragdollData->setAngularLimitsTauFactor(limitedHingeData->getAngularLimitsTauFactor());
+
+	hkpConstraintInstance *newConstraint = (hkpConstraintInstance *)Heap_Allocate(sizeof(hkpConstraintInstance));
+	hkpConstraintInstance_ctor(newConstraint, constraint->getEntityA(), constraint->getEntityB(), ragdollData, hkpConstraintInstance::ConstraintPriority::PRIORITY_PSI);
+	hkReferencedObject_removeReference(ragdollData);
+
+	return newConstraint;
+}
+
+void ConvertLimitedHingeDataToRagdollConstraintData(hkpRagdollConstraintData *ragdollData, hkpLimitedHingeConstraintData *limitedHingeData)
+{
+	// gather data from limited hinge constraint
+	hkVector4& childPivot = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(3);
+	hkVector4& parentPivot = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(3);
+	hkVector4& childPlane = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(0);
+	hkVector4& parentPlane = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(0);
+
+	// get childTwist axis and compute a parentTwist axis which closely matches the limited hinge's min/max limits.
+	hkReal minAng = limitedHingeData->getMinAngularLimit();
+	hkReal maxAng = limitedHingeData->getMaxAngularLimit();
+	hkReal angExtents = (maxAng - minAng) / 2.0f;
+
+	//hkQuaternion minAngRotation; minAngRotation.setAxisAngle(parentPlane, -angExtents + maxAng);
+	hkQuaternion minAngRotation = NiQuatToHkQuat(MatrixToQuaternion(MatrixFromAxisAngle(HkVectorToNiPoint(parentPlane), -angExtents + maxAng)));
+	minAngRotation.normalize();
+
+	hkVector4& childTwist = limitedHingeData->m_atoms.m_transforms.m_transformA.getColumn(2);
+	hkVector4& parentLimitedAxis = limitedHingeData->m_atoms.m_transforms.m_transformB.getColumn(2);
+	hkVector4 parentTwist; parentTwist.setRotatedDir(minAngRotation, parentLimitedAxis);
+
+	hkpRagdollConstraintData_setInBodySpace(ragdollData, childPivot, parentPivot, childPlane, parentPlane, childTwist, parentTwist);
+
+	// adjust limits to make it like the hinge constraint
+	ragdollData->setConeAngularLimit(angExtents);
+	ragdollData->setTwistMinAngularLimit(0.0f);
+	ragdollData->setTwistMaxAngularLimit(0.0f);
+	ragdollData->m_atoms.m_angFriction.m_maxFrictionTorque = limitedHingeData->getMaxFrictionTorque();
+	ragdollData->setAngularLimitsTauFactor(limitedHingeData->getAngularLimitsTauFactor());
+}
+
+bhkRagdollConstraint * ConvertToRagdollConstraint(bhkConstraint *constraint)
+{
+	if (DYNAMIC_CAST(constraint, bhkConstraint, bhkRagdollConstraint)) return nullptr; // already a bhkRagdollConstraint
+
+	hkRagdollConstraintCinfo cInfo;
+	hkRagdollConstraintCinfo_Func4(&cInfo); // Creates constraintData and calls hkpRagdollConstraintData_ctor()
+	cInfo.rigidBodyA = constraint->constraint->getRigidBodyA();
+	cInfo.rigidBodyB = constraint->constraint->getRigidBodyB();
+	ConvertLimitedHingeDataToRagdollConstraintData((hkpRagdollConstraintData *)cInfo.constraintData.val(), (hkpLimitedHingeConstraintData *)constraint->constraint->getData());
+
+	bhkRagdollConstraint *ragdollConstraint = (bhkRagdollConstraint *)Heap_Allocate(sizeof(bhkRagdollConstraint));
+	if (ragdollConstraint) {
+		bhkRagdollConstraint_ctor(ragdollConstraint, &cInfo);
+		return ragdollConstraint;
 	}
 
 	return nullptr;

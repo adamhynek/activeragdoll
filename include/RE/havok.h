@@ -54,8 +54,8 @@ struct bhkRefObject : NiObject
 
 struct bhkSerializable : bhkRefObject
 {
-	virtual hkpWorld* GetHavokWorld_1(); // 27
-	virtual hkpWorld* GetHavokWorld_2(); // 28
+	virtual ahkpWorld* GetHavokWorld_1(); // 27
+	virtual ahkpWorld* GetHavokWorld_2(); // 28
 	virtual void	  MoveToWorld(struct bhkWorld *world); // 29
 	virtual void	  RemoveFromCurrentWorld(); // 2A
 	virtual void	  Unk_2B(void); // 2B
@@ -216,7 +216,7 @@ struct hkConstraintCinfo
 	~hkConstraintCinfo();
 
 	void *vtbl = 0; // 00
-	havokRefPtr<hkpConstraintData> constraintData = 0; // 08
+	RE::hkRefPtr<hkpConstraintData> constraintData = nullptr; // 08
 	UInt32 unk10 = 0;
 	UInt32 unk14 = 0;
 	hkpRigidBody *rigidBodyA = nullptr; // 18
@@ -226,6 +226,11 @@ struct hkConstraintCinfo
 struct hkMalleableConstraintCinfo : hkConstraintCinfo
 {
 	hkMalleableConstraintCinfo();
+};
+
+struct hkRagdollConstraintCinfo : hkConstraintCinfo
+{
+	hkRagdollConstraintCinfo();
 };
 
 struct hkFixedConstraintCinfo : hkConstraintCinfo
@@ -240,5 +245,13 @@ struct bhkMalleableConstraint : bhkConstraint
 };
 static_assert(sizeof(bhkMalleableConstraint) == 0x20);
 
+struct bhkRagdollConstraint : bhkConstraint
+{
+	UInt64 unk18 = 0;
+};
+static_assert(sizeof(bhkRagdollConstraint) == 0x20);
+
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);
 bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, float strength);
+hkpConstraintInstance * LimitedHingeToRagdollConstraint(hkpConstraintInstance *constraint);
+bhkRagdollConstraint * ConvertToRagdollConstraint(bhkConstraint *constraint);

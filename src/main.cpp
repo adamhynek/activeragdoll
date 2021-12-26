@@ -225,6 +225,29 @@ void ModifyConstraints(Actor *actor)
 			}
 		}
 
+		// Convert any limited hinge constraints to ragdoll constraints so that they can be loosened properly
+		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
+			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
+			if (node) {
+				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
+				if (wrapper) {
+					for (int i = 0; i < wrapper->constraints.count; i++) {
+						bhkConstraint *constraint = wrapper->constraints.entries[i];
+						if (constraint->constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_LIMITEDHINGE) {
+							bhkRagdollConstraint *ragdollConstraint = ConvertToRagdollConstraint(constraint);
+							if (ragdollConstraint) {
+								constraint->RemoveFromCurrentWorld();
+
+								bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
+								ragdollConstraint->MoveToWorld(world);
+								wrapper->constraints.entries[i] = ragdollConstraint;
+							}
+						}
+					}
+				}
+			}
+		}
+
 		if (Config::options.malleableConstraintStrength < 1.f) {
 			// Reduce strength of all constraints by wrapping them in malleable constraints with lower strength
 			for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
@@ -239,8 +262,7 @@ void ModifyConstraints(Actor *actor)
 							if (malleableConstraint) {
 								constraint->RemoveFromCurrentWorld();
 
-								hkpWorld *hkWorld = wrapper->GetHavokWorld_1();
-								bhkWorld *world = ((ahkpWorld*)hkWorld)->m_userData;
+								bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
 								malleableConstraint->MoveToWorld(world);
 								wrapper->constraints.entries[i] = malleableConstraint;
 							}

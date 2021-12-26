@@ -341,6 +341,9 @@ extern RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor;
 typedef bool(*_hkMalleableConstraintCinfo_Func4)(hkMalleableConstraintCinfo *_this);
 extern RelocAddr<_hkMalleableConstraintCinfo_Func4> hkMalleableConstraintCinfo_Func4;
 
+typedef bool(*_hkRagdollConstraintCinfo_Func4)(hkRagdollConstraintCinfo *_this);
+extern RelocAddr<_hkRagdollConstraintCinfo_Func4> hkRagdollConstraintCinfo_Func4;
+
 typedef bool(*_hkMalleableConstraintCinfo_setWrappedConstraintData)(hkMalleableConstraintCinfo *_this, hkpConstraintData *data);
 extern RelocAddr<_hkMalleableConstraintCinfo_setWrappedConstraintData> hkMalleableConstraintCinfo_setWrappedConstraintData;
 
@@ -377,6 +380,12 @@ extern RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEna
 typedef bool * (*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
 extern RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled;
 
+typedef bool * (*_hkpConstraintInstance_ctor)(hkpConstraintInstance *_this, hkpEntity* entityA, hkpEntity* entityB, hkpConstraintData* data, hkpConstraintInstance::ConstraintPriority priority);
+extern RelocAddr<_hkpConstraintInstance_ctor> hkpConstraintInstance_ctor;
+
+typedef bool * (*_hkpRagdollConstraintData_ctor)(hkpRagdollConstraintData *_this);
+extern RelocAddr<_hkpRagdollConstraintData_ctor> hkpRagdollConstraintData_ctor;
+
 typedef bool(*_hkpCollisionCallbackUtil_requireCollisionCallbackUtil)(hkpWorld *world);
 extern RelocAddr<_hkpCollisionCallbackUtil_requireCollisionCallbackUtil> hkpCollisionCallbackUtil_requireCollisionCallbackUtil;
 
@@ -400,3 +409,12 @@ extern RelocAddr<_hkbBlendPoses> hkbBlendPoses;
 
 typedef bool(*_hkConstraintCinfo_setConstraintData)(struct hkConstraintCinfo *_this, hkpConstraintData *data);
 extern RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData;
+
+typedef float(*_hkpRagdollConstraintData_setInBodySpace)(hkpRagdollConstraintData *_this,
+	const hkVector4& pivotA, const hkVector4& pivotB,
+	const hkVector4& planeAxisA, const hkVector4& planeAxisB,
+	const hkVector4& twistAxisA, const hkVector4& twistAxisB);
+extern RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace;
+
+typedef bool(*_bhkRagdollConstraint_ctor)(bhkRagdollConstraint *_this, hkRagdollConstraintCinfo *cInfo);
+extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;

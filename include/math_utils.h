@@ -2,9 +2,10 @@
 
 #include <algorithm>
 
-#include "RE/havok.h"
-
 #include "skse64/NiObjects.h"
+
+#include "RE/havok.h"
+#include "RE/offsets.h"
 
 
 static const float g_minAllowedFingerAngle = 0;// 5 * 0.0174533; // 5 degrees
@@ -79,6 +80,7 @@ NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal);
 void NiMatrixToHkMatrix(const NiMatrix33 &niMat, hkMatrix3 &hkMat);
 void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);
+inline NiQuaternion MatrixToQuaternion(const NiMatrix33 &m) { NiQuaternion q; NiMatrixToNiQuaternion(q, m); return q; }
 inline NiQuaternion HkQuatToNiQuat(const hkQuaternion &quat) { return { quat.m_vec(3), quat.m_vec(0), quat.m_vec(1), quat.m_vec(2) }; }
 inline hkQuaternion NiQuatToHkQuat(const NiQuaternion &quat) { return hkQuaternion(quat.m_fX, quat.m_fY, quat.m_fZ, quat.m_fW); }
 inline NiPoint3 HkVectorToNiPoint(const hkVector4 &vec) { return { vec.getQuad().m128_f32[0], vec.getQuad().m128_f32[1], vec.getQuad().m128_f32[2] }; }
