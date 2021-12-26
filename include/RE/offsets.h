@@ -2,6 +2,7 @@
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
+#include <Physics/Utilities/Actions/EaseConstraints/hkpEaseConstraintsAction.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -427,3 +428,12 @@ extern RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat;
 
 typedef void(*_hkpConstraintUtils_loosenConstraintLimits)(hkpConstraintInstance* constraint);
 extern RelocAddr<_hkpConstraintUtils_loosenConstraintLimits> hkpConstraintUtils_loosenConstraintLimits;
+
+typedef bool(*_hkpEaseConstraintsAction_ctor)(hkpEaseConstraintsAction *_this, const hkArray<hkpEntity*>& entities, hkUlong userData);
+extern RelocAddr<_hkpEaseConstraintsAction_ctor> hkpEaseConstraintsAction_ctor;
+
+typedef bool(*_hkpEaseConstraintsAction_loosenConstraints)(hkpEaseConstraintsAction *_this);
+extern RelocAddr<_hkpEaseConstraintsAction_loosenConstraints> hkpEaseConstraintsAction_loosenConstraints;
+
+typedef bool(*_hkpEaseConstraintsAction_restoreConstraints)(hkpEaseConstraintsAction *_this, hkReal duration);
+extern RelocAddr<_hkpEaseConstraintsAction_restoreConstraints> hkpEaseConstraintsAction_restoreConstraints;
