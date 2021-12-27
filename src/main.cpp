@@ -579,11 +579,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
 		if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
-			//SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 		}
 		else {
 			// Explicitly make bones not keyframed
-			//keyframedBonesHeader->m_onFraction = 0.f;
+			keyframedBonesHeader->m_onFraction = 0.f;
 		}
 	}
 
