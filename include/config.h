@@ -9,7 +9,7 @@
 namespace Config {
 	struct Options {
 		double blendOutDurationMin = 0.2;
-		double blendOutDurationMax = 0.4;
+		double blendOutDurationMax = 0.5;
 		double blendOutDurationStressMin = 0.0;
 		double blendOutDurationStressMax = 40.0;
 		double blendOutBlendPower = 2.5;

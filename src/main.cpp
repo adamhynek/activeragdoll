@@ -777,56 +777,11 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 		ragdoll.easeConstraintsAction = nullptr;
 	}
 
-	if (state == RagdollState::BlendIn && ragdoll.frameTime == ragdoll.stateChangedTime) {
-		if (poseHeader && poseHeader->m_onFraction > 0.f) {
-			int numPoses = poseHeader->m_numData;
-			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			hkaSkeleton *animSkeleton = driver->character->setup->m_animationSkeleton; // TODO: null checks
-			ragdoll.restStress.clear();
-			for (int i = 0; i < numPoses; i++) {
-				hkQsTransform &animPose = ragdoll.animPose[i];
-				hkQsTransform &restPose = poseOut[i];
-				float stress = QuaternionAngle(HkQuatToNiQuat(animPose.m_rotation), HkQuatToNiQuat(restPose.m_rotation));
-				ragdoll.restStress.push_back(stress);
-			}
-		}
-	}
-
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-		hkaSkeleton *animSkeleton = driver->character->setup->m_animationSkeleton; // TODO: null checks
 		if (ragdoll.state == RagdollState::Keyframed) {
 			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
-		}
-		else {
-			weights.clear();
-			scratchStresses.clear();
-			for (int i = 0; i < numPoses; i++) {
-				//float stress = ragdoll.stress[i];
-				hkQsTransform &animPose = ragdoll.animPose[i];
-				hkQsTransform &pose = poseOut[i];
-
-				//float stress = VectorLength(HkVectorToNiPoint(animPose.m_translation) - HkVectorToNiPoint(pose.m_translation));
-				float stress = abs(QuaternionAngle(HkQuatToNiQuat(animPose.m_rotation), HkQuatToNiQuat(pose.m_rotation)) - ragdoll.restStress[i]);
-				scratchStresses.push_back(stress);
-			}
-			for (int i = 0; i < numPoses; i++) {
-				float stress = 0.f;
-				int parent = i;
-				// propagate stress from parent nodes
-				while (parent != -1) {
-					stress = max(stress, scratchStresses[parent]);
-					parent = animSkeleton->m_parentIndices[parent];
-				}
-
-				float weight = stress * Config::options.blendStressWeight;
-				weight = std::clamp(weight, 0.f, 1.f); // 0 means full anim pose, 1 means full ragdoll/blended pose
-				weights.push_back(weight);
-			}
-
-			g_scratchPose.assign(poseOut, poseOut + numPoses);
-			BlendPoses(ragdoll.animPose.data(), g_scratchPose.data(), poseOut, weights.data(), numPoses);
 		}
 	}
 
