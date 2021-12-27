@@ -18,6 +18,7 @@ struct ActiveRagdoll
 {
 	Blender blender{};
 	std::vector<hkQsTransform> animPose{};
+	std::vector<hkQsTransform> ragdollPose{};
 	std::vector<float> stress{};
 	float avgStress = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;

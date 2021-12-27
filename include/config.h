@@ -34,6 +34,8 @@ namespace Config {
 		float malleableConstraintStrength = 1.f;
 
 		bool enableBipedCollision = true;
+		bool keyframeBones = true;
+		bool forceRagdollPose = false;
 	};
 	extern Options options; // global object containing options
 

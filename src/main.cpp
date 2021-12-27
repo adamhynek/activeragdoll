@@ -577,13 +577,15 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 	ragdoll.state = state;
 
-	if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-		if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
-			SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
-		}
-		else {
-			// Explicitly make bones not keyframed
-			keyframedBonesHeader->m_onFraction = 0.f;
+	if (Config::options.keyframeBones) {
+		if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
+			if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
+				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+			}
+			else {
+				// Explicitly make bones not keyframed
+				keyframedBonesHeader->m_onFraction = 0.f;
+			}
 		}
 	}
 
@@ -620,11 +622,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
 		int numPosesLow = driver->ragdoll->getNumBones();
-		std::vector<hkQsTransform> poseWorld(numPosesLow);
+		static std::vector<hkQsTransform> poseWorld{};
+		poseWorld.resize(numPosesLow);
 		hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
 
 		// Set rigidbody transforms to the anim pose ones and save the old values
-		std::vector<hkTransform> savedTransforms{};
+		static std::vector<hkTransform> savedTransforms{};
+		savedTransforms.clear();
 		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
 			hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
 			hkQsTransform &transform = poseWorld[i];
@@ -753,9 +757,6 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	}
 }
 
-std::vector<float> weights{};
-std::vector<float> scratchStresses{};
-std::vector<hkQsTransform> g_scratchPose{};
 void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
@@ -780,6 +781,10 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+
+		// Copy ragdoll pose track after postPhysics() as postPhysics() will overwrite it with the ragdoll pose
+		ragdoll.ragdollPose.assign(poseOut, poseOut + numPoses);
+
 		if (ragdoll.state == RagdollState::Keyframed) {
 			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
 		}
@@ -793,6 +798,14 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 				state = RagdollState::Collide;
 			else if (state == RagdollState::BlendOut)
 				state = RagdollState::Keyframed;
+		}
+	}
+
+	if (Config::options.forceRagdollPose) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+			int numPoses = poseHeader->m_numData;
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			memcpy(poseOut, ragdoll.ragdollPose.data(), numPoses * sizeof(hkQsTransform));
 		}
 	}
 
