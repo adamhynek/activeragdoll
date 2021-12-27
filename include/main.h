@@ -26,4 +26,5 @@ struct ActiveRagdoll
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
+	bool wantKeyframe = true;
 };

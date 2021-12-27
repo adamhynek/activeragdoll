@@ -84,6 +84,7 @@ namespace Config {
 
 	bool ReadConfigOptions()
 	{
+		/*
 		if (!ReadDouble("BlendInTime", options.blendInTime)) return false;
 
 		if (!ReadFloat("CollideHierarchyGain", options.collideHierarchyGain)) return false;
@@ -101,6 +102,7 @@ namespace Config {
 		if (!ReadFloat("ActiveRagdollDistance", options.activeRagdollDistance)) return false;
 
 		if (!ReadBool("EnableBipedCollision", options.enableBipedCollision)) return false;
+		*/
 
 		return true;
 	}

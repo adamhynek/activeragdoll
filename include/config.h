@@ -8,20 +8,18 @@
 
 namespace Config {
 	struct Options {
-		double blendOutDurationMin = 0.2;
-		double blendOutDurationMax = 0.5;
-		double blendOutDurationStressMin = 0.0;
+		double blendOutDurationMin = 1.0;
+		double blendOutDurationMax = 1.0;
+		double blendOutDurationStressMin = 5.0;
 		double blendOutDurationStressMax = 40.0;
 		double blendOutBlendPower = 2.5;
-		double blendInTime = 0.15;
+		double blendInTime = 0.06;
 
-		float blendStressWeight = 8.f;
-
-		bool doRootMotion = true;
+		bool doRootMotion = false;
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
-		float activeRagdollDistance = 4.f;
+		float activeRagdollDistance = 3.f;
 
 		float collideHierarchyGain = 0.6f;
 		float collideVelocityGain = 0.6f;
@@ -31,11 +29,20 @@ namespace Config {
 		float blendOutVelocityGain = 0.6f;
 		float blendOutPositionGain = 0.05f;
 
+		float poweredControllerOnFraction = 0.01f;
+
+		float poweredMaxForce = 1000.f;
+		float poweredTau = 0.8f;
+		float poweredDaming = 1.0f;
+		float poweredProportionalRecoveryVelocity = 5.f;
+		float poweredConstantRecoveryVelocity = 0.2f;
+
 		float malleableConstraintStrength = 1.f;
 
 		bool enableBipedCollision = true;
 		bool keyframeBones = true;
 		bool forceRagdollPose = false;
+		bool doBlending = true;
 	};
 	extern Options options; // global object containing options
 

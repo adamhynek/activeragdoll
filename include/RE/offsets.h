@@ -439,3 +439,6 @@ extern RelocAddr<_hkpEaseConstraintsAction_loosenConstraints> hkpEaseConstraints
 
 typedef bool(*_hkpEaseConstraintsAction_restoreConstraints)(hkpEaseConstraintsAction *_this, hkReal duration);
 extern RelocAddr<_hkpEaseConstraintsAction_restoreConstraints> hkpEaseConstraintsAction_restoreConstraints;
+
+typedef hkpConstraintInstance * (*_hkpConstraintUtils_convertToPowered)(const hkpConstraintInstance* originalConstraint, hkpConstraintMotor* constraintMotor, hkBool enableMotors);
+extern RelocAddr<_hkpConstraintUtils_convertToPowered> hkpConstraintUtils_convertToPowered;

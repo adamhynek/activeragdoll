@@ -462,11 +462,27 @@ void ProcessHavokHitJobsHook()
 	}
 }
 
-void TryForceControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+void TryForceRigidBodyControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
 {
 	if (header.m_capacity > 0) {
 		hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(output, header));
 		data[0] = hkaKeyFrameHierarchyUtility::ControlData();
+
+		hkInt8 *indices = Track_getIndices(output, header);
+		for (int i = 0; i < header.m_capacity; i++) {
+			indices[i] = 0;
+		}
+
+		header.m_numData = 1;
+		header.m_onFraction = 1.f;
+	}
+}
+
+void TryForcePoweredControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
+{
+	if (header.m_capacity > 0) {
+		hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(output, header));
+		data[0] = hkbPoweredRagdollControlData{};
 
 		hkInt8 *indices = Track_getIndices(output, header);
 		for (int i = 0; i < header.m_capacity; i++) {
@@ -540,14 +556,26 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (!isRigidBodyOn && !isPoweredOn) {
 		// No controls are active - try and force it to use the rigidbody controller
 		if (rigidBodyHeader) {
-			TryForceControls(generatorOutput, *rigidBodyHeader);
+			TryForceRigidBodyControls(generatorOutput, *rigidBodyHeader);
 			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
+		}
+	}
+
+	if (isRigidBodyOn && !isPoweredOn) {
+		if (poweredHeader) {
+			TryForcePoweredControls(generatorOutput, *poweredHeader);
+			isPoweredOn = poweredHeader->m_onFraction > 0.f;
+			if (isPoweredOn) {
+				poweredHeader->m_onFraction = Config::options.poweredControllerOnFraction;
+				rigidBodyHeader->m_onFraction = 1.1f; // something > 1 makes the hkbRagdollDriver blend between the rigidbody and powered controllers
+			}
 		}
 	}
 
 	ragdoll.isOn = true;
 	if (!isRigidBodyOn) {
 		ragdoll.isOn = false;
+		ragdoll.wantKeyframe = true;
 		ragdoll.state = RagdollState::Keyframed; // reset state
 		return;
 	}
@@ -579,7 +607,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	if (Config::options.keyframeBones) {
 		if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-			if (state == RagdollState::Keyframed) { // Don't keyframe bones if we've collided with the actor
+			if (state == RagdollState::Keyframed && ragdoll.wantKeyframe) { // Don't keyframe bones if we've collided with the actor
+				ragdoll.wantKeyframe = false;
 				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 			}
 			else {
@@ -589,10 +618,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::BlendOut) && rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f) {
-		if (rigidBodyHeader->m_numData > 0) {
-			float elapsedTime = (frameTime - ragdoll.stateChangedTime) * *g_globalTimeMultiplier;
-
+	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::BlendOut)) {
+		if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
 			float hierarchyGain, velocityGain, positionGain;
 			if (state == RagdollState::BlendOut) {
 				hierarchyGain = Config::options.blendOutHierarchyGain;
@@ -611,6 +638,18 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				elem.m_hierarchyGain = hierarchyGain;
 				elem.m_velocityGain = velocityGain;
 				elem.m_positionGain = positionGain;
+			}
+		}
+
+		if (poweredHeader && poweredHeader->m_onFraction > 0.f && poweredHeader->m_numData > 0) {
+			hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
+			for (int i = 0; i < poweredHeader->m_numData; i++) {
+				hkbPoweredRagdollControlData &elem = data[i];
+				elem.m_maxForce = Config::options.poweredMaxForce;
+				elem.m_tau = Config::options.poweredTau;
+				elem.m_damping = Config::options.poweredDaming;
+				elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
+				elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
 			}
 		}
 	}
@@ -792,12 +831,18 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	Blender &blender = ragdoll.blender;
 	if (blender.isActive) {
-		bool done = blender.Update(ragdoll, inOut, ragdoll.frameTime);
+		bool done = !Config::options.doBlending;
+		if (!done) {
+			done = blender.Update(ragdoll, inOut, ragdoll.frameTime);
+		}
 		if (done) {
-			if (state == RagdollState::BlendIn)
+			if (state == RagdollState::BlendIn) {
 				state = RagdollState::Collide;
-			else if (state == RagdollState::BlendOut)
+			}
+			else if (state == RagdollState::BlendOut) {
+				ragdoll.wantKeyframe = true;
 				state = RagdollState::Keyframed;
+			}
 		}
 	}
 
