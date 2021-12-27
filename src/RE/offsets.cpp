@@ -45,6 +45,8 @@ RelocPtr<float> g_fMagicHandRotateY(0x1EAEAB8);
 RelocPtr<float> g_fMagicHandRotateZ(0x1EAEAD0);
 RelocPtr<float> g_fMagicHandScale(0x1EAEAE8);
 
+RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
+
 RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 
 // Used by NiCloningProcess...

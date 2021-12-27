@@ -16,22 +16,12 @@ enum class RagdollState : UInt8
 
 struct ActiveRagdoll
 {
-	ActiveRagdoll()
-	{
-		easeConstraintsAction = (hkpEaseConstraintsAction *)Heap_Allocate(sizeof(hkpEaseConstraintsAction));
-	}
-
-	~ActiveRagdoll()
-	{
-		hkReferencedObject_removeReference(easeConstraintsAction);
-	}
-
 	Blender blender{};
 	std::vector<hkQsTransform> animPose{};
 	std::vector<float> stress{};
 	std::vector<float> restStress{};
 	float avgStress = 0.f;
-	hkpEaseConstraintsAction *easeConstraintsAction = nullptr;
+	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	double frameTime = 0.0;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Keyframed;

@@ -6,6 +6,11 @@
 #include "RE/offsets.h"
 #include "math_utils.h"
 
+hkMemoryRouter &hkGetMemoryRouter()
+{
+	return *(hkMemoryRouter *)(hkUlong)TlsGetValue(*g_dwTlsIndex);
+}
+
 hkConstraintCinfo::~hkConstraintCinfo()
 {
 	hkConstraintCinfo_setConstraintData(this, nullptr);

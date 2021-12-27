@@ -634,10 +634,16 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
 		}
 
-		// Loosen ragdoll constraints to allow the anim pose
-		hkpEaseConstraintsAction* easeConstraintsAction = ragdoll.easeConstraintsAction;
-		hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
-		hkpEaseConstraintsAction_loosenConstraints(easeConstraintsAction);
+		{ // Loosen ragdoll constraints to allow the anim pose
+			if (!ragdoll.easeConstraintsAction) {
+				hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
+				hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
+				ragdoll.easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
+				hkReferencedObject_removeReference(ragdoll.easeConstraintsAction);
+			}
+
+			hkpEaseConstraintsAction_loosenConstraints(ragdoll.easeConstraintsAction);
+		}
 
 		// Restore rigidbody transforms
 		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
@@ -767,8 +773,8 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	{ // Restore constraint limits from before we loosened them
 		// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
-		hkpEaseConstraintsAction *easeConstraintsAction = ragdoll.easeConstraintsAction;
-		hkpEaseConstraintsAction_restoreConstraints(easeConstraintsAction, 0.f);
+		hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
+		ragdoll.easeConstraintsAction = nullptr;
 	}
 
 	if (state == RagdollState::BlendIn && ragdoll.frameTime == ragdoll.stateChangedTime) {

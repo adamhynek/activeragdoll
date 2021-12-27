@@ -251,6 +251,9 @@ struct bhkRagdollConstraint : bhkConstraint
 };
 static_assert(sizeof(bhkRagdollConstraint) == 0x20);
 
+hkMemoryRouter &hkGetMemoryRouter();
+inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().blockAlloc(numBytes); }
+
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);
 bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, float strength);
 hkpConstraintInstance * LimitedHingeToRagdollConstraint(hkpConstraintInstance *constraint);

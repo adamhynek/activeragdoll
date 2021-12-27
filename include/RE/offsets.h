@@ -60,6 +60,8 @@ extern RelocPtr<float> g_fMagicHandRotateY;
 extern RelocPtr<float> g_fMagicHandRotateZ;
 extern RelocPtr<float> g_fMagicHandScale;
 
+extern RelocPtr<DWORD> g_dwTlsIndex;
+
 
 // Havok / Bethesda havok wrappers
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
