@@ -67,35 +67,77 @@ bool initComplete = false; // Whether hands have been initialized
 // 60C808 - address of call to TESObjectREFR_EndHavokHit in Actor::KillImpl
 
 
-struct HavokHitJob
+struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
-	NiPoint3 position; // 00
-	NiPoint3 direction; // 0C
-	UInt32 refHandle; // 18
-	UInt32 endTimeMilliseconds = -1; // 1C
-};
-static_assert(sizeof(HavokHitJob) == 0x20);
+	struct Event
+	{
+		enum class Type
+		{
+			TOI,
+			ADDED,
+			REMOVED
+		};
 
-struct HavokHitJobs
-{
-	UInt64 unk00;
-	// Actually this is a BSTSmallArray<HavokHitJob> from this point
-	UInt32 unk08 = 0x80000000;
-	UInt32 pad0C;
-	HavokHitJob jobs[5]; // 10
-	UInt32 numJobs = 5; // B0
-};
-static_assert(offsetof(HavokHitJobs, jobs) == 0x10);
-static_assert(offsetof(HavokHitJobs, numJobs) == 0xB0);
+		hkpRigidBody *rbA = nullptr;
+		hkpRigidBody *rbB = nullptr;
+		NiPoint3 separatingVelocity{};
+		Type type;
+	};
 
-std::unordered_map<UInt32, int> g_hitHandleCounts;
-struct ContactListener : hkpContactListener
-{
-	std::set<std::pair<hkpRigidBody *, hkpRigidBody*>> activeCollisions;
+	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
+	std::unordered_set<UInt32> activeHandles;
+	std::vector<Event> events{};
 
 	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
+	}
+
+	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, NiPoint3 &separatingVelocity)
+	{
+		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+
+		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (!hitRefr) return;
+
+		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+			/*UInt32 handle = GetOrCreateRefrHandle(hitRefr);
+			if (g_hitHandleCounts.count(handle) == 0) g_hitHandleCounts[handle] = 0;
+			++g_hitHandleCounts[handle];*/
+		}
+	}
+
+	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
+		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
+		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
+
+		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+
+		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+
+		if (evnt.isToi()) {
+			float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
+			if (fabs(separatingSpeed) > Config::options.toiSeparatingSpeedThreshold) {
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				events.push_back({ rigidBodyA, rigidBodyB, HkVectorToNiPoint(evnt.m_contactPoint->getNormal()) * separatingSpeed, Event::Type::TOI });
+				_MESSAGE("%d TOI contact pt fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+				return;
+			}
+			_MESSAGE("%d TOI contact pt slow %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		}
+		else {
+			// Not toi, so it will be an active collision if it's relevant
+			auto pair = SortPair(rigidBodyA, rigidBodyB);
+			if (activeCollisions.count(pair)) {
+				// Do damage or something
+				_MESSAGE("%d Contact pt %d %x %x", *g_currentFrameCounter, (int)evnt.m_type, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+			}
+		}
 	}
 
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
@@ -109,21 +151,7 @@ struct ContactListener : hkpContactListener
 
 		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
 
-		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
-
-		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
-
-		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-			UInt32 handle = GetOrCreateRefrHandle(hitRefr);
-			if (g_hitHandleCounts.count(handle) == 0) g_hitHandleCounts[handle] = 0;
-			++g_hitHandleCounts[handle];
-
-			//hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-			activeCollisions.insert(SortPair(rigidBodyA, rigidBodyB)); // TODO: Can there be multiple collisions between the same entity pair?
-
-			//_MESSAGE("Collision added");
-		}
+		events.push_back({ rigidBodyA, rigidBodyB, {}, Event::Type::ADDED });
 	}
 
 	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
@@ -131,6 +159,10 @@ struct ContactListener : hkpContactListener
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
+		events.push_back({ rigidBodyA, rigidBodyB, {}, Event::Type::REMOVED });
+		return;
+
+		/*
 		auto pair = SortPair(rigidBodyA, rigidBodyB);
 		if (activeCollisions.count(pair)) {
 			activeCollisions.erase(pair);
@@ -153,10 +185,76 @@ struct ContactListener : hkpContactListener
 						g_hitHandleCounts[handle] = count - 1;
 					}
 
-					//_MESSAGE("Collision removed");
+					_MESSAGE("%d Collision removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+				}
+			}
+		}*/
+	}
+
+	virtual void postSimulationCallback(hkpWorld* world)
+	{
+		//_MESSAGE("Post sim");
+
+		// First just accumulate adds/removes
+		for (Event &evnt : events) {
+			if (evnt.type == Event::Type::ADDED) {
+				auto pair = SortPair(evnt.rbA, evnt.rbB);
+				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
+				activeCollisions[pair] = count + 1;
+			}
+			else if (evnt.type == Event::Type::REMOVED) {
+				auto pair = SortPair(evnt.rbA, evnt.rbB);
+				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
+				activeCollisions[pair] = count - 1;
+			}
+		}
+
+		// Clear out any collisions that are no longer active (or that were only removed, since we do events for any removes but only some adds)
+		for (auto it = activeCollisions.begin(); it != activeCollisions.end();) {
+			auto[pair, count] = *it;
+			if (count <= 0)
+				it = activeCollisions.erase(it);
+			else
+				++it;
+		}
+
+		activeHandles.clear(); // Clear out currently collided with actors
+
+		// Now fill in the currently collided with actors based on active collisions
+		for (auto[pair, count] : activeCollisions) {
+			auto[rigidBodyA, rigidBodyB] = pair;
+
+			UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+			UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+
+			hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+
+			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+			if (hitRefr) {
+				if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+					UInt32 handle = GetOrCreateRefrHandle(hitRefr);
+					activeHandles.insert(handle);
 				}
 			}
 		}
+
+		// Now process TOIs
+		for (Event &evnt : events) {
+			if (evnt.type == Event::Type::TOI) {
+				auto pair = SortPair(evnt.rbA, evnt.rbB);
+				if (activeCollisions.count(pair)) {
+					// At the end of this frame's sim, we are collided with the rigidbody
+
+					// Do damage or something
+					_MESSAGE("%d TOI postsim active", *g_currentFrameCounter);
+				}
+				else {
+					_MESSAGE("%d TOI postsim reject", *g_currentFrameCounter);
+				}
+			}
+		}
+
+		events.clear();
 	}
 
 	NiPointer<bhkWorld> world = nullptr;
@@ -389,6 +487,7 @@ void ProcessHavokHitJobsHook()
 					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(world->world);
 				}
 				hkpWorld_removeContactListener(oldWorld->world, contactListener);
+				hkpWorld_removeWorldPostSimulationListener(world->world, contactListener);
 			}
 		}
 
@@ -397,6 +496,7 @@ void ProcessHavokHitJobsHook()
 			BSWriteLocker lock(&world->worldLock);
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 			hkpWorld_addContactListener(world->world, contactListener);
+			hkpWorld_addWorldPostSimulationListener(world->world, contactListener);
 
 			if (Config::options.enableBipedCollision) {
 				bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
@@ -411,8 +511,8 @@ void ProcessHavokHitJobsHook()
 		g_hitDrivers.clear(); // clear first, then add any that are hit. Not thread-safe.
 	}
 
-	if (g_hitHandleCounts.size() > 0) {
-		for (auto[handle, count] : g_hitHandleCounts) {
+	if (contactListener->activeHandles.size() > 0) {
+		for (UInt32 handle : contactListener->activeHandles) {
 			//_MESSAGE("%d:\t%d", handle, count);
 			NiPointer<TESObjectREFR> refr;
 			UInt32 handleCopy = handle;
@@ -527,21 +627,23 @@ int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
+inline hkbGeneratorOutput::TrackHeader * GetHeader(hkbGeneratorOutput& generatorOutput, hkbGeneratorOutput::StandardTracks track)
+{
+	int trackId = (int)track;
+	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
+	return numTracks > trackId ? &(generatorOutput.m_tracks->m_trackHeaders[trackId]) : nullptr;
+}
+
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
-	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
-	int worldFromModelTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL;
-	int keyframedBonesTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES;
-	int rigidBodyControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS;
-	int poweredControlsTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS;
+	Actor *actor = GetActorFromRagdollDriver(driver);
+	if (!actor || Actor_IsInRagdollState(actor)) return;
 
-	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
-
-	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
-	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = numTracks > worldFromModelTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[worldFromModelTrackId]) : nullptr;
-	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = numTracks > keyframedBonesTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[keyframedBonesTrackId]) : nullptr;
-	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = numTracks > rigidBodyControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[rigidBodyControlsTrackId]) : nullptr;
-	hkbGeneratorOutput::TrackHeader *poweredHeader = numTracks > poweredControlsTrackId ? &(generatorOutput.m_tracks->m_trackHeaders[poweredControlsTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
+	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
+	hkbGeneratorOutput::TrackHeader *poweredHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
 	bool isCollidedWith = g_hitDrivers.count(driver) || g_higgsDrivers.count(driver);
 
@@ -695,7 +797,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (actor) {
 		NiPointer<NiNode> root = actor->GetNiNode();
 		if (root) {
@@ -757,6 +858,9 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 {
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
+	Actor *actor = GetActorFromRagdollDriver(driver);
+	if (!actor || Actor_IsInRagdollState(actor)) return;
+
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 	if (!ragdoll.isOn) return;
 
@@ -774,20 +878,20 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
 	ragdoll.avgStress = totalStress / numBones;
 	//_MESSAGE("stress: %.2f", avgStress);
-	PrintToFile(std::to_string(ragdoll.avgStress), "stress.txt");
+	//PrintToFile(std::to_string(ragdoll.avgStress), "stress.txt");
 }
 
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right before hkbRagdollDriver::postPhysics()
 
+	Actor *actor = GetActorFromRagdollDriver(driver);
+	if (!actor || Actor_IsInRagdollState(actor)) return;
+
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 	if (!ragdoll.isOn) return;
 
-	hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
-
-	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
-	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
@@ -800,18 +904,20 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
+	Actor *actor = GetActorFromRagdollDriver(driver);
+	if (!actor || Actor_IsInRagdollState(actor)) return;
+
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 	if (!ragdoll.isOn) return;
 
 	RagdollState state = ragdoll.state;
 
-	PrintToFile(std::to_string((int)state), "state.txt");
+	//PrintToFile(std::to_string((int)state), "state.txt");
 
-	hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
-	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
-	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
-	{ // Restore constraint limits from before we loosened them
+	if (ragdoll.easeConstraintsAction) {
+		// Restore constraint limits from before we loosened them
 		// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
 		hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
 		ragdoll.easeConstraintsAction = nullptr;

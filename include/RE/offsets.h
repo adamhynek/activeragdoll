@@ -442,3 +442,9 @@ extern RelocAddr<_hkpEaseConstraintsAction_restoreConstraints> hkpEaseConstraint
 
 typedef hkpConstraintInstance * (*_hkpConstraintUtils_convertToPowered)(const hkpConstraintInstance* originalConstraint, hkpConstraintMotor* constraintMotor, hkBool enableMotors);
 extern RelocAddr<_hkpConstraintUtils_convertToPowered> hkpConstraintUtils_convertToPowered;
+
+typedef void(*_hkpWorld_addWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
+extern RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPostSimulationListener;
+
+typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
+extern RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener;

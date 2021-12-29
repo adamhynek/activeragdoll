@@ -43,6 +43,8 @@ namespace Config {
 		bool keyframeBones = true;
 		bool forceRagdollPose = false;
 		bool doBlending = true;
+
+		float toiSeparatingSpeedThreshold = 10.f;
 	};
 	extern Options options; // global object containing options
 

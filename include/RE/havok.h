@@ -9,6 +9,7 @@
 #include <Physics/Collide/Agent/Collidable/hkpCdPoint.h>
 #include <Physics/Collide/Shape/Query/hkpShapeRayCastCollectorOutput.h>
 #include <Physics/Collide/Shape/Compound/Tree/Mopp/hkpMoppBvTreeShape.h>
+#include <Physics/Dynamics/Collide/ContactListener/hkpContactPointEvent.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -253,6 +254,8 @@ static_assert(sizeof(bhkRagdollConstraint) == 0x20);
 
 hkMemoryRouter &hkGetMemoryRouter();
 inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().blockAlloc(numBytes); }
+
+float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this);
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);
 bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, float strength);

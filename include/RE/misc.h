@@ -76,6 +76,7 @@ struct VRMeleeData
 	float impactRumbleDuration; // B4
 	float meleeForceMultLinear; // B8
 	bool enableCollision; // BC - this value is read from and the collision node's collision is enabled/disabled
+	bool applyImpulseOnHit; // BD - default true
 	SwingDirection swingDirection; // C0 - default 0
 	float cooldown; // C4 - gets set to the cooldown, then ticks down, can (and will) get negative - default 0
 	float powerAttackCooldown; // C8 - default 0
@@ -160,6 +161,23 @@ struct BSTSmallArray
 	Data data; // 08
 	UInt32 size;
 };
+
+struct HavokHitJob
+{
+	NiPoint3 position; // 00
+	NiPoint3 direction; // 0C
+	UInt32 refHandle; // 18
+	UInt32 endTimeMilliseconds = -1; // 1C
+};
+static_assert(sizeof(HavokHitJob) == 0x20);
+
+struct HavokHitJobs
+{
+	UInt64 unk00;
+	BSTSmallArray<HavokHitJob, 5> jobs; // 08
+};
+static_assert(offsetof(HavokHitJobs, jobs.data) == 0x10);
+static_assert(offsetof(HavokHitJobs, jobs.size) == 0xB0);
 
 typedef void(*Actor_RemoveItem)(TESObjectREFR *_this, UInt32 *outHandle, TESBoundObject* a_item, SInt32 a_count, UInt32 a_reason, BaseExtraList* a_extraList, TESObjectREFR* a_moveToRef, const NiPoint3* a_dropLoc, const NiPoint3* a_rotate);
 typedef TESAmmo * (*Actor_GetCurrentAmmo)(Actor *_this);
