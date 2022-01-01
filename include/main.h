@@ -10,7 +10,7 @@ enum class RagdollState : UInt8
 {
 	Keyframed,
 	BlendIn,
-	Collide,
+	Dynamic,
 	BlendOut,
 };
 

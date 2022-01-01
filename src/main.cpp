@@ -85,7 +85,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	};
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
-	std::unordered_set<UInt32> activeHandles;
+	std::unordered_set<hkbRagdollDriver *> activeDrivers;
 	std::vector<Event> events{};
 
 	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
@@ -120,22 +120,32 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
 
+		// A contact point of any sort confirms a collision
 		if (evnt.isToi()) {
 			float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
 			if (fabs(separatingSpeed) > Config::options.toiSeparatingSpeedThreshold) {
+				// For TOIs, they can happen before the collisionAddedCallback so we need to disable them now no matter if they're in activeCollisions or not
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 				events.push_back({ rigidBodyA, rigidBodyB, HkVectorToNiPoint(evnt.m_contactPoint->getNormal()) * separatingSpeed, Event::Type::TOI });
 				_MESSAGE("%d TOI contact pt fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+
+				// Do damage or something
+
 				return;
 			}
 			_MESSAGE("%d TOI contact pt slow %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 		}
 		else {
-			// Not toi, so it will be an active collision if it's relevant
+			// Not toi, so it will be an active collision if it's relevant as these occur on the frame after collisionAddedCallback (apart from EXPAND_MANIFOLD which is dependent on the TOI event)
 			auto pair = SortPair(rigidBodyA, rigidBodyB);
 			if (activeCollisions.count(pair)) {
-				// Do damage or something
 				_MESSAGE("%d Contact pt %d %x %x", *g_currentFrameCounter, (int)evnt.m_type, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+				float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
+				if (fabs(separatingSpeed) > Config::options.toiSeparatingSpeedThreshold) {
+					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+					// Do damage or something
+					_MESSAGE("fast");
+				}
 			}
 		}
 	}
@@ -159,6 +169,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
+		// Technically our objects could have changed layers or something between added and removed
 		events.push_back({ rigidBodyA, rigidBodyB, {}, Event::Type::REMOVED });
 		return;
 
@@ -218,9 +229,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
-		activeHandles.clear(); // Clear out currently collided with actors
+		if (activeDrivers.size() > 0) {
+			activeDrivers.clear(); // Clear first, then add any that are hit. Not thread-safe.
+		}
 
-		// Now fill in the currently collided with actors based on active collisions
+		// Now fill in the currently collided-with actors based on active collisions
 		for (auto[pair, count] : activeCollisions) {
 			auto[rigidBodyA, rigidBodyB] = pair;
 
@@ -232,8 +245,21 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 			if (hitRefr) {
 				if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-					UInt32 handle = GetOrCreateRefrHandle(hitRefr);
-					activeHandles.insert(handle);
+					Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
+					if (hitActor) {
+						BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+						if (GetAnimationGraphManager(hitActor, animGraphManager)) {
+							BSAnimationGraphManager *manager = animGraphManager.ptr;
+							SimpleLocker lock(&manager->updateLock);
+							for (int i = 0; i < manager->graphs.size; i++) {
+								BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+								hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+								if (driver) {
+									activeDrivers.insert(driver);
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -245,11 +271,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				if (activeCollisions.count(pair)) {
 					// At the end of this frame's sim, we are collided with the rigidbody
 
-					// Do damage or something
-					_MESSAGE("%d TOI postsim active", *g_currentFrameCounter);
+					_MESSAGE("%d TOI entered", *g_currentFrameCounter);
 				}
 				else {
-					_MESSAGE("%d TOI postsim reject", *g_currentFrameCounter);
+					_MESSAGE("%d TOI entered and left", *g_currentFrameCounter);
 				}
 			}
 		}
@@ -262,6 +287,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 ContactListener *contactListener = nullptr;
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls;
+std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
+std::unordered_map<hkbRagdollDriver *, hkQsTransform> g_hipBoneTransforms;
+
+hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
 
 bool IsAddedToWorld(Actor *actor)
@@ -285,8 +314,6 @@ bool IsAddedToWorld(Actor *actor)
 
 	return true;
 }
-
-std::unordered_map<hkbRagdollDriver *, hkQsTransform> g_hipBoneTransforms;
 
 void ModifyConstraints(Actor *actor)
 {
@@ -450,9 +477,6 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	return true;
 }
 
-std::unordered_set<hkbRagdollDriver *> g_hitDrivers;
-std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
-
 void ProcessHavokHitJobsHook()
 {
 	if (!initComplete) return;
@@ -505,35 +529,6 @@ void ProcessHavokHitJobsHook()
 		}
 
 		contactListener->world = world;
-	}
-
-	if (g_hitDrivers.size() > 0) {
-		g_hitDrivers.clear(); // clear first, then add any that are hit. Not thread-safe.
-	}
-
-	if (contactListener->activeHandles.size() > 0) {
-		for (UInt32 handle : contactListener->activeHandles) {
-			//_MESSAGE("%d:\t%d", handle, count);
-			NiPointer<TESObjectREFR> refr;
-			UInt32 handleCopy = handle;
-			if (LookupREFRByHandle(handleCopy, refr)) {
-				Actor *hitActor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
-				if (hitActor) {
-					BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-					if (GetAnimationGraphManager(hitActor, animGraphManager)) {
-						BSAnimationGraphManager *manager = animGraphManager.ptr;
-						SimpleLocker lock(&manager->updateLock);
-						for (int i = 0; i < manager->graphs.size; i++) {
-							BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-							hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-							if (driver) {
-								g_hitDrivers.insert(driver);
-							}
-						}
-					}
-				}
-			}
-		}
 	}
 
 	// if (!g_enableRagdoll) return;
@@ -604,12 +599,9 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput& ge
 	hkReal* data = Track_getData(generatorOutput, header);
 	const hkaSkeleton *skeleton = driver->ragdoll->m_skeleton;
 	for (int i = 0; i < skeleton->m_bones.getSize(); i++) { // TODO: We need to check the capacity of this track to see if we can fit all the bones? What about numData?
-		//const hkaBone &bone = skeleton->m_bones[i];
-		//if (std::string(bone.m_name.cString()) == "Ragdoll_NPC Head [Head]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC L Hand [LHnd]" || std::string(bone.m_name.cString()) == "Ragdoll_NPC R Hand [RHnd]") {
-		data[i] = 1.1f;
+		data[i] = 1.1f; // anything > 1
 		// Indexed by (boneIdx >> 5), and then you >> (boneIdx & 0x1F) & 1 to extract the specific bit
 		driver->reportingWhenKeyframed[i >> 5] |= (1 << (i & 0x1F));
-		//}
 	}
 }
 
@@ -625,7 +617,6 @@ int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
 	return -1;
 }
 
-hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
 inline hkbGeneratorOutput::TrackHeader * GetHeader(hkbGeneratorOutput& generatorOutput, hkbGeneratorOutput::StandardTracks track)
 {
@@ -645,7 +636,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
 	hkbGeneratorOutput::TrackHeader *poweredHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
-	bool isCollidedWith = g_hitDrivers.count(driver) || g_higgsDrivers.count(driver);
+	bool isCollidedWith = contactListener->activeDrivers.count(driver) || g_higgsDrivers.count(driver);
 
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 
@@ -690,7 +681,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			state = RagdollState::BlendIn;
 		}
 	}
-	if (state == RagdollState::Collide) {
+	if (state == RagdollState::Dynamic) {
 		if (!isCollidedWith) {
 			double stressLerp = max(0.0, (double)ragdoll.avgStress - Config::options.blendOutDurationStressMin) / (Config::options.blendOutDurationStressMax - Config::options.blendOutDurationStressMin);
 			double blendDuration = lerp(Config::options.blendOutDurationMin, Config::options.blendOutDurationMax, stressLerp);
@@ -720,7 +711,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if ((state == RagdollState::BlendIn || state == RagdollState::Collide || state == RagdollState::BlendOut)) {
+	if ((state == RagdollState::BlendIn || state == RagdollState::Dynamic || state == RagdollState::BlendOut)) {
 		if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
 			float hierarchyGain, velocityGain, positionGain;
 			if (state == RagdollState::BlendOut) {
@@ -819,7 +810,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							hkQsTransform poseT;
 							poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
-							if (Config::options.doRootMotion && state == RagdollState::Collide && g_hipBoneTransforms.count(driver)) {
+							if (Config::options.doRootMotion && state == RagdollState::Dynamic && g_hipBoneTransforms.count(driver)) {
 								hkTransform actualT;
 								rb->getTransform(actualT);
 
@@ -927,10 +918,11 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 
-		// Copy ragdoll pose track after postPhysics() as postPhysics() will overwrite it with the ragdoll pose
+		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
 		ragdoll.ragdollPose.assign(poseOut, poseOut + numPoses);
 
 		if (ragdoll.state == RagdollState::Keyframed) {
+			// When in keyframed state, force the output pose to be the anim pose
 			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
 		}
 	}
@@ -943,7 +935,7 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {
-				state = RagdollState::Collide;
+				state = RagdollState::Dynamic;
 			}
 			else if (state == RagdollState::BlendOut) {
 				ragdoll.wantKeyframe = true;

@@ -57,32 +57,22 @@ bool Blender::Update(ActiveRagdoll &ragdoll, hkbGeneratorOutput &inOut, double f
 
 		// Save initial pose if necessary
 		if ((type == BlendType::AnimToRagdoll || type == BlendType::RagdollToAnim) && isFirstBlendFrame) {
-			hkQsTransform *fromPose = nullptr;
 			if (type == BlendType::AnimToRagdoll)
-				fromPose = ragdoll.animPose.data();
+				initialPose = ragdoll.animPose;
 			else if (type == BlendType::RagdollToAnim)
-				fromPose = poseOut; // ragdoll pose
-			initialPose.assign(fromPose, fromPose + numPoses);
+				initialPose = ragdoll.ragdollPose;
 		}
 		isFirstBlendFrame = false;
 
 		// Blend poses
-		//amounts.assign(numPoses, lerpAmount);
 		if (type == BlendType::AnimToRagdoll) {
-			// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
-			scratchPose.assign(poseOut, poseOut + numPoses);
-			//BlendPoses(initialPose.data(), scratchPose.data(), poseOut, amounts.data(), numPoses);
-			hkbBlendPoses(numPoses, initialPose.data(), scratchPose.data(), lerpAmount, poseOut);
+			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.ragdollPose.data(), lerpAmount, poseOut);
 		}
 		else if (type == BlendType::RagdollToAnim) {
-			//BlendPoses(initialPose.data(), g_animPose.data(), poseOut, amounts.data(), numPoses);
 			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);
 		}
 		else if (type == BlendType::CurrentRagdollToAnim) {
-			// Save the pose before we write to it - at this point it is the high-res pose extracted from the ragdoll
-			scratchPose.assign(poseOut, poseOut + numPoses);
-			//BlendPoses(scratchPose.data(), g_animPose.data(), poseOut, amounts.data(), numPoses);
-			hkbBlendPoses(numPoses, scratchPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);
+			hkbBlendPoses(numPoses, ragdoll.ragdollPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);
 		}
 
 		currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here

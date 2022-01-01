@@ -29,7 +29,7 @@ namespace Config {
 		float blendOutVelocityGain = 0.6f;
 		float blendOutPositionGain = 0.05f;
 
-		float poweredControllerOnFraction = 0.01f;
+		float poweredControllerOnFraction = 0.05f;
 
 		float poweredMaxForce = 1000.f;
 		float poweredTau = 0.8f;
@@ -44,7 +44,7 @@ namespace Config {
 		bool forceRagdollPose = false;
 		bool doBlending = true;
 
-		float toiSeparatingSpeedThreshold = 10.f;
+		float toiSeparatingSpeedThreshold = 5.f;
 	};
 	extern Options options; // global object containing options
 
