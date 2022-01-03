@@ -93,21 +93,133 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else return { b, a };
 	}
 
-	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, NiPoint3 &separatingVelocity)
+	void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true, bool playSound = true)
+	{
+		PlayerCharacter *player = *g_thePlayer;
+
+		if (setAttackState) {
+			player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+			player->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+		}
+
+		if (playSound) {
+			if (weapon) {
+				if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
+					BGSSoundDescriptorForm *sound = weapon->attackFailSound;
+					if (sound) {
+						NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+						if (handNode) {
+							PlaySoundAtNode(sound, nullptr, handNode->m_worldTransform.pos);
+						}
+					}
+				}
+			}
+		}
+
+		UInt64 *vtbl = *((UInt64 **)player);
+		((_Actor_WeaponSwingCallback)(vtbl[0xF1]))(player);
+
+		if (player->processManager) {
+			ActorProcess_IncrementAttackCounter(player->processManager, 1);
+		}
+
+		int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)player->baseForm);
+		Actor_SetActionValue(player, soundAmount);
+
+		if (player->unk158) {
+			CombatController_sub_14050DEC0((void *)player->unk158);
+		}
+	}
+
+	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, const hkpContactPointEvent &evnt)
 	{
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+		bool isHitRigidBodyA = hitRigidBody == rigidBodyA;
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 		if (!hitRefr) return;
 
-		if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-			/*UInt32 handle = GetOrCreateRefrHandle(hitRefr);
-			if (g_hitHandleCounts.count(handle) == 0) g_hitHandleCounts[handle] = 0;
-			++g_hitHandleCounts[handle];*/
+		Character *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
+		if (!actor) return;
+
+		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+		bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
+		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
+
+		PlayerCharacter *player = *g_thePlayer;
+
+		TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
+
+		TESForm *offhandObj = player->GetEquippedObject(true);
+		TESObjectWEAP *offhandWeapon = nullptr;
+		if (offhandObj) {
+			offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
 		}
+
+		TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
+
+		bool canHit = !Actor_IsGhost(actor) && Character_CanHit(*g_thePlayer, actor);
+		if (!canHit) {
+			// potentially play impact effect/sound
+			// - get bgsblockbashdata and material of thing hit
+
+			// if (isMotionTypeMoveable(bodyB))
+			//   hitRefr->SetActorCause(player->GetActorCause())
+
+			SwingWeapon(weapon, isLeft, true);
+			player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState since SwingWeapon sets it
+			return;
+		}
+
+		// if isOffhand and no right hand weapon and offhand weapon is bow, set weapon to offhand weapon (bow)
+
+		// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
+		TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
+		bool isShield = isOffhand && equippedShield;
+
+		TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
+		bool isTorch = isOffhand && equippedLight;
+
+		bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
+
+		bool isBash = isBowOrCrossbow || isShield || isTorch;
+		if (isBash) {
+			player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+			player->actorState.flags08 |= 0x60000000u; // attackState = kBash
+		}
+
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
+
+		SwingWeapon(weapon, isLeft, false);
+
+		int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
+		UpdateDialogue(nullptr, player, actor, 3, dialogueSubtype, false, nullptr);
+
+		// Hit position / velocity needs to happen before Character::HitTarget()
+		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+		*playerLastHitPosition = HkVectorToNiPoint(evnt.m_contactPoint->getPosition()) * *g_inverseHavokWorldScale;
+
+		// TODO: The hit direction might be nicer as the actual velocity of the weapon coming in to the collision, rather than the separating velocity which is necessarily aligned with the collision normal
+		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+		NiPoint3 hitVelocity = HkVectorToNiPoint(evnt.m_contactPoint->getSeparatingNormal()) * hkpContactPointEvent_getSeparatingVelocity(evnt) * *g_inverseHavokWorldScale;
+		if (!isHitRigidBodyA) hitVelocity *= -1;
+		*playerLastHitVelocity = hitVelocity;
+
+
+		Character_HitTarget(player, actor, nullptr, isOffhand);
+
+		Actor_RemoveMagicEffectsDueToAction(player, -1); // removes invis/ethereal due to attacking
+
+		// rumble(isRight, vrMeleeData.impactConfirmRumbleIntensity, veMeleeData.impactConfirmRumbleDuration) // sub_140C59440()
+
+		player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+
+		// if (isMotionTypeMoveable(bodyB)) apply impulse
 	}
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
@@ -130,6 +242,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				_MESSAGE("%d TOI contact pt fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 
 				// Do damage or something
+				DoHit(rigidBodyA, rigidBodyB, evnt);
 
 				return;
 			}
@@ -145,6 +258,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 					// Do damage or something
 					_MESSAGE("fast");
+					DoHit(rigidBodyA, rigidBodyB, evnt);
 				}
 			}
 		}
@@ -1252,6 +1366,9 @@ extern "C" {
 	void OnDataLoaded()
 	{
 		contactListener = new ContactListener;
+
+		*g_fMeleeLinearVelocityThreshold = 99999.f;
+		*g_fShieldLinearVelocityThreshold = 99999.f;
 
 		initComplete = true;
 		_MESSAGE("Successfully loaded all forms");

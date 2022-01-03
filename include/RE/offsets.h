@@ -60,6 +60,9 @@ extern RelocPtr<float> g_fMagicHandRotateY;
 extern RelocPtr<float> g_fMagicHandRotateZ;
 extern RelocPtr<float> g_fMagicHandScale;
 
+extern RelocPtr<float> g_fMeleeLinearVelocityThreshold;
+extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
+
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
 
@@ -448,3 +451,36 @@ extern RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPost
 
 typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
 extern RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener;
+
+typedef bool(*_Actor_IsGhost)(Actor *_this);
+extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
+
+typedef bool(*_Character_CanHit)(Character *_this, Actor *target);
+extern RelocAddr<_Character_CanHit> Character_CanHit;
+
+typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isUsingMotionControllers, bool isLeft, bool isPowerAttack, BGSAttackData **attackDataOut);
+extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData;
+
+typedef bool(*_ActorProcess_IncrementAttackCounter)(ActorProcessManager *_this, int incCount);
+extern RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter;
+
+typedef int(*_TESObjectWEAP_GetSoundAmount)(TESObjectWEAP *_this);
+extern RelocAddr<_TESObjectWEAP_GetSoundAmount> TESObjectWEAP_GetSoundAmount;
+
+typedef void(*_Actor_SetActionValue)(Actor *_this, int actionValue);
+extern RelocAddr<_Actor_SetActionValue> Actor_SetActionValue;
+
+typedef int(*_TESNPC_GetSoundAmount)(TESNPC *_this);
+extern RelocAddr<_TESNPC_GetSoundAmount> TESNPC_GetSoundAmount;
+
+typedef void(*_CombatController_sub_14050DEC0)(void *_this);
+extern RelocAddr<_CombatController_sub_14050DEC0> CombatController_sub_14050DEC0;
+
+typedef void(*_Actor_RemoveMagicEffectsDueToAction)(Actor *_this, int action);
+extern RelocAddr<_Actor_RemoveMagicEffectsDueToAction> Actor_RemoveMagicEffectsDueToAction;
+
+typedef void(*_Character_HitTarget)(Character *_this, Actor *target, Projectile *projectile, bool isOffhand);
+extern RelocAddr<_Character_HitTarget> Character_HitTarget;
+
+typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
+extern RelocAddr<_UpdateDialogue> UpdateDialogue;

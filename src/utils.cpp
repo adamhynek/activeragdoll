@@ -179,37 +179,13 @@ bool IsBow(const TESObjectWEAP *weap)
 	return (type == TESObjectWEAP::GameData::kType_Bow || type == TESObjectWEAP::GameData::kType_Bow2);
 }
 
-std::pair<bool, bool> AreEquippedItemsValid(Actor *actor)
+TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand)
 {
-	if (!actor->actorState.IsWeaponDrawn()) {
-		return { true, true };
+	TESForm *equippedObject = actor->GetEquippedObject(isOffhand);
+	if (equippedObject) {
+		return DYNAMIC_CAST(equippedObject, TESForm, TESObjectWEAP);
 	}
-
-	TESForm *mainhandItem = actor->GetEquippedObject(false);
-	TESForm *offhandItem = actor->GetEquippedObject(true);
-
-	return { !mainhandItem, !offhandItem };
-
-	/*
-	bool isMainValid = false, isOffhandValid = false;
-
-	if (!mainhandItem || mainhandItem->formType == kFormType_Spell) {
-		isMainValid = true;
-	}
-	TESObjectWEAP *weap = DYNAMIC_CAST(mainhandItem, TESForm, TESObjectWEAP);
-	if (weap) {
-		if (IsTwoHanded(weap)) {
-			return std::make_pair(false, true); // Main hand holds the weapon, offhand is 'free' in VR
-		}
-		else if (IsBow(weap)) {
-			return std::make_pair(true, false); // For bows, the main hand holds the arrow, offhand holds the bow
-		}
-	}
-	if (!offhandItem || offhandItem->formType == kFormType_Spell) {
-		isOffhandValid = true;
-	}
-	return std::make_pair(isMainValid, isOffhandValid);
-	*/
+	return nullptr;
 }
 
 void PrintVector(const NiPoint3 &p)

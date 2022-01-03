@@ -45,6 +45,9 @@ RelocPtr<float> g_fMagicHandRotateY(0x1EAEAB8);
 RelocPtr<float> g_fMagicHandRotateZ(0x1EAEAD0);
 RelocPtr<float> g_fMagicHandScale(0x1EAEAE8);
 
+RelocPtr<float> g_fMeleeLinearVelocityThreshold(0x1EAE500);
+RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
+
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
 RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
@@ -197,3 +200,14 @@ RelocAddr<_hkpEaseConstraintsAction_restoreConstraints> hkpEaseConstraintsAction
 RelocAddr<_hkpConstraintUtils_convertToPowered> hkpConstraintUtils_convertToPowered(0xB08CA0);
 RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPostSimulationListener(0xAB5280);
 RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener(0xAB52E0);
+RelocAddr<_Actor_IsGhost> Actor_IsGhost(0x5DAAE0);
+RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);
+RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData(0x6B9F30);
+RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter(0x65A090);
+RelocAddr<_TESObjectWEAP_GetSoundAmount> TESObjectWEAP_GetSoundAmount(0x246360);
+RelocAddr<_Actor_SetActionValue> Actor_SetActionValue(0x602C00);
+RelocAddr<_TESNPC_GetSoundAmount> TESNPC_GetSoundAmount(0x375AE0);
+RelocAddr<_CombatController_sub_14050DEC0> CombatController_sub_14050DEC0(0x50DEC0);
+RelocAddr<_Actor_RemoveMagicEffectsDueToAction> Actor_RemoveMagicEffectsDueToAction(0x63DA50);
+RelocAddr<_Character_HitTarget> Character_HitTarget(0x631AF0);
+RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);

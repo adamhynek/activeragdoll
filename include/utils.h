@@ -29,7 +29,7 @@ bool HasGeometryChildren(NiAVObject *obj);
 
 bool IsTwoHanded(const TESObjectWEAP *weap);
 bool IsBow(const TESObjectWEAP *weap);
-std::pair<bool, bool> AreEquippedItemsValid(Actor *actor);
+TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand);
 
 double GetTime();
 

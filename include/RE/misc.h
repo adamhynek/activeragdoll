@@ -147,6 +147,102 @@ struct AIProcessManager
 	//mutable BSUniqueLock			 activeEffectShadersLock; // 120
 };
 
+struct BGSAttackData : NiRefObject
+{
+	struct AttackData  // ATKD
+	{
+		enum class AttackFlag : UInt32
+		{
+			kNone = 0,
+			kIgnoreWeapon = 1 << 0,
+			kBashAttack = 1 << 1,
+			kPowerAttack = 1 << 2,
+			kChargeAttack = 1 << 3,
+			kRotatingAttack = 1 << 4,
+			kContinuousAttack = 1 << 5,
+			kOverrideData = (UInt32)1 << 31
+		};
+
+		// members
+		float                                       damageMult;     // 00
+		float                                       attackChance;   // 04
+		SpellItem*                                  attackSpell;    // 08
+		AttackFlag									flags;          // 10
+		float                                       attackAngle;    // 14
+		float                                       strikeAngle;    // 18
+		float                                       staggerOffset;  // 1C
+		BGSKeyword*                                 attackType;     // 20
+		float                                       knockDown;      // 28
+		float                                       recoveryTime;   // 2C
+		float                                       staminaMult;    // 30
+		std::uint32_t                               pad34;          // 34
+	};
+	static_assert(sizeof(AttackData) == 0x38);
+
+	BSFixedString event;  // 10 - ATKE
+	AttackData    data;   // 18 - ATKD
+};
+static_assert(sizeof(BGSAttackData) == 0x50);
+
+struct HitData
+{
+	enum class Flag : UInt32
+	{
+		kBlocked = 1 << 0,
+		kBlockWithWeapon = 1 << 1,
+		kBlockCandidate = 1 << 2,
+		kCritical = 1 << 3,
+		kCriticalOnDeath = 1 << 4,
+		kFatal = 1 << 5,
+		kDismemberLimb = 1 << 6,
+		kExplodeLimb = 1 << 7,
+		kCrippleLimb = 1 << 8,
+		kDisarm = 1 << 9,
+		kDisableWeapon = 1 << 10,
+		kSneakAttack = 1 << 11,
+		kIgnoreCritical = 1 << 12,
+		kPredictDamage = 1 << 13,
+		kPredictBaseDamage = 1 << 14,
+		kBash = 1 << 15,
+		kTimedBash = 1 << 16,
+		kPowerAttack = 1 << 17,
+		kMeleeAttack = 1 << 18,
+		kRicochet = 1 << 19,
+		kExplosion = 1 << 20
+	};
+
+	// members
+	NiPoint3                 hitPosition;                   // 00
+	NiPoint3                 hitDirection;                   // 0C
+	UInt32              aggressor;               // 18
+	UInt32              target;                  // 1C
+	UInt32          sourceRef;               // 20
+	std::uint32_t            pad24;                   // 24
+	NiPointer<BGSAttackData> attackData;              // 28
+	TESObjectWEAP*           weapon;                  // 30
+	std::uint64_t            unk38;                   // 38
+	std::uint64_t            unk40;                   // 40
+	std::uint32_t            unk48;                   // 48
+	float                    healthDamage;            // 4C
+	float                    totalDamage;             // 50
+	float                    physicalDamage;          // 54
+	float                    targetedLimbDamage;      // 58
+	float                    percentBlocked;          // 5C
+	float                    resistedPhysicalDamage;  // 60
+	float                    resistedTypedDamage;     // 64
+	std::uint32_t            stagger;                 // 68
+	float                    sneakAttackBonus;        // 6C
+	float                    bonusHealthDamageMult;   // 70
+	float                    pushBack;                // 74
+	float                    reflectedDamage;         // 78
+	float                    criticalDamageMult;      // 7C
+	Flag                     flags;                   // 80
+	std::uint32_t            equipIndex;              // 84
+	std::uint32_t            material;                // 88
+	std::uint32_t            damageLimb;              // 8C
+};
+static_assert(sizeof(HitData) == 0x90);
+
 template <class T, UInt32 N = 1>
 struct BSTSmallArray
 {
@@ -179,11 +275,4 @@ struct HavokHitJobs
 static_assert(offsetof(HavokHitJobs, jobs.data) == 0x10);
 static_assert(offsetof(HavokHitJobs, jobs.size) == 0xB0);
 
-typedef void(*Actor_RemoveItem)(TESObjectREFR *_this, UInt32 *outHandle, TESBoundObject* a_item, SInt32 a_count, UInt32 a_reason, BaseExtraList* a_extraList, TESObjectREFR* a_moveToRef, const NiPoint3* a_dropLoc, const NiPoint3* a_rotate);
-typedef TESAmmo * (*Actor_GetCurrentAmmo)(Actor *_this);
-typedef void(*Actor_PickUpObject)(Actor *_this, TESObjectREFR* a_object, std::int32_t a_count, bool a_arg3, bool a_playSound); // arg3 == false
-typedef void(*Actor_DropObject)(Actor *_this, UInt32 *outHandle, const TESBoundObject* a_object, BaseExtraList* a_extraList, std::int32_t a_count, const NiPoint3* a_dropLoc, const NiPoint3* a_rotate);
-typedef void(*Actor_GetLinearVelocity)(Actor *_this, NiPoint3 &velocity);
-typedef bool(*TESBoundObject_GetActivateText)(TESBoundObject *_this, TESObjectREFR* activator, BSString& text);
-
-typedef void(*TESObjectREFR_Update3DPosition)(TESObjectREFR *_this, bool warp);
+typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
