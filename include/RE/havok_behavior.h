@@ -50,7 +50,7 @@ struct hkbRagdollDriver : hkReferencedObject
 	hkaRagdollInstance *ragdoll; // 88
 	hkQsTransform *ragdollPoseWS; // 90
 	hkaRagdollRigidBodyController *ragdollController; // 98
-	hkQsTransform *ragdollPoseHiResLocal; // A0 - maybe
+	hkQsTransform *ragdollPoseHiResLocal; // A0
 	hkQsTransform *lastPoseLocal; // A8
 	SInt32 lastNumPoseLocal; // B0
 	float lastFrameRigidBodyOnFraction; // B4
@@ -126,7 +126,6 @@ struct hkbContext
 };
 static_assert(offsetof(hkbContext, world) == 0x38);
 
-
 struct hkbBindable : hkReferencedObject
 {
 	hkRefPtr<struct hkbVariableBindingSet> variableBindingSet;  // 10
@@ -150,8 +149,8 @@ struct hkbNode : hkbBindable
 static_assert(offsetof(hkbNode, userData) == 0x30);
 static_assert(sizeof(hkbNode) == 0x48);
 
-struct hkbGenerator : hkbNode {};
-struct hkbBehaviorGraph : hkbGenerator {};
+struct hkbGenerator : hkbNode { /* TODO */ };
+struct hkbBehaviorGraph : hkbGenerator { /* TODO */ };
 
 struct bhkCharacterController : NiRefObject
 {
@@ -392,6 +391,12 @@ inline hkInt8* Track_getIndices(hkbGeneratorOutput &output, hkbGeneratorOutput::
 	// must be sparse or pallette track
 	int numDataBytes = HK_NEXT_MULTIPLE_OF(16, header.m_elementSizeBytes * header.m_capacity);
 	return reinterpret_cast<hkInt8*>(Track_getData(output, header)) + numDataBytes;
+}
+
+inline hkbGeneratorOutput::TrackHeader * GetTrackHeader(hkbGeneratorOutput& generatorOutput, hkbGeneratorOutput::StandardTracks track) {
+	int trackId = (int)track;
+	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
+	return numTracks > trackId ? &(generatorOutput.m_tracks->m_trackHeaders[trackId]) : nullptr;
 }
 
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager>& a_out);

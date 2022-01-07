@@ -15,6 +15,9 @@ namespace Config {
 		double blendOutBlendPower = 2.5;
 		double blendInTime = 0.06;
 
+		double hitRecoveryTime = 0.15f;
+		double hitReactionTime = 0.3f;
+
 		bool doRootMotion = false;
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
@@ -44,7 +47,10 @@ namespace Config {
 		bool forceRagdollPose = false;
 		bool doBlending = true;
 
-		float toiSeparatingSpeedThreshold = 5.f;
+		float hitSeparatingSpeedThreshold = 5.f;
+		float hitImpulseMult = 5.f;
+		float hitImpulseDecayMult1 = 0.5f;
+		float hitImpulseDecayMult2 = 0.25f;
 	};
 	extern Options options; // global object containing options
 

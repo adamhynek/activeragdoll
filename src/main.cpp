@@ -67,6 +67,197 @@ bool initComplete = false; // Whether hands have been initialized
 // 60C808 - address of call to TESObjectREFR_EndHavokHit in Actor::KillImpl
 
 
+void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true, bool playSound = true)
+{
+	PlayerCharacter *player = *g_thePlayer;
+
+	if (setAttackState) {
+		player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+		player->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+	}
+
+	if (playSound) {
+		if (weapon) {
+			if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
+				BGSSoundDescriptorForm *sound = weapon->attackFailSound;
+				if (sound) {
+					NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+					if (handNode) {
+						PlaySoundAtNode(sound, handNode, {});
+					}
+				}
+			}
+		}
+	}
+
+	UInt64 *vtbl = *((UInt64 **)player);
+	((_Actor_WeaponSwingCallback)(vtbl[0xF1]))(player);
+
+	if (player->processManager) {
+		ActorProcess_IncrementAttackCounter(player->processManager, 1);
+	}
+
+	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)player->baseForm);
+	Actor_SetActionValue(player, soundAmount);
+
+	if (player->unk158) {
+		CombatController_sub_14050DEC0((void *)player->unk158);
+	}
+}
+
+void HitActor(Character *target, bool isLeft, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity)
+{
+	bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
+
+	PlayerCharacter *player = *g_thePlayer;
+
+	TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
+
+	TESForm *offhandObj = player->GetEquippedObject(true);
+	TESObjectWEAP *offhandWeapon = nullptr;
+	if (offhandObj) {
+		offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
+	}
+
+	TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
+
+	bool canHit = !Actor_IsGhost(target) && Character_CanHit(*g_thePlayer, target);
+	if (!canHit) {
+		// TODO: Actually test this code path
+
+		// potentially play impact effect/sound
+		// - get bgsblockbashdata and material of thing hit
+
+		// if (isMotionTypeMoveable(bodyB))
+		//   hitRefr->SetActorCause(player->GetActorCause())
+
+		SwingWeapon(weapon, isLeft, true);
+		player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState since SwingWeapon sets it
+		return;
+	}
+
+	// if isOffhand and no right hand weapon and offhand weapon is bow, set weapon to offhand weapon (bow)
+
+	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
+	TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
+	bool isShield = isOffhand && equippedShield;
+
+	TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
+	bool isTorch = isOffhand && equippedLight;
+
+	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
+
+	bool isBash = isBowOrCrossbow || isShield || isTorch;
+	if (isBash) {
+		player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+		player->actorState.flags08 |= 0x60000000u; // attackState = kBash
+	}
+
+	BGSAttackData *attackData = nullptr;
+	PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
+
+	SwingWeapon(weapon, isLeft, false);
+
+	int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
+	UpdateDialogue(nullptr, player, target, 3, dialogueSubtype, false, nullptr);
+
+	// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
+	NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+	*playerLastHitPosition = hitPosition;
+
+	NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+	*playerLastHitVelocity = hitVelocity;
+
+	Character_HitTarget(player, target, nullptr, isOffhand);
+
+	Actor_RemoveMagicEffectsDueToAction(player, -1); // removes invis/ethereal due to attacking
+
+	// rumble(isRight, vrMeleeData.impactConfirmRumbleIntensity, veMeleeData.impactConfirmRumbleDuration) // sub_140C59440()
+
+	player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+
+	// if (isMotionTypeMoveable(bodyB)) apply impulse
+}
+
+bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
+{
+	NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root);
+	if (rigidBody && rigidBody->hkBody == query) {
+		return true;
+	}
+
+	NiNode *node = root->GetAsNiNode();
+	if (node) {
+		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
+			auto child = node->m_children.m_data[i];
+			if (child) {
+				if (FindRigidBody(child, query)) {
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f) {
+	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+		if (constraint->getRigidBodyA() == body) {
+			f(constraint->getRigidBodyB());
+		}
+		else if (constraint->getRigidBodyB() == body) {
+			f(constraint->getRigidBodyA());
+		}
+	}
+};
+
+struct PointImpulseJob
+{
+	hkpRigidBody *rigidBody{};
+	NiPoint3 point{};
+	NiPoint3 impulse{};
+	UInt32 refrHandle{};
+
+	void Run()
+	{
+		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(refrHandle, refr)) {
+			NiPointer<NiNode> root = refr->GetNiNode();
+			if (root && FindRigidBody(root, rigidBody)) {
+				hkpEntity_activate(rigidBody);
+				rigidBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
+				_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
+			}
+		}
+	}
+};
+
+struct LinearImpulseJob
+{
+	hkpRigidBody *rigidBody{};
+	NiPoint3 impulse{};
+	UInt32 refrHandle{};
+
+	void Run()
+	{
+		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(refrHandle, refr)) {
+			NiPointer<NiNode> root = refr->GetNiNode();
+			if (root && FindRigidBody(root, rigidBody)) {
+				hkpEntity_activate(rigidBody);
+				rigidBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
+				_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
+			}
+		}
+	}
+};
+
+std::vector<PointImpulseJob> g_pointImpulsejobs{};
+std::vector<LinearImpulseJob> g_linearImpulsejobs{};
+
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
 	struct Event
@@ -80,55 +271,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		hkpRigidBody *rbA = nullptr;
 		hkpRigidBody *rbB = nullptr;
-		NiPoint3 separatingVelocity{};
 		Type type;
 	};
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
+	std::unordered_map<UInt32, double> hitTargets{};
+	std::unordered_map<Actor *, double> hitCooldownTargets{};
 	std::unordered_set<hkbRagdollDriver *> activeDrivers;
 	std::vector<Event> events{};
 
 	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
-	}
-
-	void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true, bool playSound = true)
-	{
-		PlayerCharacter *player = *g_thePlayer;
-
-		if (setAttackState) {
-			player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
-			player->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
-		}
-
-		if (playSound) {
-			if (weapon) {
-				if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
-					BGSSoundDescriptorForm *sound = weapon->attackFailSound;
-					if (sound) {
-						NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
-						if (handNode) {
-							PlaySoundAtNode(sound, nullptr, handNode->m_worldTransform.pos);
-						}
-					}
-				}
-			}
-		}
-
-		UInt64 *vtbl = *((UInt64 **)player);
-		((_Actor_WeaponSwingCallback)(vtbl[0xF1]))(player);
-
-		if (player->processManager) {
-			ActorProcess_IncrementAttackCounter(player->processManager, 1);
-		}
-
-		int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)player->baseForm);
-		Actor_SetActionValue(player, soundAmount);
-
-		if (player->unk158) {
-			CombatController_sub_14050DEC0((void *)player->unk158);
-		}
 	}
 
 	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, const hkpContactPointEvent &evnt)
@@ -138,88 +292,49 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-		bool isHitRigidBodyA = hitRigidBody == rigidBodyA;
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 		if (!hitRefr) return;
 
-		Character *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
-		if (!actor) return;
+		Character *target = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
+		if (!target) return;
 
 		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
 		bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
-		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
 
-		PlayerCharacter *player = *g_thePlayer;
+		float havokWorldScale = *g_havokWorldScale;
 
-		TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
+		hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
+		NiPoint3 hitPosition = HkVectorToNiPoint(hkHitPos) / havokWorldScale;
 
-		TESForm *offhandObj = player->GetEquippedObject(true);
-		TESObjectWEAP *offhandWeapon = nullptr;
-		if (offhandObj) {
-			offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
-		}
+		//NiPoint3 hitVelocity = HkVectorToNiPoint(evnt.m_contactPoint->getSeparatingNormal()) * hkpContactPointEvent_getSeparatingVelocity(evnt) * *g_inverseHavokWorldScale;
+		//if (!isHitRigidBodyA) hitVelocity *= -1;
+		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
+		NiPoint3 hitVelocity = HkVectorToNiPoint(pointVelocity) / havokWorldScale;
 
-		TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
+		HitActor(target, isLeft, hitPosition, hitVelocity);
 
-		bool canHit = !Actor_IsGhost(actor) && Character_CanHit(*g_thePlayer, actor);
-		if (!canHit) {
-			// potentially play impact effect/sound
-			// - get bgsblockbashdata and material of thing hit
+		NiPoint3 impulse = hitVelocity * havokWorldScale * Config::options.hitImpulseMult;
 
-			// if (isMotionTypeMoveable(bodyB))
-			//   hitRefr->SetActorCause(player->GetActorCause())
+		UInt32 targetHandle = GetOrCreateRefrHandle(target);
 
-			SwingWeapon(weapon, isLeft, true);
-			player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState since SwingWeapon sets it
-			return;
-		}
+		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+		ForEachRagdollDriver(target, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
+			ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
+				g_linearImpulsejobs.push_back({ adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle });
 
-		// if isOffhand and no right hand weapon and offhand weapon is bow, set weapon to offhand weapon (bow)
+				ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
+					g_linearImpulsejobs.push_back({ semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle });
+				});
+			});
+		});
 
-		// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
-		TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
-		bool isShield = isOffhand && equippedShield;
+		// Apply a point impulse at the hit location to the body we actually hit
+		g_pointImpulsejobs.push_back({ hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle });
 
-		TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
-		bool isTorch = isOffhand && equippedLight;
-
-		bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
-
-		bool isBash = isBowOrCrossbow || isShield || isTorch;
-		if (isBash) {
-			player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
-			player->actorState.flags08 |= 0x60000000u; // attackState = kBash
-		}
-
-		BGSAttackData *attackData = nullptr;
-		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
-
-		SwingWeapon(weapon, isLeft, false);
-
-		int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
-		UpdateDialogue(nullptr, player, actor, 3, dialogueSubtype, false, nullptr);
-
-		// Hit position / velocity needs to happen before Character::HitTarget()
-		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
-		*playerLastHitPosition = HkVectorToNiPoint(evnt.m_contactPoint->getPosition()) * *g_inverseHavokWorldScale;
-
-		// TODO: The hit direction might be nicer as the actual velocity of the weapon coming in to the collision, rather than the separating velocity which is necessarily aligned with the collision normal
-		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
-		NiPoint3 hitVelocity = HkVectorToNiPoint(evnt.m_contactPoint->getSeparatingNormal()) * hkpContactPointEvent_getSeparatingVelocity(evnt) * *g_inverseHavokWorldScale;
-		if (!isHitRigidBodyA) hitVelocity *= -1;
-		*playerLastHitVelocity = hitVelocity;
-
-
-		Character_HitTarget(player, actor, nullptr, isOffhand);
-
-		Actor_RemoveMagicEffectsDueToAction(player, -1); // removes invis/ethereal due to attacking
-
-		// rumble(isRight, vrMeleeData.impactConfirmRumbleIntensity, veMeleeData.impactConfirmRumbleDuration) // sub_140C59440()
-
-		player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
-
-		// if (isMotionTypeMoveable(bodyB)) apply impulse
+		double now = GetTime();
+		hitTargets[targetHandle] = now;
+		hitCooldownTargets[target] = now;
 	}
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
@@ -232,13 +347,24 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
 
+		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (hitRefr) {
+			Character *target = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
+			if (target && hitCooldownTargets.count(target)) {
+				// Actor is currently under a hit cooldown, so disable the contact point and gtfo
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				return;
+			}
+		}
+
 		// A contact point of any sort confirms a collision
 		if (evnt.isToi()) {
 			float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-			if (fabs(separatingSpeed) > Config::options.toiSeparatingSpeedThreshold) {
+			if (fabs(separatingSpeed) > Config::options.hitSeparatingSpeedThreshold) {
 				// For TOIs, they can happen before the collisionAddedCallback so we need to disable them now no matter if they're in activeCollisions or not
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				events.push_back({ rigidBodyA, rigidBodyB, HkVectorToNiPoint(evnt.m_contactPoint->getNormal()) * separatingSpeed, Event::Type::TOI });
+				events.push_back({ rigidBodyA, rigidBodyB, Event::Type::TOI });
 				_MESSAGE("%d TOI contact pt fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 
 				// Do damage or something
@@ -254,10 +380,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (activeCollisions.count(pair)) {
 				_MESSAGE("%d Contact pt %d %x %x", *g_currentFrameCounter, (int)evnt.m_type, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 				float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-				if (fabs(separatingSpeed) > Config::options.toiSeparatingSpeedThreshold) {
+				if (fabs(separatingSpeed) > Config::options.hitSeparatingSpeedThreshold) {
 					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 					// Do damage or something
-					_MESSAGE("fast");
+					_MESSAGE("%d fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 					DoHit(rigidBodyA, rigidBodyB, evnt);
 				}
 			}
@@ -275,7 +401,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
 
-		events.push_back({ rigidBodyA, rigidBodyB, {}, Event::Type::ADDED });
+		events.push_back({ rigidBodyA, rigidBodyB, Event::Type::ADDED });
+		_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
@@ -284,42 +411,28 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
 		// Technically our objects could have changed layers or something between added and removed
-		events.push_back({ rigidBodyA, rigidBodyB, {}, Event::Type::REMOVED });
-		return;
+		events.push_back({ rigidBodyA, rigidBodyB, Event::Type::REMOVED });
+		_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+	}
 
-		/*
-		auto pair = SortPair(rigidBodyA, rigidBodyB);
-		if (activeCollisions.count(pair)) {
-			activeCollisions.erase(pair);
-
-			UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-			hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
-
-			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-			if (!hitRefr) return;
-
-			if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-				UInt32 handle = GetOrCreateRefrHandle(hitRefr);
-
-				if (g_hitHandleCounts.count(handle) > 0) {
-					int count = g_hitHandleCounts[handle];
-					if (count <= 1) {
-						g_hitHandleCounts.erase(handle);
-					}
-					else {
-						g_hitHandleCounts[handle] = count - 1;
-					}
-
-					_MESSAGE("%d Collision removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+	void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f)
+	{
+		BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			SimpleLocker lock(&manager->updateLock);
+			for (int i = 0; i < manager->graphs.size; i++) {
+				BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+				hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+				if (driver) {
+					f(driver);
 				}
 			}
-		}*/
+		}
 	}
 
 	virtual void postSimulationCallback(hkpWorld* world)
 	{
-		//_MESSAGE("Post sim");
-
 		// First just accumulate adds/removes
 		for (Event &evnt : events) {
 			if (evnt.type == Event::Type::ADDED) {
@@ -343,8 +456,30 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
-		if (activeDrivers.size() > 0) {
-			activeDrivers.clear(); // Clear first, then add any that are hit. Not thread-safe.
+		// Clear first, then add any that are hit. Not thread-safe.
+		activeDrivers.clear();
+
+		double now = GetTime();
+
+		// Process hit targets (not hit cooldown targets).
+		// Fill in active drivers with any hit targets that haven't expired yet.
+		for (auto it = hitTargets.begin(); it != hitTargets.end();) {
+			auto[handle, hitTime] = *it;
+			if (now - hitTime >= Config::options.hitReactionTime)
+				it = hitTargets.erase(it);
+			else {
+				UInt32 handleCopy = handle;
+				NiPointer<TESObjectREFR> refr;
+				if (LookupREFRByHandle(handleCopy, refr)) {
+					Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+					if (actor) {
+						ForEachRagdollDriver(actor, [this](hkbRagdollDriver *driver) {
+							activeDrivers.insert(driver);
+						});
+					}
+				}
+				++it;
+			}
 		}
 
 		// Now fill in the currently collided-with actors based on active collisions
@@ -361,24 +496,30 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
 					Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
 					if (hitActor) {
-						BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-						if (GetAnimationGraphManager(hitActor, animGraphManager)) {
-							BSAnimationGraphManager *manager = animGraphManager.ptr;
-							SimpleLocker lock(&manager->updateLock);
-							for (int i = 0; i < manager->graphs.size; i++) {
-								BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-								hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-								if (driver) {
-									activeDrivers.insert(driver);
-								}
-							}
+						ForEachRagdollDriver(hitActor, [this](hkbRagdollDriver *driver) {
+							activeDrivers.insert(driver);
+						});
+
+						if (hitCooldownTargets.count(hitActor)) {
+							// Actor is still collided with, so refresh its hit cooldown
+							hitCooldownTargets[hitActor] = now;
 						}
 					}
 				}
 			}
 		}
 
+		// Clear out old hit cooldown targets
+		for (auto it = hitCooldownTargets.begin(); it != hitCooldownTargets.end();) {
+			auto[target, hitTime] = *it;
+			if (now - hitTime >= Config::options.hitRecoveryTime)
+				it = hitCooldownTargets.erase(it);
+			else
+				++it;
+		}
+
 		// Now process TOIs
+		// TODO: I don't think I need this anymore, nor the adding of the contact points to this event list during the contact point event.
 		for (Event &evnt : events) {
 			if (evnt.type == Event::Type::TOI) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
@@ -388,6 +529,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					_MESSAGE("%d TOI entered", *g_currentFrameCounter);
 				}
 				else {
+					// TOI entered and left (no collision added)
+
 					_MESSAGE("%d TOI entered and left", *g_currentFrameCounter);
 				}
 			}
@@ -535,8 +678,7 @@ bool AddRagdollToWorld(Actor *actor)
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
 						g_hipBoneTransforms.erase(driver);
-						ActiveRagdoll data = ActiveRagdoll();
-						g_activeRagdolls[driver] = data;
+						g_activeRagdolls[driver] = ActiveRagdoll{};
 					}
 				}
 			}
@@ -731,24 +873,16 @@ int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
 	return -1;
 }
 
-
-inline hkbGeneratorOutput::TrackHeader * GetHeader(hkbGeneratorOutput& generatorOutput, hkbGeneratorOutput::StandardTracks track)
-{
-	int trackId = (int)track;
-	hkInt32 numTracks = generatorOutput.m_tracks->m_masterHeader.m_numTracks;
-	return numTracks > trackId ? &(generatorOutput.m_tracks->m_trackHeaders[trackId]) : nullptr;
-}
-
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (!actor || Actor_IsInRagdollState(actor)) return;
 
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
-	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
-	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
-	hkbGeneratorOutput::TrackHeader *poweredHeader = GetHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
+	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
+	hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
 	bool isCollidedWith = contactListener->activeDrivers.count(driver) || g_higgsDrivers.count(driver);
 
@@ -996,7 +1130,7 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 	if (!ragdoll.isOn) return;
 
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
@@ -1019,7 +1153,7 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	//PrintToFile(std::to_string((int)state), "state.txt");
 
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
 	if (ragdoll.easeConstraintsAction) {
 		// Restore constraint limits from before we loosened them
@@ -1069,6 +1203,21 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 	ragdoll.state = state;
 }
 
+void PrePhysicsStepHook()
+{
+	// This hook is after all ragdolls' driveToPose(), and before the hkpWorld physics step
+
+	for (LinearImpulseJob &job : g_linearImpulsejobs) {
+		job.Run();
+	}
+	g_linearImpulsejobs.clear();
+
+	for (PointImpulseJob &job : g_pointImpulsejobs) {
+		job.Run();
+	}
+	g_pointImpulsejobs.clear();
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -1085,6 +1234,8 @@ auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
 auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRagdollRigidBodyController::driveToPose()
+
+auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
 
 void PerformHooks(void)
 {
@@ -1303,12 +1454,73 @@ void PerformHooks(void)
 
 		_MESSAGE("hkaRagdollRigidBodyController::driveToPose hook complete");
 	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				push(rax);
+				push(rcx);
+				push(rdx);
+				push(r8);
+				push(r9);
+				push(r10);
+				push(r11);
+				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
+				movsd(ptr[rsp + 0x20], xmm0);
+				movsd(ptr[rsp + 0x30], xmm1);
+				movsd(ptr[rsp + 0x40], xmm2);
+				movsd(ptr[rsp + 0x50], xmm3);
+				movsd(ptr[rsp + 0x60], xmm4);
+				movsd(ptr[rsp + 0x70], xmm5);
+
+				// Call our hook
+				mov(rax, (uintptr_t)PrePhysicsStepHook);
+				call(rax);
+
+				movsd(xmm0, ptr[rsp + 0x20]);
+				movsd(xmm1, ptr[rsp + 0x30]);
+				movsd(xmm2, ptr[rsp + 0x40]);
+				movsd(xmm3, ptr[rsp + 0x50]);
+				movsd(xmm4, ptr[rsp + 0x60]);
+				movsd(xmm5, ptr[rsp + 0x70]);
+				add(rsp, 0x88);
+				pop(r11);
+				pop(r10);
+				pop(r9);
+				pop(r8);
+				pop(rdx);
+				pop(rcx);
+				pop(rax);
+
+				// Original code
+				mov(rcx, r13);
+				test(r14b, r14b);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(prePhysicsStepHookLoc.GetUIntPtr() + 6);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write6Branch(prePhysicsStepHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("Pre-physics-step hook complete");
+	}
 }
 
 bool TryHook()
 {
 	// This should be sized to the actual amount used by your trampoline
-	static const size_t TRAMPOLINE_SIZE = 512;
+	static const size_t TRAMPOLINE_SIZE = 1024;
 
 	if (g_trampoline) {
 		void* branch = g_trampoline->AllocateFromBranchPool(g_pluginHandle, TRAMPOLINE_SIZE);
