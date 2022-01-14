@@ -533,6 +533,55 @@ NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
 	return nullptr;
 }
 
+bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
+{
+	NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root);
+	if (rigidBody && rigidBody->hkBody == query) {
+		return true;
+	}
+
+	NiNode *node = root->GetAsNiNode();
+	if (node) {
+		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
+			auto child = node->m_children.m_data[i];
+			if (child) {
+				if (FindRigidBody(child, query)) {
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
+void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f)
+{
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager *manager = animGraphManager.ptr;
+		SimpleLocker lock(&manager->updateLock);
+		for (int i = 0; i < manager->graphs.size; i++) {
+			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+			hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+			if (driver) {
+				f(driver);
+			}
+		}
+	}
+}
+
+void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f) {
+	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+		if (constraint->getRigidBodyA() == body) {
+			f(constraint->getRigidBodyB());
+		}
+		else if (constraint->getRigidBodyB() == body) {
+			f(constraint->getRigidBodyA());
+		}
+	}
+};
+
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location)
 {
 	UInt32 formId = sound->formID;

@@ -1,5 +1,7 @@
 #pragma once
+#include <Physics/Collide/Shape/Compound/Collection/List/hkpListShape.h>
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
+#include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
 #include <Physics/Utilities/Actions/EaseConstraints/hkpEaseConstraintsAction.h>
@@ -106,8 +108,8 @@ extern RelocAddr<_bhkWorld_addContactListener> bhkWorld_addContactListener;
 typedef void(*_hkpWorld_UpdateCollisionFilterOnEntity)(hkpWorld *world, hkpEntity* entity, hkpUpdateCollisionFilterOnEntityMode updateMode, hkpUpdateCollectionFilterMode updateShapeCollectionFilter);
 extern RelocAddr<_hkpWorld_UpdateCollisionFilterOnEntity> hkpWorld_UpdateCollisionFilterOnEntity;
 
-typedef void(*_bhkWorld_UpdateCollisionFilterOnEntity)(bhkWorld *world, hkpEntity* entity);
-extern RelocAddr<_bhkWorld_UpdateCollisionFilterOnEntity> bhkWorld_UpdateCollisionFilterOnEntity;
+typedef void(*_bhkWorld_UpdateCollisionFilterOnWorldObject)(bhkWorld *world, bhkWorldObject *worldObject);
+extern RelocAddr<_bhkWorld_UpdateCollisionFilterOnWorldObject> bhkWorld_UpdateCollisionFilterOnWorldObject;
 
 typedef void(*_ContactListener_PreprocessContactPointEvent)(hkpContactListener *listener, const hkpContactPointEvent &evnt);
 extern RelocAddr<_ContactListener_PreprocessContactPointEvent> ContactListener_PreprocessContactPointEvent;
@@ -451,6 +453,21 @@ extern RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPost
 
 typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
 extern RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener;
+
+typedef void(*_hkpShapeShrinker_shrinkConvexVerticesShape)(hkpConvexVerticesShape* convexShape, hkReal maximumConvexRadius, hkReal relShrinkRadius, hkReal allowedDisplacement, const char* shapeName, hkBool optimize); // shapeName default null, optimize default true
+extern RelocAddr<_hkpShapeShrinker_shrinkConvexVerticesShape> hkpShapeShrinker_shrinkConvexVerticesShape;
+
+typedef void(*_hkpConvexVerticesShape_getOriginalVertices)(hkpConvexVerticesShape* _this, hkArray<hkVector4>& vertices);
+extern RelocAddr<_hkpConvexVerticesShape_getOriginalVertices> hkpConvexVerticesShape_getOriginalVertices;
+
+typedef void(*_hkpConvexVerticesShape_ctor)(hkpConvexVerticesShape* _this, const hkStridedVertices& vertices, const hkpConvexVerticesShape::BuildConfig& config);
+extern RelocAddr<_hkpConvexVerticesShape_ctor> hkpConvexVerticesShape_ctor;
+
+typedef void(*_hkpListShape_disableChild)(hkpListShape *_this, hkpShapeKey index);
+extern RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild;
+
+typedef void(*_hkpListShape_enableChild)(hkpListShape *_this, hkpShapeKey index);
+extern RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild;
 
 typedef bool(*_Actor_IsGhost)(Actor *_this);
 extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;

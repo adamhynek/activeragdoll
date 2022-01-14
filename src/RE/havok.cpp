@@ -149,7 +149,7 @@ bhkRagdollConstraint * ConvertToRagdollConstraint(bhkConstraint *constraint)
 }
 
 
-bhkCharRigidBodyController * GetCharRigidBodyController(Actor *actor)
+NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor)
 {
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return nullptr;
@@ -163,7 +163,7 @@ bhkCharRigidBodyController * GetCharRigidBodyController(Actor *actor)
 	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharRigidBodyController);
 }
 
-bhkCharProxyController * GetCharProxyController(Actor *actor)
+NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor)
 {
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return nullptr;
@@ -189,6 +189,15 @@ Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
 	if (!graph) return nullptr;
 
 	return graph->holder;
+}
+
+void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield)
+{
+	for (int i = 0; i < 56; i++) { // 56 layers in vanilla
+		if ((bitfield >> i) & 1) {
+			filter->layerBitfields[i] |= ((UInt64)1 << 57);
+		}
+	}
 }
 
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this)

@@ -22,7 +22,7 @@ namespace Config {
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
-		float activeRagdollDistance = 3.f;
+		float activeRagdollDistance = 10.f;
 
 		float collideHierarchyGain = 0.6f;
 		float collideVelocityGain = 0.6f;
@@ -42,15 +42,18 @@ namespace Config {
 
 		float malleableConstraintStrength = 1.f;
 
-		bool enableBipedCollision = true;
-		bool keyframeBones = true;
-		bool forceRagdollPose = false;
-		bool doBlending = true;
+		bool enableBipedBipedCollision = false;
+		bool enablePlayerBipedCollision = true;
+		bool keyframeBones = false;
+		bool forceRagdollPose = true;
+		bool doBlending = false;
 
 		float hitSeparatingSpeedThreshold = 5.f;
 		float hitImpulseMult = 5.f;
 		float hitImpulseDecayMult1 = 0.5f;
 		float hitImpulseDecayMult2 = 0.25f;
+
+		float playerCharControllerRadius = 0.1f;
 	};
 	extern Options options; // global object containing options
 

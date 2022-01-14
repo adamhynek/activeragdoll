@@ -20,6 +20,7 @@ struct ActiveRagdoll
 	std::vector<hkQsTransform> animPose{};
 	std::vector<hkQsTransform> ragdollPose{};
 	std::vector<float> stress{};
+	hkQsTransform hipBoneTransform{};
 	float avgStress = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	double frameTime = 0.0;
@@ -27,4 +28,6 @@ struct ActiveRagdoll
 	RagdollState state = RagdollState::Keyframed;
 	bool isOn = false;
 	bool wantKeyframe = true;
+	bool hasHipBoneTransform = false;
+	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 };

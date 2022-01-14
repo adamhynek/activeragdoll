@@ -9,6 +9,10 @@
 #include <atomic>
 #include <set>
 
+#include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
+#include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
+#include <Common/Base/Types/Geometry/hkStridedVertices.h>
+
 #include "xbyak/xbyak.h"
 #include "common/IDebugLog.h"  // IDebugLog
 #include "skse64_common/skse_version.h"  // RUNTIME_VERSION
@@ -168,6 +172,7 @@ void HitActor(Character *target, bool isLeft, const NiPoint3 &hitPosition, const
 	NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
 	*playerLastHitVelocity = hitVelocity;
 
+	// TODO: We get bow/crossbow shooting sounds / fx (and damage, perhaps?) when bashing with a bow/crossbow for some reason, even though in the base game's hit detection I think we get the bash sound.
 	Character_HitTarget(player, target, nullptr, isOffhand);
 
 	Actor_RemoveMagicEffectsDueToAction(player, -1); // removes invis/ethereal due to attacking
@@ -178,39 +183,6 @@ void HitActor(Character *target, bool isLeft, const NiPoint3 &hitPosition, const
 
 	// if (isMotionTypeMoveable(bodyB)) apply impulse
 }
-
-bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
-{
-	NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root);
-	if (rigidBody && rigidBody->hkBody == query) {
-		return true;
-	}
-
-	NiNode *node = root->GetAsNiNode();
-	if (node) {
-		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
-			auto child = node->m_children.m_data[i];
-			if (child) {
-				if (FindRigidBody(child, query)) {
-					return true;
-				}
-			}
-		}
-	}
-
-	return false;
-}
-
-void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f) {
-	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
-		if (constraint->getRigidBodyA() == body) {
-			f(constraint->getRigidBodyB());
-		}
-		else if (constraint->getRigidBodyB() == body) {
-			f(constraint->getRigidBodyA());
-		}
-	}
-};
 
 struct PointImpulseJob
 {
@@ -275,8 +247,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	};
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
-	std::unordered_map<UInt32, double> hitTargets{};
-	std::unordered_map<Actor *, double> hitCooldownTargets{};
+	std::unordered_map<UInt32, double> hitReactionTargets{};
+	std::unordered_map<Actor *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
 	std::unordered_set<hkbRagdollDriver *> activeDrivers;
 	std::vector<Event> events{};
 
@@ -314,6 +286,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		HitActor(target, isLeft, hitPosition, hitVelocity);
 
+		// TODO: We _should_ incorporate the mass somewhat, so that heavier objects get moved less but will still move somewhat. As is, this is fine for human ragdolls but dwarven spheres basically do not react to hits at all.
+		// TODO: Different impulse for different weapon types? (e.g. dagger is not much, but two-hander is much)
 		NiPoint3 impulse = hitVelocity * havokWorldScale * Config::options.hitImpulseMult;
 
 		UInt32 targetHandle = GetOrCreateRefrHandle(target);
@@ -333,8 +307,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		g_pointImpulsejobs.push_back({ hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle });
 
 		double now = GetTime();
-		hitTargets[targetHandle] = now;
-		hitCooldownTargets[target] = now;
+		hitReactionTargets[targetHandle] = now;
+		hitCooldownTargets[isLeft][target] = now;
 	}
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
@@ -343,25 +317,37 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
-		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
 
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 		if (hitRefr) {
 			Character *target = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
-			if (target && hitCooldownTargets.count(target)) {
-				// Actor is currently under a hit cooldown, so disable the contact point and gtfo
-				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				return;
+			if (target) {
+				hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+				UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+				bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
+
+				if (hitCooldownTargets[isLeft].count(target)) {
+					// Actor is currently under a hit cooldown, so disable the contact point and gtfo
+					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+					return;
+				}
 			}
 		}
 
+		// TODO: Only do hit detection for actors probably (or at least, do something other than just disabling the contact point for non-actors)
+
 		// A contact point of any sort confirms a collision
 		if (evnt.isToi()) {
-			float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-			if (fabs(separatingSpeed) > Config::options.hitSeparatingSpeedThreshold) {
+			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+			hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
+			float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
+			//float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
+			// TODO: We could make the required speed high when the hand is not moving in roomspace and lower it the faster the hand is moving in roomspace. I think this would lead to fewer accidental hits?
+			if (fabs(hitSpeed) > Config::options.hitSeparatingSpeedThreshold) {
 				// For TOIs, they can happen before the collisionAddedCallback so we need to disable them now no matter if they're in activeCollisions or not
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 				events.push_back({ rigidBodyA, rigidBodyB, Event::Type::TOI });
@@ -379,8 +365,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			auto pair = SortPair(rigidBodyA, rigidBodyB);
 			if (activeCollisions.count(pair)) {
 				_MESSAGE("%d Contact pt %d %x %x", *g_currentFrameCounter, (int)evnt.m_type, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
-				float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-				if (fabs(separatingSpeed) > Config::options.hitSeparatingSpeedThreshold) {
+				hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+				hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
+				float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
+				//float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
+				if (fabs(hitSpeed) > Config::options.hitSeparatingSpeedThreshold) {
 					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 					// Do damage or something
 					_MESSAGE("%d fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
@@ -397,9 +386,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body with our custom layer (hand, held object...)
+		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
-		if (layerA == 56 && layerB == 56) return; // Both objects are on our custom layer
+		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
 
 		events.push_back({ rigidBodyA, rigidBodyB, Event::Type::ADDED });
 		_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
@@ -415,25 +404,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
-	void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f)
-	{
-		BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-		if (GetAnimationGraphManager(actor, animGraphManager)) {
-			BSAnimationGraphManager *manager = animGraphManager.ptr;
-			SimpleLocker lock(&manager->updateLock);
-			for (int i = 0; i < manager->graphs.size; i++) {
-				BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-				hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-				if (driver) {
-					f(driver);
-				}
-			}
-		}
-	}
-
 	virtual void postSimulationCallback(hkpWorld* world)
 	{
-		// First just accumulate adds/removes
+		// First just accumulate adds/removes. Why? While ADDED always occurs before REMOVED for a single contact point,
+		// a single pair of rigid bodies can have multiple contact points, and adds/removes between these different contact points can be non-deterministic.
 		for (Event &evnt : events) {
 			if (evnt.type == Event::Type::ADDED) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
@@ -456,17 +430,17 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
-		// Clear first, then add any that are hit. Not thread-safe.
+		// Clear first, then add any that are hit. Not thread-safe obviously.
 		activeDrivers.clear();
 
 		double now = GetTime();
 
-		// Process hit targets (not hit cooldown targets).
+		// Process hit targets (not hit cooldown targets) and condider the same as if they were collided with.
 		// Fill in active drivers with any hit targets that haven't expired yet.
-		for (auto it = hitTargets.begin(); it != hitTargets.end();) {
+		for (auto it = hitReactionTargets.begin(); it != hitReactionTargets.end();) {
 			auto[handle, hitTime] = *it;
 			if (now - hitTime >= Config::options.hitReactionTime)
-				it = hitTargets.erase(it);
+				it = hitReactionTargets.erase(it);
 			else {
 				UInt32 handleCopy = handle;
 				NiPointer<TESObjectREFR> refr;
@@ -490,6 +464,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
 			hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 			if (hitRefr) {
@@ -500,9 +475,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 							activeDrivers.insert(driver);
 						});
 
-						if (hitCooldownTargets.count(hitActor)) {
+						UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+						bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
+
+						if (hitCooldownTargets[isLeft].count(hitActor)) {
 							// Actor is still collided with, so refresh its hit cooldown
-							hitCooldownTargets[hitActor] = now;
+							hitCooldownTargets[isLeft][hitActor] = now;
 						}
 					}
 				}
@@ -510,12 +488,14 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 
 		// Clear out old hit cooldown targets
-		for (auto it = hitCooldownTargets.begin(); it != hitCooldownTargets.end();) {
-			auto[target, hitTime] = *it;
-			if (now - hitTime >= Config::options.hitRecoveryTime)
-				it = hitCooldownTargets.erase(it);
-			else
-				++it;
+		for (auto &targets : hitCooldownTargets) { // For each hand's cooldown targets
+			for (auto it = targets.begin(); it != targets.end();) {
+				auto[target, hitTime] = *it;
+				if (now - hitTime >= Config::options.hitRecoveryTime)
+					it = targets.erase(it);
+				else
+					++it;
+			}
 		}
 
 		// Now process TOIs
@@ -545,9 +525,10 @@ ContactListener *contactListener = nullptr;
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls;
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
-std::unordered_map<hkbRagdollDriver *, hkQsTransform> g_hipBoneTransforms;
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
+
+hkArray<hkVector4> g_scratchHkArray{}; // We can't call the destructor of this ourselves, so this is a global array to be used at will and never deallocated.
 
 
 bool IsAddedToWorld(Actor *actor)
@@ -560,7 +541,8 @@ bool IsAddedToWorld(Actor *actor)
 	SimpleLocker lock(&manager->updateLock);
 
 	for (int i = 0; i < manager->graphs.size; i++) {
-		BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+		BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+		if (!graph.ptr->world) return false;
 
 		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 		if (!driver) return false;
@@ -574,19 +556,7 @@ bool IsAddedToWorld(Actor *actor)
 
 void ModifyConstraints(Actor *actor)
 {
-	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-	if (!GetAnimationGraphManager(actor, animGraphManager)) return;
-
-	BSAnimationGraphManager *manager = animGraphManager.ptr;
-
-	SimpleLocker lock(&manager->updateLock);
-
-	for (int i = 0; i < manager->graphs.size; i++) {
-		BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-
-		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-		if (!driver) return;
-
+	ForEachRagdollDriver(actor, [](hkbRagdollDriver *driver) {
 		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 		if (!ragdoll) return;
 
@@ -596,13 +566,13 @@ void ModifyConstraints(Actor *actor)
 			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
 			if (node) {
 				//if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
-					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-					if (wrapper) {
-						bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-						//bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_KEYFRAMED, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-						//rigidBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-						//bhkWorldObject_UpdateCollisionFilter(wrapper);
-					}
+				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
+				if (wrapper) {
+					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+					//bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_KEYFRAMED, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+					//rigidBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+					//bhkWorldObject_UpdateCollisionFilter(wrapper);
+				}
 				//}
 			}
 		}
@@ -653,12 +623,12 @@ void ModifyConstraints(Actor *actor)
 				}
 			}
 		}
-	}
+	});
 }
 
 bool AddRagdollToWorld(Actor *actor)
 {
-	bool isSittingOrSleepingOrMounted = actor->actorState.flags04 & 0x3C000;
+	bool isSittingOrSleepingOrMounted = false;// actor->actorState.flags04 & 0x3C000; // also true when e.g. using furniture (leaning against a wall, etc.)
 	if (isSittingOrSleepingOrMounted || Actor_IsInRagdollState(actor)) return false;
 
 	bool hasRagdollInterface = false;
@@ -674,11 +644,16 @@ bool AddRagdollToWorld(Actor *actor)
 			{
 				SimpleLocker lock(&manager->updateLock);
 				for (int i = 0; i < manager->graphs.size; i++) {
-					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
-						g_hipBoneTransforms.erase(driver);
 						g_activeRagdolls[driver] = ActiveRagdoll{};
+
+						if (!graph.ptr->world) {
+							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
+							graph.ptr->world = GetHavokWorldFromCell(actor->parentCell);
+							g_activeRagdolls[driver].shouldNullOutWorldWhenRemovingFromWorld = true;
+						}
 					}
 				}
 			}
@@ -692,13 +667,16 @@ bool AddRagdollToWorld(Actor *actor)
 			BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
 		}
 	}
+	else {
+		// TODO: If there is no ragdoll instance, then we still need a way to hit the enemy, e.g. for wisp (witchlight). In this case, I guess we need to register collisions against their charcontroller body or something.
+	}
 
 	return true;
 }
 
 bool RemoveRagdollFromWorld(Actor *actor)
 {
-	bool isSittingOrSleepingOrMounted = actor->actorState.flags04 & 0x3C000;
+	bool isSittingOrSleepingOrMounted = false;// actor->actorState.flags04 & 0x3C000;
 	if (isSittingOrSleepingOrMounted || Actor_IsInRagdollState(actor)) return false;
 
 	bool hasRagdollInterface = false;
@@ -708,22 +686,24 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	}
 
 	if (hasRagdollInterface) {
+		bool x = false;
+		BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
+
 		if (GetAnimationGraphManager(actor, animGraphManager)) {
 			BSAnimationGraphManager *manager = animGraphManager.ptr;
-
 			{
 				SimpleLocker lock(&manager->updateLock);
 				for (int i = 0; i < manager->graphs.size; i++) {
-					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
+						if (g_activeRagdolls.count(driver) && g_activeRagdolls[driver].shouldNullOutWorldWhenRemovingFromWorld) {
+							graph.ptr->world = nullptr;
+						}
 						g_activeRagdolls.erase(driver);
 					}
 				}
 			}
-
-			bool x = false;
-			BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
 
 			//x = false;
 			//BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
@@ -774,17 +754,157 @@ void ProcessHavokHitJobsHook()
 		_MESSAGE("Adding listener to new havok world");
 		{
 			BSWriteLocker lock(&world->worldLock);
+
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 			hkpWorld_addContactListener(world->world, contactListener);
 			hkpWorld_addWorldPostSimulationListener(world->world, contactListener);
 
-			if (Config::options.enableBipedCollision) {
-				bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
-				filter->layerBitfields[8] |= (1 << 8); // enable biped->biped collision;
+			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
+
+			if (Config::options.enableBipedBipedCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= (1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
+			}
+
+			if (Config::options.enablePlayerBipedCollision) {
+				// Add a new layer for the player that will not collide with charcontrollers but will collide with the biped layer instead
+				UInt64 bitfield = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_CharController]; // copy of L_CHARCONTROLLER layer bitfield
+
+				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with l_biped (ragdoll of live characters)
+				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // remove collision with character controllers
+
+				// Layer 56 is taken (higgs) so use 57
+				filter->layerBitfields[57] = bitfield;
+				filter->layerNames[57] = BSFixedString("L_PLAYERCAPSULE");
+				// Set whether other layers should collide with our new layer
+				ReSyncLayerBitfields(filter, bitfield);
+
+				NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer);
+				if (controller) {
+					hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
+
+					g_scratchHkArray.clear();
+					hkArray<hkVector4> &verts = g_scratchHkArray;
+
+					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
+					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
+
+					// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
+					// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
+					for (int i : {
+						1, 3, 4, 5, 7, 11, 13, 16, // top ring
+						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+					}) {
+						NiPoint3 vert = HkVectorToNiPoint(verts[i]);
+						NiPoint3 newVert = vert;
+						newVert.z = 0;
+						newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
+						newVert.z = vert.z;
+
+						verts[i] = NiPointToHkVector(newVert);
+					}
+
+					hkStridedVertices newVerts(verts);
+
+					//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
+					//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
+					hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
+
+					hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
+					hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
+
+					// set vtbl
+					static auto hkCharControllerShape_vtbl = RelocAddr<void *>(0x1838E78);
+					*((void **)newShape) = ((void *)(hkCharControllerShape_vtbl));
+
+					bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
+					wrapper->SetHavokObject(newShape);
+
+					// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
+					listShape->m_childInfo[0].m_shape = newShape;
+					hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
+
+					// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
+					// hkReferencedObject_removeReference(newShape);
+
+					/*
+					// This technically works, but causes bugs such as falling through the floor
+					float radius = 0.1f;
+					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
+					float originalRadius = capsule->m_radius;
+					capsule->m_radius = radius;
+
+					NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
+					NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
+
+					if (vert0.z < vert1.z) {
+						// vert0 is the lower vertex
+						vert1.z += originalRadius - radius;;
+						vert0.z -= originalRadius - radius;
+					}
+					else {
+						vert0.z += originalRadius - radius;;
+						vert1.z -= originalRadius - radius;
+					}
+					capsule->setVertex(0, NiPointToHkVector(vert0));
+					capsule->setVertex(1, NiPointToHkVector(vert1));
+
+					hkpListShape_disableChild(listShape, 0);
+					hkpListShape_enableChild(listShape, 1);
+					*/
+
+					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo &= ~0x7f; // zero out collision layer
+					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 57; // set layer to the layer we just created
+					bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
+				}
 			}
 		}
 
 		contactListener->world = world;
+	}
+
+	if (g_higgsInterface) {
+		NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer);
+		if (controller) {
+			hkUint32 &filterInfo = controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo;
+			UInt32 layer = filterInfo & 0x7f;
+
+			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
+			UInt64 bitfield = filter->layerBitfields[57];
+
+			bool updateFilter = false;
+
+			if (g_higgsDrivers.size() > 0) {
+				// When something is grabbed, disable collision with bipeds (since we're holding one)
+				if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped)) {
+					bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
+					updateFilter = true;
+				}
+				if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
+					bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
+					updateFilter = true;
+				}
+			}
+			else if (Config::options.enablePlayerBipedCollision) {
+				// Nothing grabbed, make sure we're colliding with bipeds again
+				if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped))) {
+					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
+					updateFilter = true;
+				}
+				if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC))) {
+					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
+					updateFilter = true;
+				}
+			}
+
+			if (updateFilter) {
+				{
+					BSWriteLocker lock(&world->worldLock);
+					filter->layerBitfields[57] = bitfield;
+					ReSyncLayerBitfields(filter, bitfield);
+				}
+				bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
+			}
+		}
 	}
 
 	// if (!g_enableRagdoll) return;
@@ -1058,11 +1178,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							hkQsTransform poseT;
 							poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
-							if (Config::options.doRootMotion && state == RagdollState::Dynamic && g_hipBoneTransforms.count(driver)) {
+							if (Config::options.doRootMotion && state == RagdollState::Dynamic && ragdoll.hasHipBoneTransform) {
 								hkTransform actualT;
 								rb->getTransform(actualT);
 
-								NiPoint3 posePos = HkVectorToNiPoint(g_hipBoneTransforms[driver].m_translation) * *g_havokWorldScale;
+								NiPoint3 posePos = HkVectorToNiPoint(ragdoll.hipBoneTransform.m_translation) * *g_havokWorldScale;
 								NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
 								NiPoint3 posDiff = actualPos - posePos;
 
@@ -1084,7 +1204,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 								}
 							}
 
-							g_hipBoneTransforms[driver] = poseT;
+							ragdoll.hipBoneTransform = poseT;
+							ragdoll.hasHipBoneTransform = true;
 						}
 					}
 				}
@@ -1559,18 +1680,9 @@ void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 {
 	Actor *actor = DYNAMIC_CAST(grabbedRefr, TESObjectREFR, Actor);
 	if (actor) {
-		BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-		if (GetAnimationGraphManager(actor, animGraphManager)) {
-			BSAnimationGraphManager *manager = animGraphManager.ptr;
-			SimpleLocker lock(&manager->updateLock);
-			for (int i = 0; i < manager->graphs.size; i++) {
-				BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.heapSize >= 0 ? manager->graphs.data.heap[i] : manager->graphs.data.local[i];
-				hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-				if (driver) {
-					g_higgsDrivers.insert(driver);
-				}
-			}
-		}
+		ForEachRagdollDriver(actor, [](hkbRagdollDriver *driver) {
+			g_higgsDrivers.insert(driver);
+		});
 	}
 }
 

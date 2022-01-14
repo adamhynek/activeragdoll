@@ -49,8 +49,8 @@ static_assert(offsetof(ahkpWorld, m_userData) == 0x430);
 
 struct bhkRefObject : NiObject
 {
-	virtual void SetHavokObject(void); // 25
-	virtual void AddOrRemoveReference(void); // 26
+	virtual void SetHavokObject(hkReferencedObject *object); // 25
+	virtual void AddOrRemoveReference(bool add); // 26
 };
 
 struct bhkSerializable : bhkRefObject
@@ -76,7 +76,7 @@ struct bhkWorld : bhkSerializable
 	virtual void Unk_35(void);  // 35
 	virtual void Unk_36(void);  // 36
 
-	ahkpWorld * world; // 10
+	RE::hkRefPtr<ahkpWorld> world; // 10
 	UInt8 unk18[0xC598 - 0x18];
 	BSReadWriteLock worldLock; // C598
 	// C530 is tArray<GraphPhysicsStepListener>
@@ -91,7 +91,7 @@ static_assert(offsetof(bhkWorld, worldLock) == 0xC598);
 
 struct bhkShape : bhkSerializable
 {
-	hkpShape *shape; // 10
+	RE::hkRefPtr<hkpShape> shape; // 10
 	UInt64 unk18; // == 0?
 	UInt32 materialId; // 20
 	UInt32 pad28;
@@ -133,7 +133,7 @@ struct bhkRigidBody : bhkEntity
 	virtual void getAabbWorldspace(hkAabb &aabb); // 3B
 	virtual void Unk_3C(void); // 3C
 
-	hkpRigidBody * hkBody; // 10
+	RE::hkRefPtr<hkpRigidBody> hkBody; // 10
 	UInt64 unk18;
 	UInt8 flags; // at least first byte are some flags? bit 2 is set -> has constraints?
 	tArray<NiPointer<bhkConstraint>> constraints; // 28
@@ -193,7 +193,7 @@ static_assert(sizeof(bhkBlendCollisionObject) == 0x48);
 
 struct bhkSimpleShapePhantom : NiRefObject
 {
-	hkpSimpleShapePhantom * phantom; // 10
+	RE::hkRefPtr<hkpSimpleShapePhantom> phantom; // 10
 };
 
 struct bhkRigidBodyCinfo

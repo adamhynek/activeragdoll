@@ -252,6 +252,8 @@ struct BSTSmallArray
 		T local[N];
 	};
 
+	inline T * GetData() { return heapSize >= 0 ? data.heap : data.local; }
+
 	SInt32 heapSize = 0x80000000; // 00
 	UInt32 unk04; // 04
 	Data data; // 08

@@ -3,6 +3,7 @@
 #include <unordered_set>
 
 #include "RE/havok.h"
+#include "RE/havok_behavior.h"
 
 #include "skse64/NiNodes.h"
 #include "skse64/GameData.h"
@@ -43,6 +44,9 @@ void PrintToFile(std::string entry, std::string filename);
 bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
+bool FindRigidBody(NiAVObject *root, hkpRigidBody *query);
+void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
+void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
 bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);
 bool DoesRefrHaveNode(TESObjectREFR *ref, NiAVObject *node);

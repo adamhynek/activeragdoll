@@ -11,6 +11,7 @@
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
 #include <Physics/Dynamics/World/Extensions/hkpWorldExtension.h>
 #include <Physics/Dynamics/World/Simulation/hkpSimulation.h>
+#include <Physics/Utilities/CharacterControl/CharacterProxy/hkpCharacterProxy.h>
 #include <Physics/Utilities/CharacterControl/CharacterProxy/hkpCharacterProxyListener.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBodyListener.h>
 #include <Physics/Utilities/CharacterControl/CharacterRigidBody/hkpCharacterRigidBody.h>
@@ -407,6 +408,7 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
 }
 
 
-bhkCharRigidBodyController * GetCharRigidBodyController(Actor *actor);
-bhkCharProxyController * GetCharProxyController(Actor *actor);
+NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
+NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
 Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver);
+void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield);
