@@ -79,6 +79,7 @@ struct bhkWorld : bhkSerializable
 	RE::hkRefPtr<ahkpWorld> world; // 10
 	UInt8 unk18[0xC598 - 0x18];
 	BSReadWriteLock worldLock; // C598
+	UInt8 unkC5A0[0xC600 - 0xC5A0];
 	// C530 is tArray<GraphPhysicsStepListener>
 	// C570 is bhkConstraintProjector
 	// C5C0 is TESTrapListener
@@ -88,6 +89,7 @@ struct bhkWorld : bhkSerializable
 };
 static_assert(offsetof(bhkWorld, world) == 0x10);
 static_assert(offsetof(bhkWorld, worldLock) == 0xC598);
+static_assert(sizeof(bhkWorld) == 0xC600);
 
 struct bhkShape : bhkSerializable
 {
@@ -251,6 +253,16 @@ struct bhkRagdollConstraint : bhkConstraint
 	UInt64 unk18 = 0;
 };
 static_assert(sizeof(bhkRagdollConstraint) == 0x20);
+
+inline bool IsMotionTypeMoveable(UInt8 motionType) {
+	return (
+		motionType == hkpMotion::MotionType::MOTION_DYNAMIC ||
+		motionType == hkpMotion::MotionType::MOTION_SPHERE_INERTIA ||
+		motionType == hkpMotion::MotionType::MOTION_BOX_INERTIA ||
+		motionType == hkpMotion::MotionType::MOTION_THIN_BOX_INERTIA
+		);
+}
+inline bool IsMoveableEntity(hkpEntity *entity) { return IsMotionTypeMoveable(entity->m_motion.m_type); }
 
 hkMemoryRouter &hkGetMemoryRouter();
 inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().blockAlloc(numBytes); }

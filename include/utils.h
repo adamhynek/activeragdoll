@@ -41,6 +41,8 @@ void PrintToFile(std::string entry, std::string filename);
 //float hkHalfToFloat(hkHalf half);
 //hkHalf floatToHkHalf(float half);
 
+inline VRMeleeData * GetVRMeleeData(bool isLeft) { return (VRMeleeData *)((UInt64)*g_thePlayer + 0x710 + (isLeft ? sizeof(VRMeleeData) : 0)); };
+
 bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
@@ -53,7 +55,6 @@ bool DoesRefrHaveNode(TESObjectREFR *ref, NiAVObject *node);
 bool IsSkinnedToNode(NiAVObject *skinnedRoot, NiAVObject *target);
 void GetAllSkinnedNodes(NiAVObject *root, std::unordered_set<NiAVObject *> &skinnedNodes);
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location);
-
-typedef void(*_RemoveItem)(TESObjectREFR *_this, UInt32 *outHandle, TESBoundObject* a_item, SInt32 a_count, UInt32 a_reason, BaseExtraList* a_extraList, TESObjectREFR* a_moveToRef, const NiPoint3* a_dropLoc, const NiPoint3* a_rotate);
-
-typedef void(*_Update3DPosition)(TESObjectREFR *_this, bool warp);
+void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool loud);
+ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
+void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);

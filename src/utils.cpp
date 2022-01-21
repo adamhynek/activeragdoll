@@ -600,3 +600,102 @@ UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const Ni
 
 	return 0;
 }
+
+void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool loud)
+{
+	BGSSoundDescriptorForm *sound = nullptr;
+	// Try and get the sound that plays when the object hits stone first, as the grab sound
+	if (collidable->m_shape && collidable->m_shape->m_userData) {
+		auto shape = (bhkShape *)collidable->m_shape->m_userData;
+		if (shape) {
+			UInt32 materialId = shape->materialId;
+
+			// Handle MOPP shape, as it doesn't have a material on the MOPP shape itself, only the child collection shape...
+			auto moppShape = DYNAMIC_CAST(shape->shape, hkpShape, hkpMoppBvTreeShape);
+			if (moppShape) {
+				const hkpShape *childShape = moppShape->getChild();
+				if (childShape) {
+					auto bChildShape = (bhkShape *)childShape->m_userData;
+					if (bChildShape) {
+						materialId = bChildShape->materialId;
+					}
+				}
+			}
+
+			BGSMaterialType *material = GetMaterialType(materialId);
+
+			static UInt32 skinMaterialId = 0x233db702;
+			BGSMaterialType *skinMaterial = GetMaterialType(skinMaterialId);
+			static UInt32 stoneMaterialId = 0xdf02f237;
+			BGSMaterialType *stoneMaterial = GetMaterialType(stoneMaterialId);
+			if (material) {
+				BGSImpactData *impactData = nullptr;
+				if (material->impactDataSet) {
+					auto impactDataSet = DYNAMIC_CAST(material->impactDataSet, TESForm, BGSImpactDataSet);
+					if (impactDataSet) {
+						if (skinMaterial) {
+							impactData = BGSImpactDataSet_GetImpactData(impactDataSet, skinMaterial);
+						}
+
+						if (!impactData) {
+							if (stoneMaterial) {
+								impactData = BGSImpactDataSet_GetImpactData(impactDataSet, stoneMaterial);
+							}
+						}
+					}
+				}
+				else {
+					// No impact data set for the material on the shape... try a lookup in the other direction
+					if (skinMaterial && skinMaterial->impactDataSet) {
+						auto impactDataSet = DYNAMIC_CAST(skinMaterial->impactDataSet, TESForm, BGSImpactDataSet);
+						if (impactDataSet) {
+							impactData = BGSImpactDataSet_GetImpactData(impactDataSet, material);
+						}
+					}
+
+					if (!impactData) {
+						if (stoneMaterial && stoneMaterial->impactDataSet) {
+							auto impactDataSet = DYNAMIC_CAST(stoneMaterial->impactDataSet, TESForm, BGSImpactDataSet);
+							if (impactDataSet) {
+								impactData = BGSImpactDataSet_GetImpactData(impactDataSet, material);
+							}
+						}
+					}
+				}
+
+				if (impactData) {
+					// [0] is quieter sound, [1] is louder sound
+					int desiredIndex = (int)loud;
+					int alternateIndex = (int)!loud;
+					sound = impactData->sounds[desiredIndex];
+					if (!sound) {
+						sound = impactData->sounds[alternateIndex];
+					}
+				}
+			}
+		}
+	}
+	if (!sound) {
+		// Failed to get the physics sound, just use the generic pickup sound instead
+		static RelocPtr<BGSDefaultObjectManager> defaultObjectManager(0x01F81D90); // The SKSE one is broken, it's a RelocPtr to a RelocPtr<BGSDefaultObjectManager*>
+		TESForm *defaultPickupSound = defaultObjectManager->objects[113]; // kPickupSoundGeneric
+		if (defaultPickupSound) {
+			sound = DYNAMIC_CAST(defaultPickupSound, TESForm, BGSSoundDescriptorForm);
+		}
+	}
+	if (sound) {
+		PlaySoundAtNode(sound, nullptr, location);
+	}
+}
+
+ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr)
+{
+	UInt64 *vtbl = *((UInt64 **)refr);
+	return ((_TESObjectREFR_GetActorCause)(vtbl[0x51]))(refr);
+}
+
+void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause)
+{
+	UInt64 *vtbl = *((UInt64 **)refr);
+	((_TESObjectREFR_SetActorCause)(vtbl[0x50]))(refr, cause);
+}

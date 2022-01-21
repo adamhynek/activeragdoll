@@ -12,6 +12,7 @@
 #include "skse64/NiNodes.h"
 #include "skse64/GameVR.h"
 #include "skse64/NiGeometry.h"
+#include "skse64/gamethreads.h"
 
 #include "RE/havok.h"
 #include "RE/havok_behavior.h"
@@ -49,6 +50,8 @@ extern RelocPtr<BSAudioManager *> g_audioManager;
 
 struct ShadowSceneNode : NiNode { /* TODO */ };
 extern RelocPtr<ShadowSceneNode *> g_shadowSceneNode;
+
+extern RelocPtr<TESObjectWEAP *> g_unarmedWeapon;
 
 extern RelocPtr<float> g_minSoundVel;
 
@@ -501,3 +504,9 @@ extern RelocAddr<_Character_HitTarget> Character_HitTarget;
 
 typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
 extern RelocAddr<_UpdateDialogue> UpdateDialogue;
+
+typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target);
+extern RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask;
+
+typedef void(*_PlayRumble)(UInt32 isLeft, float rumbleIntensity, float rumbleDuration);
+extern RelocAddr<_PlayRumble> PlayRumble;

@@ -71,6 +71,27 @@ bool initComplete = false; // Whether hands have been initialized
 // 60C808 - address of call to TESObjectREFR_EndHavokHit in Actor::KillImpl
 
 
+NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
+{
+	PlayerCharacter *player = *g_thePlayer;
+	UInt8 weaponType = weapon->gameData.type;
+
+	if (!weapon || weaponType == TESObjectWEAP::GameData::kType_HandToHandMelee) {
+		return isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+	}
+	else if (weaponType == TESObjectWEAP::GameData::kType_Bow) {
+		return player->unk538[PlayerCharacter::BowNode::kBowNode_BowRotationNode];
+	}
+	else if (weaponType == TESObjectWEAP::GameData::kType_CrossBow) {
+		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftWeaponOffsetNode : PlayerCharacter::Node::kNode_RightWeaponOffsetNode];
+	}
+	else if (weaponType == TESObjectWEAP::GameData::kType_Staff) {
+		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftStaffWeaponOffsetNode : PlayerCharacter::Node::kNode_RightStaffWeaponOffsetNode];
+	}
+
+	return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
+}
+
 void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true, bool playSound = true)
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -85,9 +106,9 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 			if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
 				BGSSoundDescriptorForm *sound = weapon->attackFailSound;
 				if (sound) {
-					NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
-					if (handNode) {
-						PlaySoundAtNode(sound, handNode, {});
+					NiPointer<NiAVObject> node = GetWeaponCollisionOffsetNode(weapon, isLeft);
+					if (node) {
+						PlaySoundAtNode(sound, node, {});
 					}
 				}
 			}
@@ -101,6 +122,7 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 		ActorProcess_IncrementAttackCounter(player->processManager, 1);
 	}
 
+	// Make noise
 	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)player->baseForm);
 	Actor_SetActionValue(player, soundAmount);
 
@@ -109,40 +131,115 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 	}
 }
 
-void HitActor(Character *target, bool isLeft, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity)
+RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
+struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
 {
-	bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
+	struct Data
+	{
+		VMClassRegistry *registry; // 00
+		hkpRigidBody *hitBody; // 08 - not sure if this is actually needed but it's here anyway
+	};
 
-	PlayerCharacter *player = *g_thePlayer;
+	CheckHitEventsFunctor(Data *data, bool *result) : data(data), result(result) {
+		*((void **)this) = ((void *)(CheckHitEventsFunctor_vtbl)); // set vtbl
+	};
 
-	TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
+	Data *data; // 08 - points to stack addr of VMClassRegistry *
+	bool *result; // 10
+	UInt8 unk18[0x38 - 0x18];
+	IForEachScriptObjectFunctor *next = this;
+};
+static_assert(offsetof(CheckHitEventsFunctor, data) == 0x08);
 
-	TESForm *offhandObj = player->GetEquippedObject(true);
-	TESObjectWEAP *offhandWeapon = nullptr;
-	if (offhandObj) {
-		offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
+typedef void * (*_GetScriptEventSourceHolder)();
+RelocAddr<_GetScriptEventSourceHolder> GetScriptEventSourceHolder(0x1964C0);
+
+typedef void * (*_DispatchHitEvent)(void *scriptEventSourceHolder, TESHitEvent *hitEvent);
+RelocAddr<_DispatchHitEvent> DispatchHitEvent(0x635AA0);
+
+typedef void(*_VMClassRegistry_Destruct)(VMClassRegistry *_this, UInt32 unk);
+bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBody *hitBody, TESObjectWEAP *weapon)
+{
+	SkyrimVM *vm = *g_skyrimVM;
+	VMClassRegistry *registry = vm->GetClassRegistry();
+	if (registry) {
+		// vm incref
+		InterlockedIncrement(((UInt32 *)&registry->unk0004));
+
+		IObjectHandlePolicy *handlePolicy = registry->GetHandlePolicy();
+		UInt64 handle = handlePolicy->Create(target->formType, target);
+
+		// Check if the object should dispatch hit events when hit, I think
+		bool shouldDispatchHitEvent = false;
+		CheckHitEventsFunctor::Data checkHitEventsFunctorData{ registry, hitBody };
+		CheckHitEventsFunctor checkHitEventsFunctor{ &checkHitEventsFunctorData, &shouldDispatchHitEvent };
+
+		registry->VisitScripts(handle, &checkHitEventsFunctor);
+
+		if (shouldDispatchHitEvent) {
+			// Increment refcounts before dispatching the hit event. The game does this... so I'll do it too.
+			NiPointer<TESObjectREFR> incTarget = target;
+			NiPointer<TESObjectREFR> incSource = source;
+
+			if (!weapon) weapon = *g_unarmedWeapon;
+
+			// Now dispatch the hit event
+			TESHitEvent hitEvent{ source, target, weapon->formID, 0, 0 };
+
+			void *scriptEventSourceHolder = GetScriptEventSourceHolder();
+			DispatchHitEvent((void *)((UInt64)scriptEventSourceHolder + 0x5D8), &hitEvent);
+		}
+
+		// vm decref
+		if (InterlockedExchangeSubtract(((UInt32 *)&registry->unk0004), (UInt32)1) == 1) {
+			UInt64 *vtbl = *((UInt64 **)registry);
+			((_VMClassRegistry_Destruct)(vtbl[0]))(registry, 1);
+		}
+
+		return shouldDispatchHitEvent;
 	}
 
-	TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
+	return false;
+}
 
-	bool canHit = !Actor_IsGhost(target) && Character_CanHit(*g_thePlayer, target);
-	if (!canHit) {
-		// TODO: Actually test this code path
+/*
+void Hit()
+{
+	BGSAttackData *attackData = nullptr;
+	PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
 
-		// potentially play impact effect/sound
-		// - get bgsblockbashdata and material of thing hit
+	// set hit pos / velocity
 
-		// if (isMotionTypeMoveable(bodyB))
-		//   hitRefr->SetActorCause(player->GetActorCause())
+	if (hitCharacter && !isGhost && Character_CanHit(player, target)) {
 
-		SwingWeapon(weapon, isLeft, true);
-		player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState since SwingWeapon sets it
-		return;
+	}
+	else {
+		if (hitRefr) {
+			// DispatchHitEvents();
+		}
+
+		if (g_bPlayVRMeleeWorldImpactSounds) {
+			// play impact effect sound
+		}
+
+		if (hitRefr) {
+			if (IsMotionTypeMoveable()) {
+				hitRefr->SetActorCause(player->GetActorCause());
+			}
+			BSTaskPool_QueueDestroyTask(hitRefr);
+		}
+
+		PlayRumble();
 	}
 
-	// if isOffhand and no right hand weapon and offhand weapon is bow, set weapon to offhand weapon (bow)
+	ApplyImpulse();
+}
+*/
 
+void HitActor(Character *source, Character *target, TESObjectWEAP *weapon, bool isLeft, bool isOffhand)
+{
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
+	TESForm *offhandObj = source->GetEquippedObject(true);
 	TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
 	bool isShield = isOffhand && equippedShield;
 
@@ -152,36 +249,40 @@ void HitActor(Character *target, bool isLeft, const NiPoint3 &hitPosition, const
 	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
 
 	bool isBash = isBowOrCrossbow || isShield || isTorch;
+
+	source->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
 	if (isBash) {
-		player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
-		player->actorState.flags08 |= 0x60000000u; // attackState = kBash
+		source->actorState.flags08 |= 0x60000000u; // meleeAttackState = kBash
+	}
+	else {
+		source->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
-	BGSAttackData *attackData = nullptr;
-	PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
-
-	SwingWeapon(weapon, isLeft, false);
-
 	int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
-	UpdateDialogue(nullptr, player, target, 3, dialogueSubtype, false, nullptr);
-
-	// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
-	NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
-	*playerLastHitPosition = hitPosition;
-
-	NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
-	*playerLastHitVelocity = hitVelocity;
+	UpdateDialogue(nullptr, source, target, 3, dialogueSubtype, false, nullptr);
 
 	// TODO: We get bow/crossbow shooting sounds / fx (and damage, perhaps?) when bashing with a bow/crossbow for some reason, even though in the base game's hit detection I think we get the bash sound.
-	Character_HitTarget(player, target, nullptr, isOffhand);
+	Character_HitTarget(source, target, nullptr, isOffhand);
 
-	Actor_RemoveMagicEffectsDueToAction(player, -1); // removes invis/ethereal due to attacking
+	Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
 
-	// rumble(isRight, vrMeleeData.impactConfirmRumbleIntensity, veMeleeData.impactConfirmRumbleDuration) // sub_140C59440()
+	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+}
 
-	player->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+bool HitRefr(Character *source, TESObjectREFR *target, TESObjectWEAP *weapon, hkpRigidBody *hitBody, bool isLeft)
+{
+	source->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+	source->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
 
-	// if (isMotionTypeMoveable(bodyB)) apply impulse
+	bool didDispatchHitEvent = DispatchHitEvents(source, target, hitBody, weapon);
+	if (IsMoveableEntity(hitBody)) {
+		TESObjectREFR_SetActorCause(target, TESObjectREFR_GetActorCause(source));
+	}
+	BSTaskPool_QueueDestroyTask(BSTaskPool::GetSingleton(), target);
+
+	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+
+	return didDispatchHitEvent;
 }
 
 struct PointImpulseJob
@@ -198,9 +299,11 @@ struct PointImpulseJob
 		if (LookupREFRByHandle(refrHandle, refr)) {
 			NiPointer<NiNode> root = refr->GetNiNode();
 			if (root && FindRigidBody(root, rigidBody)) {
-				hkpEntity_activate(rigidBody);
-				rigidBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
-				_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
+				if (IsMoveableEntity(rigidBody)) {
+					hkpEntity_activate(rigidBody);
+					rigidBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
+					_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
+				}
 			}
 		}
 	}
@@ -219,9 +322,11 @@ struct LinearImpulseJob
 		if (LookupREFRByHandle(refrHandle, refr)) {
 			NiPointer<NiNode> root = refr->GetNiNode();
 			if (root && FindRigidBody(root, rigidBody)) {
-				hkpEntity_activate(rigidBody);
-				rigidBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
-				_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
+				if (IsMoveableEntity(rigidBody)) {
+					hkpEntity_activate(rigidBody);
+					rigidBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
+					_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
+				}
 			}
 		}
 	}
@@ -232,11 +337,10 @@ std::vector<LinearImpulseJob> g_linearImpulsejobs{};
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
-	struct Event
+	struct CollisionEvent
 	{
 		enum class Type
 		{
-			TOI,
 			ADDED,
 			REMOVED
 		};
@@ -248,9 +352,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
 	std::unordered_map<UInt32, double> hitReactionTargets{};
-	std::unordered_map<Actor *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
+	std::unordered_map<TESObjectREFR *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
 	std::unordered_set<hkbRagdollDriver *> activeDrivers;
-	std::vector<Event> events{};
+	std::vector<CollisionEvent> events{};
 
 	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
@@ -266,52 +370,108 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
 
-		Character *target = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
-		if (!target) return;
+		PlayerCharacter *player = *g_thePlayer;
+		if (!hitRefr || hitRefr == player) return;
 
 		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-		bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
+		bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
+		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
 
 		float havokWorldScale = *g_havokWorldScale;
 
 		hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
 		NiPoint3 hitPosition = HkVectorToNiPoint(hkHitPos) / havokWorldScale;
 
-		//NiPoint3 hitVelocity = HkVectorToNiPoint(evnt.m_contactPoint->getSeparatingNormal()) * hkpContactPointEvent_getSeparatingVelocity(evnt) * *g_inverseHavokWorldScale;
-		//if (!isHitRigidBodyA) hitVelocity *= -1;
 		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
 		NiPoint3 hitVelocity = HkVectorToNiPoint(pointVelocity) / havokWorldScale;
 
-		HitActor(target, isLeft, hitPosition, hitVelocity);
+		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
+		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+		*playerLastHitPosition = hitPosition;
 
-		// TODO: We _should_ incorporate the mass somewhat, so that heavier objects get moved less but will still move somewhat. As is, this is fine for human ragdolls but dwarven spheres basically do not react to hits at all.
+		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+		*playerLastHitVelocity = hitVelocity;
+
+		// Set attack data
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
+
+		// Get the weapon that hit
+		TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
+		TESForm *offhandObj = player->GetEquippedObject(true);
+		TESObjectWEAP *offhandWeapon = nullptr;
+		if (offhandObj) {
+			offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
+		}
+		TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
+
+		UInt32 targetHandle = GetOrCreateRefrHandle(hitRefr);
+		double now = GetTime();
+
 		// TODO: Different impulse for different weapon types? (e.g. dagger is not much, but two-hander is much)
-		NiPoint3 impulse = hitVelocity * havokWorldScale * Config::options.hitImpulseMult;
+		float massInv = hitRigidBody->getMassInv();
+		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
 
-		UInt32 targetHandle = GetOrCreateRefrHandle(target);
+		float impulseStrength = std::clamp(
+			Config::options.hitImpulseBaseStrength + Config::options.hitImpulseProportionalStrength * powf(mass, Config::options.hitImpulseMassExponent),
+			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
+		);
 
-		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-		ForEachRagdollDriver(target, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
-			ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
-				g_linearImpulsejobs.push_back({ adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle });
+		NiPoint3 impulse = hitVelocity * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
+		impulse *= impulseStrength; // Scale the velocity as we see fit
+		if (impulse.z < 0) {
+			// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
+			impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
+		}
 
-				ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
-					g_linearImpulsejobs.push_back({ semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle });
+		Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
+		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+
+			HitActor(player, hitChar, weapon, isLeft, isOffhand);
+
+			// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+			ForEachRagdollDriver(hitChar, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
+				ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
+					g_linearImpulsejobs.push_back({ adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle });
+
+					ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
+						g_linearImpulsejobs.push_back({ semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle });
+					});
 				});
 			});
-		});
+
+			VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+			PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+
+			hitReactionTargets[targetHandle] = now;
+		}
+		else {
+			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft);
+			if (didDispatchHitEvent) {
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+
+				VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+				PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+			}
+			else {
+				if (!IsMoveableEntity(hitRigidBody)) {
+					// It's not a hit, so disable contact for keyframed/fixed objects in this case
+					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				}
+			}
+		}
 
 		// Apply a point impulse at the hit location to the body we actually hit
 		g_pointImpulsejobs.push_back({ hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle });
 
-		double now = GetTime();
-		hitReactionTargets[targetHandle] = now;
-		hitCooldownTargets[isLeft][target] = now;
+		hitCooldownTargets[isLeft][hitRefr] = now;
 	}
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
+		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED) return;
+
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
@@ -319,62 +479,41 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
-		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
+		if (layerA == 56 && layerB == 56) {
+			// Both objects are on the higgs layer
+			if (!IsMoveableEntity(rigidBodyA) && !IsMoveableEntity(rigidBodyB)) {
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			}
+			return;
+		}
 
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 		if (hitRefr) {
-			Character *target = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
-			if (target) {
-				hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-				UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-				bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
-
-				if (hitCooldownTargets[isLeft].count(target)) {
-					// Actor is currently under a hit cooldown, so disable the contact point and gtfo
-					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-					return;
-				}
-			}
-		}
-
-		// TODO: Only do hit detection for actors probably (or at least, do something other than just disabling the contact point for non-actors)
-
-		// A contact point of any sort confirms a collision
-		if (evnt.isToi()) {
 			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-			hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
-			float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
-			//float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-			// TODO: We could make the required speed high when the hand is not moving in roomspace and lower it the faster the hand is moving in roomspace. I think this would lead to fewer accidental hits?
-			if (fabs(hitSpeed) > Config::options.hitSeparatingSpeedThreshold) {
-				// For TOIs, they can happen before the collisionAddedCallback so we need to disable them now no matter if they're in activeCollisions or not
+			UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+			bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
+
+			if (hitCooldownTargets[isLeft].count(hitRefr)) {
+				// refr is currently under a hit cooldown, so disable the contact point and gtfo
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				events.push_back({ rigidBodyA, rigidBodyB, Event::Type::TOI });
-				_MESSAGE("%d TOI contact pt fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
-
-				// Do damage or something
-				DoHit(rigidBodyA, rigidBodyB, evnt);
-
 				return;
 			}
-			_MESSAGE("%d TOI contact pt slow %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		}
+
+		// A contact point of any sort confirms a collision, regardless of any collision added or removed events
+
+		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
+		float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
+		// TODO: We could make the required speed high when the hand is not moving in roomspace and lower if the faster the hand is moving in roomspace. I think this would lead to fewer accidental hits?
+		if (fabs(hitSpeed) > Config::options.hitSpeedThreshold) {
+			DoHit(rigidBodyA, rigidBodyB, evnt);
 		}
 		else {
-			// Not toi, so it will be an active collision if it's relevant as these occur on the frame after collisionAddedCallback (apart from EXPAND_MANIFOLD which is dependent on the TOI event)
-			auto pair = SortPair(rigidBodyA, rigidBodyB);
-			if (activeCollisions.count(pair)) {
-				_MESSAGE("%d Contact pt %d %x %x", *g_currentFrameCounter, (int)evnt.m_type, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
-				hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-				hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
-				float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
-				//float separatingSpeed = hkpContactPointEvent_getSeparatingVelocity(evnt); // along collision normal
-				if (fabs(hitSpeed) > Config::options.hitSeparatingSpeedThreshold) {
-					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-					// Do damage or something
-					_MESSAGE("%d fast %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
-					DoHit(rigidBodyA, rigidBodyB, evnt);
-				}
+			if (!IsMoveableEntity(hitRigidBody)) {
+				// It's not a hit, so disable contact for keyframed/fixed objects in this case
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
 		}
 	}
@@ -390,7 +529,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
 
-		events.push_back({ rigidBodyA, rigidBodyB, Event::Type::ADDED });
+		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::ADDED });
 		_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
@@ -400,7 +539,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
 		// Technically our objects could have changed layers or something between added and removed
-		events.push_back({ rigidBodyA, rigidBodyB, Event::Type::REMOVED });
+		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::REMOVED });
 		_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
@@ -408,18 +547,19 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	{
 		// First just accumulate adds/removes. Why? While ADDED always occurs before REMOVED for a single contact point,
 		// a single pair of rigid bodies can have multiple contact points, and adds/removes between these different contact points can be non-deterministic.
-		for (Event &evnt : events) {
-			if (evnt.type == Event::Type::ADDED) {
+		for (CollisionEvent &evnt : events) {
+			if (evnt.type == CollisionEvent::Type::ADDED) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
 				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
 				activeCollisions[pair] = count + 1;
 			}
-			else if (evnt.type == Event::Type::REMOVED) {
+			else if (evnt.type == CollisionEvent::Type::REMOVED) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
 				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
 				activeCollisions[pair] = count - 1;
 			}
 		}
+		events.clear();
 
 		// Clear out any collisions that are no longer active (or that were only removed, since we do events for any removes but only some adds)
 		for (auto it = activeCollisions.begin(); it != activeCollisions.end();) {
@@ -468,21 +608,19 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 			if (hitRefr) {
-				if (DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-					Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
-					if (hitActor) {
-						ForEachRagdollDriver(hitActor, [this](hkbRagdollDriver *driver) {
-							activeDrivers.insert(driver);
-						});
+				Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
+				if (hitActor) {
+					ForEachRagdollDriver(hitActor, [this](hkbRagdollDriver *driver) {
+						activeDrivers.insert(driver);
+					});
+				}
 
-						UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-						bool isLeft = ragdollBits == 5; // stupid. Right hand would be 3.
+				UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+				bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
 
-						if (hitCooldownTargets[isLeft].count(hitActor)) {
-							// Actor is still collided with, so refresh its hit cooldown
-							hitCooldownTargets[isLeft][hitActor] = now;
-						}
-					}
+				if (hitCooldownTargets[isLeft].count(hitRefr)) {
+					// refr is still collided with, so refresh its hit cooldown
+					hitCooldownTargets[isLeft][hitRefr] = now;
 				}
 			}
 		}
@@ -497,26 +635,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					++it;
 			}
 		}
-
-		// Now process TOIs
-		// TODO: I don't think I need this anymore, nor the adding of the contact points to this event list during the contact point event.
-		for (Event &evnt : events) {
-			if (evnt.type == Event::Type::TOI) {
-				auto pair = SortPair(evnt.rbA, evnt.rbB);
-				if (activeCollisions.count(pair)) {
-					// At the end of this frame's sim, we are collided with the rigidbody
-
-					_MESSAGE("%d TOI entered", *g_currentFrameCounter);
-				}
-				else {
-					// TOI entered and left (no collision added)
-
-					_MESSAGE("%d TOI entered and left", *g_currentFrameCounter);
-				}
-			}
-		}
-
-		events.clear();
 	}
 
 	NiPointer<bhkWorld> world = nullptr;
@@ -560,20 +678,13 @@ void ModifyConstraints(Actor *actor)
 		hkaRagdollInstance *ragdoll = hkbRagdollDriver_getRagdollInterface(driver);
 		if (!ragdoll) return;
 
-		// Make sure bones are NOT keyframed to begin with, so that they get properly set in drivetopose to keyframed reporting.
-		// Actually just set them all here anyways, just in case.
 		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
 			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
 			if (node) {
-				//if (std::string(node->m_name) == "NPC Head [Head]" || std::string(node->m_name) == "NPC R Hand [RHnd]" || std::string(node->m_name) == "NPC L Hand [LHnd]") {
 				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
 				if (wrapper) {
 					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-					//bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_KEYFRAMED, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-					//rigidBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-					//bhkWorldObject_UpdateCollisionFilter(wrapper);
 				}
-				//}
 			}
 		}
 
@@ -593,30 +704,6 @@ void ModifyConstraints(Actor *actor)
 								bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
 								ragdollConstraint->MoveToWorld(world);
 								wrapper->constraints.entries[i] = ragdollConstraint;
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if (Config::options.malleableConstraintStrength < 1.f) {
-			// Reduce strength of all constraints by wrapping them in malleable constraints with lower strength
-			for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-				NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-				if (node) {
-					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-					if (wrapper) {
-						for (int i = 0; i < wrapper->constraints.count; i++) {
-							bhkConstraint *constraint = wrapper->constraints.entries[i];
-							//bhkConstraint *fixedConstraint = ConstraintToFixedConstraint(constraint, 0.3f, false);
-							bhkConstraint *malleableConstraint = CreateMalleableConstraint(constraint, Config::options.malleableConstraintStrength);
-							if (malleableConstraint) {
-								constraint->RemoveFromCurrentWorld();
-
-								bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
-								malleableConstraint->MoveToWorld(world);
-								wrapper->constraints.entries[i] = malleableConstraint;
 							}
 						}
 					}
@@ -756,6 +843,7 @@ void ProcessHavokHitJobsHook()
 			BSWriteLocker lock(&world->worldLock);
 
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
+
 			hkpWorld_addContactListener(world->world, contactListener);
 			hkpWorld_addWorldPostSimulationListener(world->world, contactListener);
 
@@ -769,7 +857,8 @@ void ProcessHavokHitJobsHook()
 				// Add a new layer for the player that will not collide with charcontrollers but will collide with the biped layer instead
 				UInt64 bitfield = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_CharController]; // copy of L_CHARCONTROLLER layer bitfield
 
-				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with l_biped (ragdoll of live characters)
+				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
+				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters with no charcontroller (likely they are in an animation)
 				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // remove collision with character controllers
 
 				// Layer 56 is taken (higgs) so use 57
@@ -782,75 +871,73 @@ void ProcessHavokHitJobsHook()
 				if (controller) {
 					hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
-					g_scratchHkArray.clear();
-					hkArray<hkVector4> &verts = g_scratchHkArray;
+					{ // Shrink convex charcontroller shape
+						g_scratchHkArray.clear();
+						hkArray<hkVector4> &verts = g_scratchHkArray;
 
-					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
-					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
+						hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
+						hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
-					// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
-					// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
-					for (int i : {
-						1, 3, 4, 5, 7, 11, 13, 16, // top ring
-						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
-					}) {
-						NiPoint3 vert = HkVectorToNiPoint(verts[i]);
-						NiPoint3 newVert = vert;
-						newVert.z = 0;
-						newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
-						newVert.z = vert.z;
+						// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
+						// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
+						for (int i : {
+							1, 3, 4, 5, 7, 11, 13, 16, // top ring
+								0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+						}) {
+							NiPoint3 vert = HkVectorToNiPoint(verts[i]);
+							NiPoint3 newVert = vert;
+							newVert.z = 0;
+							newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
+							newVert.z = vert.z;
 
-						verts[i] = NiPointToHkVector(newVert);
+							verts[i] = NiPointToHkVector(newVert);
+						}
+
+						hkStridedVertices newVerts(verts);
+
+						//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
+						//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
+						hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
+
+						hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
+						hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
+
+						// set vtbl
+						static auto hkCharControllerShape_vtbl = RelocAddr<void *>(0x1838E78);
+						*((void **)newShape) = ((void *)(hkCharControllerShape_vtbl));
+
+						bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
+						wrapper->SetHavokObject(newShape);
+
+						// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
+						listShape->m_childInfo[0].m_shape = newShape;
+						hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
+
+						// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
+						// hkReferencedObject_removeReference(newShape);
 					}
 
-					hkStridedVertices newVerts(verts);
+					{ // Shrink capsule shape too. It's active when weapons are unsheathed.
+						float radius = Config::options.playerCapsuleRadius;
+						hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
+						float originalRadius = capsule->m_radius;
+						capsule->m_radius = radius;
 
-					//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
-					//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
-					hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
+						NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
+						NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
 
-					hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
-					hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
-
-					// set vtbl
-					static auto hkCharControllerShape_vtbl = RelocAddr<void *>(0x1838E78);
-					*((void **)newShape) = ((void *)(hkCharControllerShape_vtbl));
-
-					bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
-					wrapper->SetHavokObject(newShape);
-
-					// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
-					listShape->m_childInfo[0].m_shape = newShape;
-					hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
-
-					// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
-					// hkReferencedObject_removeReference(newShape);
-
-					/*
-					// This technically works, but causes bugs such as falling through the floor
-					float radius = 0.1f;
-					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
-					float originalRadius = capsule->m_radius;
-					capsule->m_radius = radius;
-
-					NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
-					NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
-
-					if (vert0.z < vert1.z) {
-						// vert0 is the lower vertex
-						vert1.z += originalRadius - radius;;
-						vert0.z -= originalRadius - radius;
+						if (vert0.z < vert1.z) {
+							// vert0 is the lower vertex
+							vert1.z += originalRadius - radius;;
+							vert0.z -= originalRadius - radius;
+						}
+						else {
+							vert0.z += originalRadius - radius;;
+							vert1.z -= originalRadius - radius;
+						}
+						capsule->setVertex(0, NiPointToHkVector(vert0));
+						capsule->setVertex(1, NiPointToHkVector(vert1));
 					}
-					else {
-						vert0.z += originalRadius - radius;;
-						vert1.z -= originalRadius - radius;
-					}
-					capsule->setVertex(0, NiPointToHkVector(vert0));
-					capsule->setVertex(1, NiPointToHkVector(vert1));
-
-					hkpListShape_disableChild(listShape, 0);
-					hkpListShape_enableChild(listShape, 1);
-					*/
 
 					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo &= ~0x7f; // zero out collision layer
 					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 57; // set layer to the layer we just created
@@ -860,6 +947,22 @@ void ProcessHavokHitJobsHook()
 		}
 
 		contactListener->world = world;
+	}
+
+	{ // Ensure our listener is the last one (will be called first)
+		hkArray<hkpContactListener*> &listeners = world->world->m_contactListeners;
+		if (listeners[listeners.getSize() - 1] != contactListener) {
+			BSWriteLocker lock(&world->worldLock);
+
+			int numListeners = listeners.getSize();
+			int listenerIndex = listeners.indexOf(contactListener);
+			if (listenerIndex >= 0) {
+				for (int i = listenerIndex + 1; i < numListeners; ++i) {
+					listeners[i - 1] = listeners[i];
+				}
+				listeners[numListeners - 1] = contactListener;
+			}
+		}
 	}
 
 	if (g_higgsInterface) {
@@ -1328,6 +1431,8 @@ void PrePhysicsStepHook()
 {
 	// This hook is after all ragdolls' driveToPose(), and before the hkpWorld physics step
 
+	// At this point we can apply any impulses / velocity adjustments without fear of them being overwritten
+
 	for (LinearImpulseJob &job : g_linearImpulsejobs) {
 		job.Run();
 	}
@@ -1691,6 +1796,8 @@ extern "C" {
 	{
 		contactListener = new ContactListener;
 
+		// TODO: Probably keep the base game's "swing" detection (will also still work with power attacks so stuff like conduit will work) which will also make the swinging sounds when you swing your sword and hit nothing
+		//       We will want to disable just the base game's hit detection though if we do this.
 		*g_fMeleeLinearVelocityThreshold = 99999.f;
 		*g_fShieldLinearVelocityThreshold = 99999.f;
 

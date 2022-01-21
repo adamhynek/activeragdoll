@@ -277,4 +277,15 @@ struct HavokHitJobs
 static_assert(offsetof(HavokHitJobs, jobs.data) == 0x10);
 static_assert(offsetof(HavokHitJobs, jobs.size) == 0xB0);
 
+struct ActorCause
+{
+	UInt32 actor; // 00
+	NiPoint3 origin; // 04
+	UInt32 actorCauseID; // 10
+	volatile mutable SInt32 refCount; // 14
+};
+static_assert(sizeof(ActorCause) == 0x18);
+
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
+typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
+typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);

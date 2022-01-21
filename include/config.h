@@ -15,7 +15,7 @@ namespace Config {
 		double blendOutBlendPower = 2.5;
 		double blendInTime = 0.06;
 
-		double hitRecoveryTime = 0.15f;
+		double hitRecoveryTime = 0.2f;
 		double hitReactionTime = 0.3f;
 
 		bool doRootMotion = false;
@@ -40,20 +40,27 @@ namespace Config {
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
 
-		float malleableConstraintStrength = 1.f;
-
 		bool enableBipedBipedCollision = false;
 		bool enablePlayerBipedCollision = true;
 		bool keyframeBones = false;
 		bool forceRagdollPose = true;
 		bool doBlending = false;
 
-		float hitSeparatingSpeedThreshold = 5.f;
-		float hitImpulseMult = 5.f;
+		float hitImpulseBaseStrength = 1.f;
+		float hitImpulseProportionalStrength = -0.15f;
+		float hitImpulseMassExponent = 0.5f;
+
+		float hitImpulseMinStrength = 0.2f;
+		float hitImpulseMaxStrength = 1.f;
+
+		float hitImpulseDownwardsMultiplier = 0.3f;
+
+		float hitSpeedThreshold = 5.f;
 		float hitImpulseDecayMult1 = 0.5f;
 		float hitImpulseDecayMult2 = 0.25f;
 
-		float playerCharControllerRadius = 0.1f;
+		float playerCharControllerRadius = 0.15f;
+		float playerCapsuleRadius = 0.1f;
 	};
 	extern Options options; // global object containing options
 

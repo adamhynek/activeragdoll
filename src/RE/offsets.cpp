@@ -33,6 +33,8 @@ RelocPtr<BSAudioManager *> g_audioManager(0x30C1D30);
 
 RelocPtr<ShadowSceneNode *> g_shadowSceneNode(0x3423080);
 
+RelocPtr<TESObjectWEAP *> g_unarmedWeapon(0x2FC4758);
+
 RelocPtr<float> g_minSoundVel(0x1E94F78); // it's an ini setting
 
 RelocPtr<float> g_fMeleeWeaponHavokScale(0x1EAD900); // it's an ini setting
@@ -216,3 +218,5 @@ RelocAddr<_CombatController_sub_14050DEC0> CombatController_sub_14050DEC0(0x50DE
 RelocAddr<_Actor_RemoveMagicEffectsDueToAction> Actor_RemoveMagicEffectsDueToAction(0x63DA50);
 RelocAddr<_Character_HitTarget> Character_HitTarget(0x631AF0);
 RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
+RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask(0x5CB4F0);
+RelocAddr<_PlayRumble> PlayRumble(0xC59440);
