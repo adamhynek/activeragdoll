@@ -99,8 +99,8 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 	PlayerCharacter *player = *g_thePlayer;
 
 	if (setAttackState) {
-		player->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
-		player->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+		player->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
+		player->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
 	if (playSound) {
@@ -238,7 +238,7 @@ void Hit()
 }
 */
 
-void HitActor(Character *source, Character *target, TESForm *weapon, bool isLeft, bool isOffhand)
+void HitActor(Character *source, Character *target, TESForm *weapon, bool isOffhand)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -253,18 +253,17 @@ void HitActor(Character *source, Character *target, TESForm *weapon, bool isLeft
 
 	bool isBash = isBowOrCrossbow || isShield || isTorch;
 
-	source->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
+	source->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
 	if (isBash) {
-		source->actorState.flags08 |= 0x60000000u; // meleeAttackState = kBash
+		source->actorState.flags04 |= 0x60000000u; // meleeAttackState = kBash
 	}
 	else {
-		source->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+		source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
 	int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
 	UpdateDialogue(nullptr, source, target, 3, dialogueSubtype, false, nullptr);
 
-	// TODO: We get bow/crossbow shooting sounds / fx (and damage, perhaps?) when bashing with a bow/crossbow for some reason, even though in the base game's hit detection I think we get the bash sound.
 	Character_HitTarget(source, target, nullptr, isOffhand);
 
 	Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
@@ -274,8 +273,8 @@ void HitActor(Character *source, Character *target, TESForm *weapon, bool isLeft
 
 bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigidBody *hitBody, bool isLeft, bool isOffhand)
 {
-	source->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
-	source->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+	source->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
+	source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 
 	float damage;
 	{ // All this just to get the fricken damage
@@ -296,7 +295,7 @@ bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigid
 	}
 	BSTaskPool_QueueDestroyTask(BSTaskPool::GetSingleton(), target, damage);
 
-	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+	source->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 
 	return didDispatchHitEvent;
 }
@@ -417,6 +416,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter *player = *g_thePlayer;
 		if (!hitRefr || hitRefr == player) return;
 
+		// Set attack data
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, false, &attackData);
+		if (!attackData) return;
+
 		float havokWorldScale = *g_havokWorldScale;
 
 		hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
@@ -431,10 +435,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
 		*playerLastHitVelocity = hitVelocity;
-
-		// Set attack data
-		BGSAttackData *attackData = nullptr;
-		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
 
 		UInt32 targetHandle = GetOrCreateRefrHandle(hitRefr);
 		double now = GetTime();
@@ -460,7 +460,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
-			HitActor(player, hitChar, weapon, isLeft, isOffhand);
+			HitActor(player, hitChar, weapon, isOffhand);
 
 			// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
 			ForEachRagdollDriver(hitChar, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {

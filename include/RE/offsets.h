@@ -478,7 +478,7 @@ extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
 typedef bool(*_Character_CanHit)(Character *_this, Actor *target);
 extern RelocAddr<_Character_CanHit> Character_CanHit;
 
-typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isUsingMotionControllers, bool isLeft, bool isPowerAttack, BGSAttackData **attackDataOut);
+typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isUsingMotionControllers, bool isOffhand, bool isPowerAttack, BGSAttackData **attackDataOut);
 extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData;
 
 typedef bool(*_ActorProcess_IncrementAttackCounter)(ActorProcessManager *_this, int incCount);
