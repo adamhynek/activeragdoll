@@ -220,3 +220,7 @@ RelocAddr<_Character_HitTarget> Character_HitTarget(0x631AF0);
 RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
 RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask(0x5CB4F0);
 RelocAddr<_PlayRumble> PlayRumble(0xC59440);
+RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);
+RelocAddr<_HitData_ctor> HitData_ctor(0x76D000);
+RelocAddr<_HitData_dtor> HitData_dtor(0x76D0F0);
+RelocAddr<_HitData_populate> HitData_populate(0x76D400);

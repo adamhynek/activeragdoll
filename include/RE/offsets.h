@@ -505,8 +505,20 @@ extern RelocAddr<_Character_HitTarget> Character_HitTarget;
 typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
 extern RelocAddr<_UpdateDialogue> UpdateDialogue;
 
-typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target);
+typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
 extern RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask;
 
 typedef void(*_PlayRumble)(UInt32 isLeft, float rumbleIntensity, float rumbleDuration);
 extern RelocAddr<_PlayRumble> PlayRumble;
+
+typedef InventoryEntryData * (*_ActorProcess_GetCurrentlyEquippedWeapon)(ActorProcessManager *_this, bool isOffhand);
+extern RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon;
+
+typedef void(*_HitData_ctor)(HitData *_this);
+extern RelocAddr<_HitData_ctor> HitData_ctor;
+
+typedef void(*_HitData_dtor)(HitData *_this);
+extern RelocAddr<_HitData_dtor> HitData_dtor;
+
+typedef void(*_HitData_populate)(HitData *_this, Actor *src, Actor *target, InventoryEntryData *weapon, bool isOffhand);
+extern RelocAddr<_HitData_populate> HitData_populate;

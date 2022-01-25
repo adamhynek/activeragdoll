@@ -55,7 +55,20 @@ namespace Config {
 
 		float hitImpulseDownwardsMultiplier = 0.3f;
 
-		float hitSpeedThreshold = 5.f;
+		float hitSwingSpeedThreshold = 5.f;
+
+		float hitStabDirectionThreshold = 0.8f;
+		float hitStabSpeedThreshold = 2.f;
+		float hitStabImpulseMult = 2.f;
+
+		float hitPunchDirectionThreshold = 0.7f;
+		float hitPunchSpeedThreshold = 2.5f;
+		float hitPunchImpulseMult = 1.75f;
+
+		float hitSwingImpulseMult = 1.f;
+
+		float hitRequiredHandSpeedRoomspace = 1.f;
+
 		float hitImpulseDecayMult1 = 0.5f;
 		float hitImpulseDecayMult2 = 0.25f;
 

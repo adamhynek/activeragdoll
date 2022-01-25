@@ -1,4 +1,5 @@
-﻿#include <functional>
+﻿#include <numeric>
+#include <functional>
 #include <string>
 #include <regex>
 #include <sstream>
@@ -8,6 +9,7 @@
 #include <limits>
 #include <atomic>
 #include <set>
+#include <deque>
 
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
@@ -158,7 +160,7 @@ typedef void * (*_DispatchHitEvent)(void *scriptEventSourceHolder, TESHitEvent *
 RelocAddr<_DispatchHitEvent> DispatchHitEvent(0x635AA0);
 
 typedef void(*_VMClassRegistry_Destruct)(VMClassRegistry *_this, UInt32 unk);
-bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBody *hitBody, TESObjectWEAP *weapon)
+bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBody *hitBody, TESForm *weapon)
 {
 	SkyrimVM *vm = *g_skyrimVM;
 	VMClassRegistry *registry = vm->GetClassRegistry();
@@ -236,7 +238,7 @@ void Hit()
 }
 */
 
-void HitActor(Character *source, Character *target, TESObjectWEAP *weapon, bool isLeft, bool isOffhand)
+void HitActor(Character *source, Character *target, TESForm *weapon, bool isLeft, bool isOffhand)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -246,7 +248,8 @@ void HitActor(Character *source, Character *target, TESObjectWEAP *weapon, bool 
 	TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
 	bool isTorch = isOffhand && equippedLight;
 
-	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
+	TESObjectWEAP *weap = DYNAMIC_CAST(weapon, TESForm, TESObjectWEAP);
+	bool isBowOrCrossbow = weap && (weap->type() == TESObjectWEAP::GameData::kType_Bow || weap->type() == TESObjectWEAP::GameData::kType_CrossBow);
 
 	bool isBash = isBowOrCrossbow || isShield || isTorch;
 
@@ -269,16 +272,29 @@ void HitActor(Character *source, Character *target, TESObjectWEAP *weapon, bool 
 	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
 }
 
-bool HitRefr(Character *source, TESObjectREFR *target, TESObjectWEAP *weapon, hkpRigidBody *hitBody, bool isLeft)
+bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigidBody *hitBody, bool isLeft, bool isOffhand)
 {
 	source->actorState.flags08 &= 0xFFFFFFFu; // zero out meleeAttackState
 	source->actorState.flags08 |= 0x20000000u; // meleeAttackState = kSwing
+
+	float damage;
+	{ // All this just to get the fricken damage
+		InventoryEntryData *weaponEntry = ActorProcess_GetCurrentlyEquippedWeapon(source->processManager, isOffhand);
+
+		HitData hitData;
+		HitData_ctor(&hitData);
+		HitData_populate(&hitData, source, nullptr, weaponEntry, isOffhand);
+
+		damage = hitData.totalDamage;
+
+		HitData_dtor(&hitData);
+	}
 
 	bool didDispatchHitEvent = DispatchHitEvents(source, target, hitBody, weapon);
 	if (IsMoveableEntity(hitBody)) {
 		TESObjectREFR_SetActorCause(target, TESObjectREFR_GetActorCause(source));
 	}
-	BSTaskPool_QueueDestroyTask(BSTaskPool::GetSingleton(), target);
+	BSTaskPool_QueueDestroyTask(BSTaskPool::GetSingleton(), target, damage);
 
 	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
 
@@ -302,7 +318,7 @@ struct PointImpulseJob
 				if (IsMoveableEntity(rigidBody)) {
 					hkpEntity_activate(rigidBody);
 					rigidBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
-					_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
+					//_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
 				}
 			}
 		}
@@ -325,7 +341,7 @@ struct LinearImpulseJob
 				if (IsMoveableEntity(rigidBody)) {
 					hkpEntity_activate(rigidBody);
 					rigidBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
-					_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
+					//_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
 				}
 			}
 		}
@@ -334,6 +350,35 @@ struct LinearImpulseJob
 
 std::vector<PointImpulseJob> g_pointImpulsejobs{};
 std::vector<LinearImpulseJob> g_linearImpulsejobs{};
+
+struct ControllerVelocityData
+{
+	std::deque<NiPoint3> velocities{ 5, NiPoint3() };
+	NiPoint3 avgVelocity;
+	float avgSpeed;
+
+	void RecomputeAverageVelocity()
+	{
+		avgVelocity = std::accumulate(velocities.begin(), velocities.end(), NiPoint3()) / velocities.size();
+	}
+
+	void RecomputeAverageSpeed()
+	{
+		float speed = 0;
+		for (NiPoint3 &velocity : velocities) {
+			speed += VectorLength(velocity);
+		}
+		speed /= std::size(velocities);
+		avgSpeed = speed;
+	}
+
+	void Recompute()
+	{
+		RecomputeAverageVelocity();
+		RecomputeAverageSpeed();
+	}
+};
+ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
@@ -361,11 +406,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else return { b, a };
 	}
 
-	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, const hkpContactPointEvent &evnt)
+	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, const hkpContactPointEvent &evnt, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
 	{
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
@@ -373,10 +416,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		PlayerCharacter *player = *g_thePlayer;
 		if (!hitRefr || hitRefr == player) return;
-
-		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-		bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
-		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
 
 		float havokWorldScale = *g_havokWorldScale;
 
@@ -397,15 +436,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		BGSAttackData *attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isLeft, false, &attackData);
 
-		// Get the weapon that hit
-		TESObjectWEAP *mainWeapon = GetEquippedWeapon(player, false);
-		TESForm *offhandObj = player->GetEquippedObject(true);
-		TESObjectWEAP *offhandWeapon = nullptr;
-		if (offhandObj) {
-			offhandWeapon = DYNAMIC_CAST(offhandObj, TESForm, TESObjectWEAP);
-		}
-		TESObjectWEAP *weapon = isOffhand ? offhandWeapon : mainWeapon;
-
 		UInt32 targetHandle = GetOrCreateRefrHandle(hitRefr);
 		double now = GetTime();
 
@@ -420,6 +450,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		NiPoint3 impulse = hitVelocity * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
 		impulse *= impulseStrength; // Scale the velocity as we see fit
+		impulse *= impulseMult;
 		if (impulse.z < 0) {
 			// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
 			impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
@@ -448,7 +479,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			hitReactionTargets[targetHandle] = now;
 		}
 		else {
-			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft);
+			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
@@ -488,12 +519,13 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+
+		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
+		bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
+
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 		if (hitRefr) {
-			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-			UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-			bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
-
 			if (hitCooldownTargets[isLeft].count(hitRefr)) {
 				// refr is currently under a hit cooldown, so disable the contact point and gtfo
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
@@ -503,12 +535,56 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// A contact point of any sort confirms a collision, regardless of any collision added or removed events
 
-		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
-		float hitSpeed = VectorLength(HkVectorToNiPoint(pointVelocity));
-		// TODO: We could make the required speed high when the hand is not moving in roomspace and lower if the faster the hand is moving in roomspace. I think this would lead to fewer accidental hits?
-		if (fabs(hitSpeed) > Config::options.hitSpeedThreshold) {
-			DoHit(rigidBodyA, rigidBodyB, evnt);
+		NiPoint3 hkHitVelocity = HkVectorToNiPoint(pointVelocity);
+		float hitSpeed = VectorLength(hkHitVelocity);
+		// TODO: Make the hit speed affect damage? (how?)
+		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
+		PlayerCharacter *player = *g_thePlayer;
+		TESForm *equippedObj = player->GetEquippedObject(isOffhand);
+		TESObjectWEAP *weap = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
+
+		NiPoint3 handVelocity = g_controllerVelocities[isLeft].avgVelocity;
+		float handSpeedRoomspace = g_controllerVelocities[isLeft].avgSpeed;
+
+		bool isStab = false, isPunch = false, isSwing = false;
+		if (weap && CanWeaponStab(weap)) {
+			// Check for stab
+			// All stabbable weapons use the melee weapon offset node
+			NiPointer<NiAVObject> weaponOffsetNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
+			if (weaponOffsetNode) {
+				// TODO: Does not work properly when 2handing with higgs
+				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_worldTransform.rot);
+				float stabAmount = DotProduct(VectorNormalized(handVelocity), weaponForward);
+				_MESSAGE("Stab amount: %.2f", stabAmount);
+				if (stabAmount > Config::options.hitStabDirectionThreshold && hitSpeed > Config::options.hitStabSpeedThreshold) {
+					isStab = true;
+				}
+			}
+		}
+		else if (!equippedObj || (weap && weap->type() == TESObjectWEAP::GameData::kType_HandToHandMelee)) {
+			// Check for punch
+			// For punching use the hand node
+			NiPointer<NiAVObject> handNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftHandBone: PlayerCharacter::Node::kNode_RightHandBone];
+			if (handNode) {
+				NiPoint3 punchVector = UpVector(handNode->m_worldTransform.rot); // in the direction of fingers when fingers are extended
+				float punchAmount = DotProduct(VectorNormalized(handVelocity), punchVector);
+				_MESSAGE("Punch amount: %.2f", punchAmount);
+				if (punchAmount > Config::options.hitPunchDirectionThreshold && hitSpeed > Config::options.hitPunchSpeedThreshold) {
+					isPunch = true;
+				}
+			}
+		}
+		
+		if (!isStab && !isPunch && hitSpeed > Config::options.hitSwingSpeedThreshold) {
+			isSwing = true;
+		}
+
+		// Thresholding on some (small) roomspace hand velocity helps prevent hits while moving around / turning
+
+		if ((isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace) {
+			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
+			DoHit(rigidBodyA, rigidBodyB, evnt, equippedObj, impulseMult, isLeft, isOffhand);
 		}
 		else {
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -530,7 +606,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
 
 		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::ADDED });
-		_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		//_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
@@ -540,7 +616,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Technically our objects could have changed layers or something between added and removed
 		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::REMOVED });
-		_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		//_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void postSimulationCallback(hkpWorld* world)
@@ -1791,6 +1867,83 @@ void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 	}
 }
 
+bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)
+{
+	if (!initComplete) return true;
+
+	PlayerCharacter *player = *g_thePlayer;
+	if (!player || !player->GetNiNode()) return true;
+	NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
+	if (!hmdNode) return true;
+
+	if (g_openVR && *g_openVR) {
+		BSOpenVR *openVR = *g_openVR;
+		vr_src::IVRSystem *vrSystem = openVR->vrSystem;
+		if (vrSystem) {
+			const vr_src::TrackedDeviceIndex_t hmdIndex = vr_src::k_unTrackedDeviceIndex_Hmd;
+			const vr_src::TrackedDeviceIndex_t rightIndex = vrSystem->GetTrackedDeviceIndexForControllerRole(vr_src::ETrackedControllerRole::TrackedControllerRole_RightHand);
+			const vr_src::TrackedDeviceIndex_t leftIndex = vrSystem->GetTrackedDeviceIndexForControllerRole(vr_src::ETrackedControllerRole::TrackedControllerRole_LeftHand);
+
+			if (unGamePoseArrayCount > hmdIndex && vrSystem->IsTrackedDeviceConnected(hmdIndex) && hmdNode) {
+				vr_src::TrackedDevicePose_t &hmdPose = pGamePoseArray[hmdIndex];
+				if (hmdPose.bDeviceIsConnected && hmdPose.bPoseIsValid && hmdPose.eTrackingResult == vr_src::ETrackingResult::TrackingResult_Running_OK) {
+					vr_src::HmdMatrix34_t &hmdMatrix = hmdPose.mDeviceToAbsoluteTracking;
+
+					NiTransform hmdTransform;
+					HmdMatrixToNiTransform(hmdTransform, hmdMatrix);
+
+					// Use the transform between the openvr hmd pose and skyrim's hmdnode transform to get the transform from openvr space to skyrim worldspace
+					NiMatrix33 openvrToSkyrimWorldTransform = hmdNode->m_worldTransform.rot * hmdTransform.rot.Transpose();
+
+					bool isRightConnected = vrSystem->IsTrackedDeviceConnected(rightIndex);
+					bool isLeftConnected = vrSystem->IsTrackedDeviceConnected(leftIndex);
+
+					for (int i = hmdIndex + 1; i < unGamePoseArrayCount; i++) {
+						if (i == rightIndex && isRightConnected) {
+							vr_src::TrackedDevicePose_t &pose = pGamePoseArray[i];
+							if (pose.bDeviceIsConnected && pose.bPoseIsValid && pose.eTrackingResult == vr_src::ETrackingResult::TrackingResult_Running_OK) {
+
+								// SteamVR
+								// +y is up
+								// +x is to the right
+								// -z is forward
+
+								// Skyrim
+								// +z is up
+								// +x is to the right
+								// +y is forward
+
+								// So, SteamVR -> Skyrim
+								// x <- x
+								// y <- -z
+								// z <- y
+
+								NiPoint3 openvrVelocity = { pose.vVelocity.v[0], pose.vVelocity.v[1], pose.vVelocity.v[2] };
+								NiPoint3 skyrimVelocity = { openvrVelocity.x, -openvrVelocity.z, openvrVelocity.y };
+								NiPoint3 velocityWorldspace = openvrToSkyrimWorldTransform * skyrimVelocity;
+								g_controllerVelocities[0].velocities.pop_back();
+								g_controllerVelocities[0].velocities.push_front(velocityWorldspace);
+								g_controllerVelocities[0].Recompute();
+							}
+						}
+						else if (i == leftIndex && isLeftConnected) {
+							vr_src::TrackedDevicePose_t &pose = pGamePoseArray[i];
+							if (pose.bDeviceIsConnected && pose.bPoseIsValid && pose.eTrackingResult == vr_src::ETrackingResult::TrackingResult_Running_OK) {
+								NiPoint3 openvrVelocity = { pose.vVelocity.v[0], pose.vVelocity.v[1], pose.vVelocity.v[2] };
+								NiPoint3 skyrimVelocity = { openvrVelocity.x, -openvrVelocity.z, openvrVelocity.y };
+								NiPoint3 velocityWorldspace = openvrToSkyrimWorldTransform * skyrimVelocity;
+								g_controllerVelocities[1].velocities.pop_back();
+								g_controllerVelocities[1].velocities.push_front(velocityWorldspace);
+								g_controllerVelocities[1].Recompute();
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 extern "C" {
 	void OnDataLoaded()
 	{
@@ -1883,6 +2036,13 @@ extern "C" {
 			_ERROR("[CRITICAL] Failed to perform hooks");
 			return false;
 		}
+
+		g_vrInterface = (SKSEVRInterface *)skse->QueryInterface(kInterface_VR);
+		if (!g_vrInterface) {
+			_ERROR("[CRITICAL] Couldn't get SKSE VR interface. You probably have an outdated SKSE version.");
+			return false;
+		}
+		g_vrInterface->RegisterForPoses(g_pluginHandle, 11, WaitPosesCB);
 
 		g_timer.Start();
 

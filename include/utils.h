@@ -43,6 +43,16 @@ void PrintToFile(std::string entry, std::string filename);
 
 inline VRMeleeData * GetVRMeleeData(bool isLeft) { return (VRMeleeData *)((UInt64)*g_thePlayer + 0x710 + (isLeft ? sizeof(VRMeleeData) : 0)); };
 
+inline bool CanWeaponStab(TESObjectWEAP *weapon)
+{
+	UInt8 type = weapon->type();
+	return (
+		type == TESObjectWEAP::GameData::kType_OneHandSword ||
+		type == TESObjectWEAP::GameData::kType_OneHandDagger ||
+		type == TESObjectWEAP::GameData::kType_TwoHandSword
+	);
+};
+
 bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
