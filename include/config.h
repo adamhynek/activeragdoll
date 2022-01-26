@@ -72,6 +72,9 @@ namespace Config {
 		float hitImpulseDecayMult1 = 0.5f;
 		float hitImpulseDecayMult2 = 0.25f;
 
+		float meleeSwingLinearVelocityThreshold = 3.f;
+		float shieldSwingLinearVelocityThreshold = 3.f;
+
 		float playerCharControllerRadius = 0.15f;
 		float playerCapsuleRadius = 0.1f;
 	};

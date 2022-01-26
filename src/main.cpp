@@ -429,6 +429,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
 		NiPoint3 hitVelocity = HkVectorToNiPoint(pointVelocity) / havokWorldScale;
 
+		// TODO: Consider using hand velocity for hit velocity instead of the actual point velocity at the hit
 		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
 		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
 		*playerLastHitPosition = hitPosition;
@@ -1518,6 +1519,20 @@ void PrePhysicsStepHook()
 		job.Run();
 	}
 	g_pointImpulsejobs.clear();
+
+	// With the exe patched to not enable its melee collision, we still need to disable it once (after it's created)
+	for (int i = 0; i < 2; i++) {
+		VRMeleeData *meleeData = GetVRMeleeData(i);
+		NiPointer<NiAVObject> collNode = meleeData->collisionNode;
+		if (!collNode) continue;
+		NiPointer<bhkRigidBody> rb = GetRigidBody(collNode);
+		if (!rb) continue;
+		if (!(rb->hkBody->m_collidable.getCollisionFilterInfo() >> 14 & 1)) {
+			// collision is enabled
+			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; //disable collision
+			bhkWorldObject_UpdateCollisionFilter(rb);
+		}
+	}
 }
 
 
@@ -1536,6 +1551,8 @@ auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
 auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRagdollRigidBodyController::driveToPose()
+
+auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 
 auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
 
@@ -1817,6 +1834,12 @@ void PerformHooks(void)
 
 		_MESSAGE("Pre-physics-step hook complete");
 	}
+
+	{
+		UInt64 bytes = 0x000000A6E9; // turn the conditional jump in the exe into an unconditional jump
+		SafeWriteBuf(potentiallyEnableMeleeCollisionLoc.GetUIntPtr(), &bytes, 5);
+		_MESSAGE("Patched the game to no longer enable its melee collision");
+	}
 }
 
 bool TryHook()
@@ -1949,10 +1972,9 @@ extern "C" {
 	{
 		contactListener = new ContactListener;
 
-		// TODO: Probably keep the base game's "swing" detection (will also still work with power attacks so stuff like conduit will work) which will also make the swinging sounds when you swing your sword and hit nothing
-		//       We will want to disable just the base game's hit detection though if we do this.
-		*g_fMeleeLinearVelocityThreshold = 99999.f;
-		*g_fShieldLinearVelocityThreshold = 99999.f;
+		// With redone hit detection, these only affect weapon swing sounds/noise and stuff like the bloodskal blade
+		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
+		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;
 
 		initComplete = true;
 		_MESSAGE("Successfully loaded all forms");
