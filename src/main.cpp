@@ -379,6 +379,8 @@ struct ControllerVelocityData
 };
 ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 
+std::unordered_set<Actor *> g_charControllerActors{};
+
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
 	struct CollisionEvent
@@ -405,16 +407,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else return { b, a };
 	}
 
-	void DoHit(hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, const hkpContactPointEvent &evnt, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
+	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
 	{
-		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
-		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
-
-		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-
 		PlayerCharacter *player = *g_thePlayer;
-		if (!hitRefr || hitRefr == player) return;
+		if (hitRefr == player) return;
 
 		// Set attack data
 		BGSAttackData *attackData = nullptr;
@@ -501,6 +497,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hitCooldownTargets[isLeft][hitRefr] = now;
 	}
 
+	bool IsHittableCharController(TESObjectREFR *refr)
+	{
+		if (refr->formType == kFormType_Character) {
+			if (Actor *hitActor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+				if (g_charControllerActors.size() > 0 && g_charControllerActors.count(hitActor)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
 		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED) return;
 
@@ -522,13 +530,20 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
+		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
+		if (!hitRefr) return;
+
+		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
 		bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
 
-		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (hitRefr) {
-			if (hitCooldownTargets[isLeft].count(hitRefr)) {
-				// refr is currently under a hit cooldown, so disable the contact point and gtfo
+		if (hitCooldownTargets[isLeft].count(hitRefr)) {
+			// refr is currently under a hit cooldown, so disable the contact point and gtfo
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
+		}
+		else if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController) {
+			if (!IsHittableCharController(hitRefr)) {
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 				return;
 			}
@@ -585,7 +600,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if ((isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace) {
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(rigidBodyA, rigidBodyB, evnt, equippedObj, impulseMult, isLeft, isOffhand);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, equippedObj, impulseMult, isLeft, isOffhand);
 		}
 		else {
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -716,10 +731,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 	NiPointer<bhkWorld> world = nullptr;
 };
-ContactListener *contactListener = nullptr;
+ContactListener g_contactListener{};
 
-std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls;
-std::unordered_set<hkbRagdollDriver *> g_higgsDrivers;
+std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
+std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
@@ -731,19 +746,22 @@ bool IsAddedToWorld(Actor *actor)
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
 	if (!GetAnimationGraphManager(actor, animGraphManager)) return true;
 
+	if (g_charControllerActors.count(actor)) return true;
+
 	BSAnimationGraphManager *manager = animGraphManager.ptr;
+	{
+		SimpleLocker lock(&manager->updateLock);
 
-	SimpleLocker lock(&manager->updateLock);
+		for (int i = 0; i < manager->graphs.size; i++) {
+			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+			if (!graph.ptr->world) return false;
 
-	for (int i = 0; i < manager->graphs.size; i++) {
-		BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-		if (!graph.ptr->world) return false;
-
-		hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-		if (!driver) return false;
-		hkaRagdollInstance *ragdoll = driver->ragdoll;
-		if (!ragdoll) return false;
-		if (!ragdoll->getWorld()) return false;
+			hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+			if (!driver) return false;
+			hkaRagdollInstance *ragdoll = driver->ragdoll;
+			if (!ragdoll) return false;
+			if (!ragdoll->getWorld()) return false;
+		}
 	}
 
 	return true;
@@ -832,7 +850,9 @@ bool AddRagdollToWorld(Actor *actor)
 		}
 	}
 	else {
-		// TODO: If there is no ragdoll instance, then we still need a way to hit the enemy, e.g. for wisp (witchlight). In this case, I guess we need to register collisions against their charcontroller body or something.
+		// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
+		// In this case, we need to register collisions against their charcontroller.
+		g_charControllerActors.insert(actor);
 	}
 
 	return true;
@@ -873,6 +893,11 @@ bool RemoveRagdollFromWorld(Actor *actor)
 			//BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
 		}
 	}
+	else {
+		if (g_charControllerActors.count(actor)) {
+			g_charControllerActors.erase(actor);
+		}
+	}
 
 	return true;
 }
@@ -899,8 +924,8 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
-	if (world != contactListener->world) {
-		bhkWorld *oldWorld = contactListener->world;
+	if (world != g_contactListener.world) {
+		bhkWorld *oldWorld = g_contactListener.world;
 		if (oldWorld) {
 			_MESSAGE("Removing listener from old havok world");
 			{
@@ -910,9 +935,14 @@ void ProcessHavokHitJobsHook()
 					// There are times when the collision callback extension is gone even if we required it earlier...
 					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(world->world);
 				}
-				hkpWorld_removeContactListener(oldWorld->world, contactListener);
-				hkpWorld_removeWorldPostSimulationListener(world->world, contactListener);
+				hkpWorld_removeContactListener(oldWorld->world, &g_contactListener);
+				hkpWorld_removeWorldPostSimulationListener(world->world, &g_contactListener);
 			}
+
+			g_activeRagdolls.clear();
+			g_charControllerActors.clear();
+			g_higgsDrivers.clear();
+			g_contactListener = ContactListener{};
 		}
 
 		_MESSAGE("Adding listener to new havok world");
@@ -921,8 +951,8 @@ void ProcessHavokHitJobsHook()
 
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 
-			hkpWorld_addContactListener(world->world, contactListener);
-			hkpWorld_addWorldPostSimulationListener(world->world, contactListener);
+			hkpWorld_addContactListener(world->world, &g_contactListener);
+			hkpWorld_addWorldPostSimulationListener(world->world, &g_contactListener);
 
 			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 
@@ -1023,21 +1053,21 @@ void ProcessHavokHitJobsHook()
 			}
 		}
 
-		contactListener->world = world;
+		g_contactListener.world = world;
 	}
 
 	{ // Ensure our listener is the last one (will be called first)
 		hkArray<hkpContactListener*> &listeners = world->world->m_contactListeners;
-		if (listeners[listeners.getSize() - 1] != contactListener) {
+		if (listeners[listeners.getSize() - 1] != &g_contactListener) {
 			BSWriteLocker lock(&world->worldLock);
 
 			int numListeners = listeners.getSize();
-			int listenerIndex = listeners.indexOf(contactListener);
+			int listenerIndex = listeners.indexOf(&g_contactListener);
 			if (listenerIndex >= 0) {
 				for (int i = listenerIndex + 1; i < numListeners; ++i) {
 					listeners[i - 1] = listeners[i];
 				}
-				listeners[numListeners - 1] = contactListener;
+				listeners[numListeners - 1] = &g_contactListener;
 			}
 		}
 	}
@@ -1184,7 +1214,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
 	hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
-	bool isCollidedWith = contactListener->activeDrivers.count(driver) || g_higgsDrivers.count(driver);
+	bool isCollidedWith = g_contactListener.activeDrivers.count(driver) || g_higgsDrivers.count(driver);
 
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 
@@ -1970,8 +2000,6 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 extern "C" {
 	void OnDataLoaded()
 	{
-		contactListener = new ContactListener;
-
 		// With redone hit detection, these only affect weapon swing sounds/noise and stuff like the bloodskal blade
 		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
 		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;

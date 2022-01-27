@@ -572,6 +572,8 @@ void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> 
 }
 
 void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f) {
+	if (!driver || !driver->ragdoll) return;
+
 	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
 		if (constraint->getRigidBodyA() == body) {
 			f(constraint->getRigidBodyB());
