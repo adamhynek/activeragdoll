@@ -476,6 +476,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			hitReactionTargets[targetHandle] = now;
 		}
 		else {
+			// TODO: I dunno about this didDispatchHitEvent stuff. For example, some shield _does_ dispatch hit events but doesn't get destroyed, so the collision sort of just gets eaten.
 			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
@@ -531,7 +532,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
+		if (!hitRefr) {
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
+		}
 
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
@@ -740,17 +744,16 @@ hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during dr
 
 hkArray<hkVector4> g_scratchHkArray{}; // We can't call the destructor of this ourselves, so this is a global array to be used at will and never deallocated.
 
-
 bool IsAddedToWorld(Actor *actor)
 {
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-	if (!GetAnimationGraphManager(actor, animGraphManager)) return true;
-
-	if (g_charControllerActors.count(actor)) return true;
+	if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
 
 	BSAnimationGraphManager *manager = animGraphManager.ptr;
 	{
 		SimpleLocker lock(&manager->updateLock);
+
+		if (manager->graphs.size <= 0) return false;
 
 		for (int i = 0; i < manager->graphs.size; i++) {
 			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
@@ -761,6 +764,29 @@ bool IsAddedToWorld(Actor *actor)
 			hkaRagdollInstance *ragdoll = driver->ragdoll;
 			if (!ragdoll) return false;
 			if (!ragdoll->getWorld()) return false;
+		}
+	}
+
+	return true;
+}
+
+bool CanAddToWorld(Actor *actor)
+{
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+	if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
+
+	BSAnimationGraphManager *manager = animGraphManager.ptr;
+	{
+		SimpleLocker lock(&manager->updateLock);
+
+		if (manager->graphs.size <= 0) return false;
+
+		for (int i = 0; i < manager->graphs.size; i++) {
+			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+			hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+			if (!driver) return false;
+			hkaRagdollInstance *ragdoll = driver->ragdoll;
+			if (!ragdoll) return false;
 		}
 	}
 
@@ -849,11 +875,6 @@ bool AddRagdollToWorld(Actor *actor)
 			BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
 		}
 	}
-	else {
-		// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
-		// In this case, we need to register collisions against their charcontroller.
-		g_charControllerActors.insert(actor);
-	}
 
 	return true;
 }
@@ -891,11 +912,6 @@ bool RemoveRagdollFromWorld(Actor *actor)
 
 			//x = false;
 			//BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
-		}
-	}
-	else {
-		if (g_charControllerActors.count(actor)) {
-			g_charControllerActors.erase(actor);
 		}
 	}
 
@@ -1130,14 +1146,32 @@ void ProcessHavokHitJobsHook()
 
 			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollDistance;
 
-			bool isAddedToWorld = IsAddedToWorld(actor);
-			//_MESSAGE("%x %d", actor, isAddedToWorld);
-
-			if (!isAddedToWorld && shouldAddToWorld) {
-				AddRagdollToWorld(actor);
+			bool isAddedToWorld = IsAddedToWorld(actor) || g_charControllerActors.count(actor);
+			bool canAddToWorld = CanAddToWorld(actor);
+			
+			if (shouldAddToWorld) {
+				if (!isAddedToWorld) {
+					if (canAddToWorld) {
+						AddRagdollToWorld(actor);
+					}
+					else {
+						// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
+						// In this case, we need to register collisions against their charcontroller.
+						g_charControllerActors.insert(actor);
+					}
+				}
 			}
-			else if (isAddedToWorld && !shouldAddToWorld) {
-				RemoveRagdollFromWorld(actor);
+			else { // should not add to world
+				if (isAddedToWorld) {
+					if (canAddToWorld) {
+						RemoveRagdollFromWorld(actor);
+					}
+					else {
+						if (g_charControllerActors.count(actor)) {
+							g_charControllerActors.erase(actor);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1565,6 +1599,20 @@ void PrePhysicsStepHook()
 	}
 }
 
+void PreCullActorsHook(Actor *actor)
+{
+	if (!IsAddedToWorld(actor)) return; // let the game decide
+
+	UInt32 cullState = 7; // do not cull this actor
+	
+	actor->unk274 &= 0xFFFFFFF0;
+	actor->unk274 |= cullState & 0xF;
+	
+	if (NiPointer<NiNode> root = actor->GetNiNode()) {
+		root->m_flags &= ~(1 << 20);  // zero out bit 20 -> do not cull the actor's root node
+	}
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -1585,6 +1633,8 @@ auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRag
 auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 
 auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
+
+auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 
 void PerformHooks(void)
 {
@@ -1863,6 +1913,42 @@ void PerformHooks(void)
 		g_branchTrampoline.Write6Branch(prePhysicsStepHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("Pre-physics-step hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				sub(rsp, 0x20); // 0x20 bytes for scratch space
+
+				mov(rcx, rbp); // the actor being considered for culling is in rbp at this point
+
+				// Call our hook
+				mov(rax, (uintptr_t)PreCullActorsHook);
+				call(rax);
+
+				add(rsp, 0x20);
+
+				// Original code
+				mov(rbx, ptr[rsp + 0x78]);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(preCullActorsHookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(preCullActorsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("PreCullActors hook complete");
 	}
 
 	{

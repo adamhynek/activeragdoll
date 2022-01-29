@@ -286,6 +286,23 @@ struct ActorCause
 };
 static_assert(sizeof(ActorCause) == 0x18);
 
+struct BSFadeNodeCuller
+{
+	struct Plane
+	{
+		NiPoint3 normal;
+		float d;
+	};
+
+	NiCamera *camera; // 18
+
+	Plane frustumCullingPlanes[6]; // 3C - near plane, far plane, ...
+
+	struct BSMultiBoundNode *boundNode; // 128
+	struct BSMultiBound *bound; // 130
+	struct BSMultiBoundSphere *boundSphere; // 138
+};
+
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);
