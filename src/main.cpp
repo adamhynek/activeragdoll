@@ -1706,37 +1706,6 @@ void PreCullActorsHook(Actor *actor)
 	}
 }
 
-void GenerateHook(hkbBehaviorGraph *_this, const hkbContext& context, hkbGeneratorOutput& output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst)
-{
-	hkbBehaviorGraph_generate(_this, context, output, setCharacterPose, timeOffset, doUpdateActiveNodesFirst);
-
-	Actor *actor = context.character ? GetActorFromCharacter(context.character) : nullptr;
-	if (actor && actor != *g_thePlayer) {
-		TESForm *baseForm = actor->baseForm;
-		if (baseForm) {
-			TESFullName *fullName = DYNAMIC_CAST(baseForm, TESForm, TESFullName);
-			if (fullName) {
-				//if (std::string(fullName->name.data) == "Mallus Maccius") {
-				if (std::string(fullName->name.data) == "Rabbit") {
-					hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(output, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-					hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(output, *worldFromModelHeader);
-					//PrintVector(HkVectorToNiPoint(worldFromModel.m_translation));
-
-					static hkQsTransform prevWorldFromModel;
-					PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation))), "worldfrommodelgenerate.txt");
-					//_MESSAGE("%.2f", VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation)));
-					prevWorldFromModel = worldFromModel;
-
-					static double prevTime;
-					double t = GetTime();
-					//_MESSAGE("%.2f", (t - prevTime) * 1000);
-					prevTime = t;
-				}
-			}
-		}
-	}
-}
-
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
 {
 	Actor *actor = _this->holder;
@@ -1759,8 +1728,6 @@ auto postPhysicsHookedFunc = RelocAddr<uintptr_t>(0xA27730); // hkbRagdollDriver
 uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver::driveToPose()
-
-auto generateHookLoc = RelocAddr<uintptr_t>(0xB27207);
 
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
@@ -1820,11 +1787,6 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(processHavokHitJobsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("ProcessHavokHitJobs hook complete");
-	}
-
-	{
-		g_branchTrampoline.Write5Call(generateHookLoc.GetUIntPtr(), uintptr_t(GenerateHook));
-		_MESSAGE("hkbBehaviorGraph::generate hook complete");
 	}
 
 	{
