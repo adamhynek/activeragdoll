@@ -2,6 +2,7 @@
 #include <Physics/Collide/Shape/Compound/Collection/List/hkpListShape.h>
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
+#include <Physics/Dynamics/Action/hkpUnaryAction.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
 #include <Physics/Utilities/Actions/EaseConstraints/hkpEaseConstraintsAction.h>
@@ -430,8 +431,23 @@ extern RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintD
 typedef bool(*_bhkRagdollConstraint_ctor)(bhkRagdollConstraint *_this, hkRagdollConstraintCinfo *cInfo);
 extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;
 
+typedef bool(*_hkbBehaviorGraph_generate)(hkbBehaviorGraph *_this, const hkbContext& context, hkbGeneratorOutput& output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst);
+extern RelocAddr<_hkbBehaviorGraph_generate> hkbBehaviorGraph_generate;
+
+typedef bool(*_BShkbAnimationGraph_UpdateAnimation)(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3);
+extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_UpdateAnimation;
+
+typedef bool(*_hkbRagdollDriver_driveToPose)(hkbRagdollDriver *_this, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput);
+extern RelocAddr<_hkbRagdollDriver_driveToPose> hkbRagdollDriver_driveToPose;
+
+typedef bool(*_hkbRagdollDriver_postPhysics)(hkbRagdollDriver *_this, const hkbContext& context, hkbGeneratorOutput& inOut);
+extern RelocAddr<_hkbRagdollDriver_postPhysics> hkbRagdollDriver_postPhysics;
+
 typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, const hkQsTransform& worldFromModel, hkQsTransform* lowResPoseWorld);
 extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld;
+
+typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, hkQsTransform* lowResPoseLocal);
+extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal;
 
 typedef void(*_hkRotation_setFromQuat)(hkRotation *_this, hkQuaternionParameter q);
 extern RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat;
@@ -522,3 +538,21 @@ extern RelocAddr<_HitData_dtor> HitData_dtor;
 
 typedef void(*_HitData_populate)(HitData *_this, Actor *src, Actor *target, InventoryEntryData *weapon, bool isOffhand);
 extern RelocAddr<_HitData_populate> HitData_populate;
+
+typedef void(*_hkpUnaryAction_ctor)(hkpUnaryAction *_this, hkpEntity* entity, hkUlong userData);
+extern RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor;
+
+typedef void(*_hkpUnaryAction_setEntity)(hkpUnaryAction *_this, hkpEntity* entity);
+extern RelocAddr<_hkpUnaryAction_setEntity> hkpUnaryAction_setEntity;
+
+typedef void(*_hkpWorld_addAction)(hkpWorld *world, hkpAction* action);
+extern RelocAddr<_hkpWorld_addAction> hkpWorld_addAction;
+
+typedef void(*_hkpWorld_removeAction)(hkpWorld *world, hkpAction* action);
+extern RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction;
+
+typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, hkQsTransform *worldFromModel, hkQsTransform *poseLocalSpace, hkQsTransform *poseWorldspaceOut);
+extern RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld;
+
+typedef void(*_CopyAndApplyScaleToPose)(bool useHavokWorldScaleOrInverseScale, UInt32 numBones, hkQsTransform *poseLowResLocal, hkQsTransform *poseOut, float worldFromModelScale);
+extern RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose;

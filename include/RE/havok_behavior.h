@@ -46,7 +46,7 @@ struct hkbRagdollDriver : hkReferencedObject
 	hkbWorldFromModelModeData worldFromModelModeDataInternal; // 50
 	hkArray<hkBool32> reportingWhenKeyframed; // 58 - Indexed by (boneIdx >> 5), and then you >> (boneIdx & 0x1F) & 1 to extract the specific bit
 	UInt64 unk68; // numRagdollBones?
-	hkPointerMap<hkReferencedObject *, hkBool32> attachedRigidBodyToIndexMap; // 70 - maybe
+	hkPointerMap<hkReferencedObject *, hkBool32> attachedRigidBodyToIndexMap; // 70
 	struct hkbCharacter *character; // 80
 	hkaRagdollInstance *ragdoll; // 88
 	hkQsTransform *ragdollPoseWS; // 90
@@ -102,7 +102,7 @@ struct hkbCharacter : hkReferencedObject
 	hkRefVariant                raycastInterface;           // 70
 	hkRefVariant                world;                      // 78
 	hkRefVariant                eventQueue;                 // 80
-	hkRefVariant                worldFromModel;             // 88
+	hkRefPtr<hkQsTransform>     worldFromModel;             // 88
 	const void**                poseLocal;                  // 90 - hkSimpleArray<hkRefVariant>
 	std::int32_t                numPoseLocal;               // 98
 	bool                        deleteWorldFromModel;       // 9C
@@ -264,13 +264,39 @@ static_assert(offsetof(bhkCharRigidBodyController, characterRigidBody) == 0x340)
 
 struct BShkbAnimationGraph
 {
+	struct UpdateData
+	{
+		float deltaTime; // 00
+		void *unk08; // function pointer to some Character function
+		Character *character; // 10
+		NiPoint3 *cameraPos; // 18 - literally points to the pos within the worldTransform of the WorldRoot NiCamera node
+		IPostAnimationChannelUpdateFunctor *unk20; // points to the IPostAnimationChannelUpdateFunctor part of the Character
+		UInt8 unk28;
+		UInt8 unk29;
+		UInt8 unk2A;
+		UInt8 unk2B;
+		UInt8 unk2C;
+		UInt8 unk2D;
+		UInt8 unk2E;
+		UInt8 unk2F;
+		float scale1; // 30 - for rabbit, 1.3f
+		float scale2; // 34 - for rabbit, 1.3f
+		// ...
+	};
+	static_assert(offsetof(UpdateData, unk2A) == 0x2A);
+	static_assert(offsetof(UpdateData, scale1) == 0x30);
+
 	void *vtbl; // 00
 	UInt8 unk08[0xC0 - 0x08];
 	hkbCharacter character; // C0
-	UInt8 unk160[0x208 - 0x160];
+	UInt8 unk160[0x1E8 - 0x160];
+	float interpolationTimeOffsets[2]; // 1E8
+	BSFixedString projectName; // 1F0
+	UInt64 unk1F8;
+	UInt64 projectDBData; // 200 - BShkbHkxDB::ProjectDBData*
 	hkbBehaviorGraph *behaviorGraph; // 208
 	Actor *holder; // 210
-	NiNode *rootNode; // 218
+	BSFadeNode *rootNode; // 218
 	UInt8 unk220[0x238 - 0x220];
 	bhkWorld *world; // 238
 	// more...
@@ -410,5 +436,6 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
 
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
+Actor * GetActorFromCharacter(hkbCharacter *character);
 Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver);
 void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield);

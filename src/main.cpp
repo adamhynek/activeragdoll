@@ -117,8 +117,7 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 		}
 	}
 
-	UInt64 *vtbl = *((UInt64 **)player);
-	((_Actor_WeaponSwingCallback)(vtbl[0xF1]))(player);
+	get_vfunc<_Actor_WeaponSwingCallback>(player, 0xF1)(player);
 
 	if (player->processManager) {
 		ActorProcess_IncrementAttackCounter(player->processManager, 1);
@@ -143,7 +142,7 @@ struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
 	};
 
 	CheckHitEventsFunctor(Data *data, bool *result) : data(data), result(result) {
-		*((void **)this) = ((void *)(CheckHitEventsFunctor_vtbl)); // set vtbl
+		set_vtbl(this, CheckHitEventsFunctor_vtbl);
 	};
 
 	Data *data; // 08 - points to stack addr of VMClassRegistry *
@@ -194,8 +193,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 
 		// vm decref
 		if (InterlockedExchangeSubtract(((UInt32 *)&registry->unk0004), (UInt32)1) == 1) {
-			UInt64 *vtbl = *((UInt64 **)registry);
-			((_VMClassRegistry_Destruct)(vtbl[0]))(registry, 1);
+			get_vfunc< _VMClassRegistry_Destruct>(registry, 0x0)(registry, 1);
 		}
 
 		return shouldDispatchHitEvent;
@@ -300,14 +298,21 @@ bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigid
 	return didDispatchHitEvent;
 }
 
-struct PointImpulseJob
+struct PrePhysicsStepJob
+{
+	virtual void Run() = 0;
+};
+
+struct PointImpulseJob : PrePhysicsStepJob
 {
 	hkpRigidBody *rigidBody{};
 	NiPoint3 point{};
 	NiPoint3 impulse{};
 	UInt32 refrHandle{};
 
-	void Run()
+	PointImpulseJob(hkpRigidBody *rigidBody, NiPoint3 &point, NiPoint3 &impulse, UInt32 refrHandle) : rigidBody(rigidBody), point(point), impulse(impulse), refrHandle(refrHandle) {}
+
+	virtual void Run() override
 	{
 		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
 		NiPointer<TESObjectREFR> refr;
@@ -324,13 +329,15 @@ struct PointImpulseJob
 	}
 };
 
-struct LinearImpulseJob
+struct LinearImpulseJob : PrePhysicsStepJob
 {
 	hkpRigidBody *rigidBody{};
 	NiPoint3 impulse{};
 	UInt32 refrHandle{};
 
-	void Run()
+	LinearImpulseJob(hkpRigidBody *rigidBody, NiPoint3 &impulse, UInt32 refrHandle) : rigidBody(rigidBody), impulse(impulse), refrHandle(refrHandle) {}
+
+	virtual void Run() override
 	{
 		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
 		NiPointer<TESObjectREFR> refr;
@@ -347,8 +354,14 @@ struct LinearImpulseJob
 	}
 };
 
-std::vector<PointImpulseJob> g_pointImpulsejobs{};
-std::vector<LinearImpulseJob> g_linearImpulsejobs{};
+std::vector<std::unique_ptr<PrePhysicsStepJob>> g_prePhysicsStepJobs{};
+
+template<class T, typename... Args>
+void QueuePrePhysicsJob(Args&&... args)
+{
+	static_assert(std::is_base_of<PrePhysicsStepJob, T>::value);
+	g_prePhysicsStepJobs.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+}
 
 struct ControllerVelocityData
 {
@@ -459,46 +472,43 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			HitActor(player, hitChar, weapon, isOffhand);
 
-			// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-			ForEachRagdollDriver(hitChar, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
-				ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
-					g_linearImpulsejobs.push_back({ adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle });
-
-					ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
-						g_linearImpulsejobs.push_back({ semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle });
-					});
-				});
-			});
-
 			VRMeleeData *meleeData = GetVRMeleeData(isLeft);
 			PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
 
-			hitReactionTargets[targetHandle] = now;
+			if (Config::options.applyImpulseOnHit) {
+				// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+				ForEachRagdollDriver(hitChar, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
+					ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
+						QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle);
+						ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
+							QueuePrePhysicsJob<LinearImpulseJob>(semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle);
+						});
+					});
+				});
+
+				// Apply a point impulse at the hit location to the body we actually hit
+				QueuePrePhysicsJob<PointImpulseJob>(hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle);
+
+				hitReactionTargets[targetHandle] = now;
+			}
 		}
 		else {
-			// TODO: I dunno about this didDispatchHitEvent stuff. For example, some shield _does_ dispatch hit events but doesn't get destroyed, so the collision sort of just gets eaten.
 			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
-				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-
 				VRMeleeData *meleeData = GetVRMeleeData(isLeft);
 				PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
 			}
-			else {
-				if (!IsMoveableEntity(hitRigidBody)) {
-					// It's not a hit, so disable contact for keyframed/fixed objects in this case
-					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				}
+
+			if (!IsMoveableEntity(hitRigidBody)) {
+				// Disable contact for keyframed/fixed objects in this case
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
 		}
-
-		// Apply a point impulse at the hit location to the body we actually hit
-		g_pointImpulsejobs.push_back({ hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle });
 
 		hitCooldownTargets[isLeft][hitRefr] = now;
 	}
 
-	bool IsHittableCharController(TESObjectREFR *refr)
+	inline bool IsHittableCharController(TESObjectREFR *refr)
 	{
 		if (refr->formType == kFormType_Character) {
 			if (Actor *hitActor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
@@ -671,11 +681,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		double now = GetTime();
 
-		// Process hit targets (not hit cooldown targets) and condider the same as if they were collided with.
+		// Process hit targets (not hit cooldown targets) and condider them the same as if they were collided with.
 		// Fill in active drivers with any hit targets that haven't expired yet.
 		for (auto it = hitReactionTargets.begin(); it != hitReactionTargets.end();) {
 			auto[handle, hitTime] = *it;
-			if (now - hitTime >= Config::options.hitReactionTime)
+			if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.hitReactionTime)
 				it = hitReactionTargets.erase(it);
 			else {
 				UInt32 handleCopy = handle;
@@ -725,7 +735,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		for (auto &targets : hitCooldownTargets) { // For each hand's cooldown targets
 			for (auto it = targets.begin(); it != targets.end();) {
 				auto[target, hitTime] = *it;
-				if (now - hitTime >= Config::options.hitRecoveryTime)
+				if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.hitRecoveryTime)
 					it = targets.erase(it);
 				else
 					++it;
@@ -809,22 +819,24 @@ void ModifyConstraints(Actor *actor)
 			}
 		}
 
-		// Convert any limited hinge constraints to ragdoll constraints so that they can be loosened properly
-		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-			if (node) {
-				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-				if (wrapper) {
-					for (int i = 0; i < wrapper->constraints.count; i++) {
-						bhkConstraint *constraint = wrapper->constraints.entries[i];
-						if (constraint->constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_LIMITEDHINGE) {
-							bhkRagdollConstraint *ragdollConstraint = ConvertToRagdollConstraint(constraint);
-							if (ragdollConstraint) {
-								constraint->RemoveFromCurrentWorld();
+		if (Config::options.convertHingeConstraintsToRagdollConstraints) {
+			// Convert any limited hinge constraints to ragdoll constraints so that they can be loosened properly
+			for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
+				NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
+				if (node) {
+					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
+					if (wrapper) {
+						for (int i = 0; i < wrapper->constraints.count; i++) {
+							bhkConstraint *constraint = wrapper->constraints.entries[i];
+							if (constraint->constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_LIMITEDHINGE) {
+								bhkRagdollConstraint *ragdollConstraint = ConvertToRagdollConstraint(constraint);
+								if (ragdollConstraint) {
+									constraint->RemoveFromCurrentWorld();
 
-								bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
-								ragdollConstraint->MoveToWorld(world);
-								wrapper->constraints.entries[i] = ragdollConstraint;
+									bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
+									ragdollConstraint->MoveToWorld(world);
+									wrapper->constraints.entries[i] = ragdollConstraint;
+								}
 							}
 						}
 					}
@@ -961,7 +973,7 @@ void ProcessHavokHitJobsHook()
 			g_contactListener = ContactListener{};
 		}
 
-		_MESSAGE("Adding listener to new havok world");
+		_MESSAGE("Havok world changed");
 		{
 			BSWriteLocker lock(&world->worldLock);
 
@@ -976,7 +988,15 @@ void ProcessHavokHitJobsHook()
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= (1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
 			}
 
+			if (Config::options.disableBipedGroundCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~(1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision;
+				ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
+			}
+
 			if (Config::options.enablePlayerBipedCollision) {
+				// TODO: Instead of doing this, we may need to keep the player on the charcontroller layer and disable contact points from the contact listener,
+				//       since the game does check specific things for specifically the charcontroller layer, and if the player charcontroller is not on that layer that may cause issues.
+
 				// Add a new layer for the player that will not collide with charcontrollers but will collide with the biped layer instead
 				UInt64 bitfield = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_CharController]; // copy of L_CHARCONTROLLER layer bitfield
 
@@ -1005,7 +1025,7 @@ void ProcessHavokHitJobsHook()
 						// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
 						for (int i : {
 							1, 3, 4, 5, 7, 11, 13, 16, // top ring
-								0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
 						}) {
 							NiPoint3 vert = HkVectorToNiPoint(verts[i]);
 							NiPoint3 newVert = vert;
@@ -1027,7 +1047,7 @@ void ProcessHavokHitJobsHook()
 
 						// set vtbl
 						static auto hkCharControllerShape_vtbl = RelocAddr<void *>(0x1838E78);
-						*((void **)newShape) = ((void *)(hkCharControllerShape_vtbl));
+						set_vtbl(newShape, hkCharControllerShape_vtbl);
 
 						bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
 						wrapper->SetHavokObject(newShape);
@@ -1067,6 +1087,9 @@ void ProcessHavokHitJobsHook()
 					bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
 				}
 			}
+
+			filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] = 0;
+			ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
 		}
 
 		g_contactListener.world = world;
@@ -1251,6 +1274,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	bool isCollidedWith = g_contactListener.activeDrivers.count(driver) || g_higgsDrivers.count(driver);
 
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
+	ragdoll.deltaTime = deltaTime;
 
 	double frameTime = GetTime();
 	ragdoll.frameTime = frameTime;
@@ -1323,26 +1347,34 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
+	//SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+
 	if ((state == RagdollState::BlendIn || state == RagdollState::Dynamic || state == RagdollState::BlendOut)) {
 		if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
-			float hierarchyGain, velocityGain, positionGain;
-			if (state == RagdollState::BlendOut) {
-				hierarchyGain = Config::options.blendOutHierarchyGain;
-				velocityGain = Config::options.blendOutVelocityGain;
-				positionGain = Config::options.blendOutPositionGain;
-			}
-			else {
-				hierarchyGain = Config::options.collideHierarchyGain;
-				velocityGain = Config::options.collideVelocityGain;
-				positionGain = Config::options.collidePositionGain;
-			}
-
 			hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
 			for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
 				hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
-				elem.m_hierarchyGain = hierarchyGain;
-				elem.m_velocityGain = velocityGain;
-				elem.m_positionGain = positionGain;
+				if (state == RagdollState::BlendOut) {
+					elem.m_hierarchyGain = Config::options.blendOutHierarchyGain;
+					elem.m_velocityGain = Config::options.blendOutVelocityGain;
+					elem.m_positionGain = Config::options.blendOutPositionGain;
+				}
+				else {
+					elem.m_hierarchyGain = Config::options.hierarchyGain;
+					elem.m_velocityGain = Config::options.velocityGain;
+					elem.m_positionGain = Config::options.positionGain;
+					/*elem.m_hierarchyGain = 0.f;
+					elem.m_velocityGain = 0.f;
+					elem.m_positionGain = 1.f;
+					elem.m_accelerationGain = 0.f;
+					elem.m_positionMaxLinearVelocity = 100.f;
+					elem.m_positionMaxAngularVelocity = 100.f;
+					elem.m_snapGain = 1.f;
+					elem.m_snapMaxLinearDistance = 10.f;
+					elem.m_snapMaxLinearVelocity = 100.f;
+					elem.m_snapMaxAngularDistance = 10.f;
+					elem.m_snapMaxAngularVelocity = 100.f;*/
+				}
 			}
 		}
 
@@ -1359,44 +1391,61 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-		const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+	if (Config::options.loosenRagdollContraintsToMatchPose) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 
-		int numPosesHigh = poseHeader->m_numData;
-		hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+			static hkQsTransform prevWorldFromModel;
+			PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation))), "worldfrommodel.txt");
+			prevWorldFromModel = worldFromModel;
 
-		int numPosesLow = driver->ragdoll->getNumBones();
-		static std::vector<hkQsTransform> poseWorld{};
-		poseWorld.resize(numPosesLow);
-		hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+			static NiTransform prevWorldFromModelNode;
+			if (NiPointer<NiAVObject> root = actor->GetNiNode()) {
+				//worldFromModel.m_translation = NiPointToHkVector(root->m_worldTransform.pos);
+				//worldFromModel.m_rotation = NiQuatToHkQuat(MatrixToQuaternion(root->m_worldTransform.rot));
 
-		// Set rigidbody transforms to the anim pose ones and save the old values
-		static std::vector<hkTransform> savedTransforms{};
-		savedTransforms.clear();
-		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-			hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-			hkQsTransform &transform = poseWorld[i];
+				PrintToFile(std::to_string(VectorLength(root->m_worldTransform.pos - prevWorldFromModelNode.pos)), "worldfrommodelnode.txt");
+				prevWorldFromModelNode = root->m_worldTransform;
 
-			savedTransforms.push_back(rb->getTransform());
-			rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
-			hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
-		}
-
-		{ // Loosen ragdoll constraints to allow the anim pose
-			if (!ragdoll.easeConstraintsAction) {
-				hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
-				hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
-				ragdoll.easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
-				hkReferencedObject_removeReference(ragdoll.easeConstraintsAction);
+				PrintToFile(std::to_string(VectorLength(root->m_worldTransform.pos - HkVectorToNiPoint(worldFromModel.m_translation))), "worldfrommodelcomp.txt");
 			}
 
-			hkpEaseConstraintsAction_loosenConstraints(ragdoll.easeConstraintsAction);
-		}
+			int numPosesHigh = poseHeader->m_numData;
+			hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-		// Restore rigidbody transforms
-		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-			hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-			rb->m_motion.getMotionState()->m_transform = savedTransforms[i];
+			int numPosesLow = driver->ragdoll->getNumBones();
+			static std::vector<hkQsTransform> poseWorld{};
+			poseWorld.resize(numPosesLow);
+			hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+
+			// Set rigidbody transforms to the anim pose ones and save the old values
+			static std::vector<hkTransform> savedTransforms{};
+			savedTransforms.clear();
+			for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+				hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+				hkQsTransform &transform = poseWorld[i];
+
+				savedTransforms.push_back(rb->getTransform());
+				rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
+				hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
+			}
+
+			{ // Loosen ragdoll constraints to allow the anim pose
+				if (!ragdoll.easeConstraintsAction) {
+					hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
+					hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
+					ragdoll.easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
+					hkReferencedObject_removeReference(ragdoll.easeConstraintsAction);
+				}
+
+				hkpEaseConstraintsAction_loosenConstraints(ragdoll.easeConstraintsAction);
+			}
+
+			// Restore rigidbody transforms
+			for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+				hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+				rb->m_motion.getMotionState()->m_transform = savedTransforms[i];
+			}
 		}
 	}
 
@@ -1471,6 +1520,53 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	int numBones = driver->ragdoll->getNumBones();
 	if (numBones <= 0) return;
 
+	/*
+	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
+	keyframedBonesHeader->m_onFraction = 0.f;
+	for (hkpRigidBody *rb : driver->ragdoll->m_rigidBodies) {
+		hkpRigidBody_setMotionType(rb, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+	}
+	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+		hkpConstraintInstance_setEnabled(constraint, 0);
+	}
+
+
+	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+	hkQsTransform worldFromModel = *(hkQsTransform *)Track_getData(inOut, *worldFromModelHeader);
+
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	int numPosesHigh = poseHeader->m_numData;
+	hkQsTransform *poseLocalHigh = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+
+	static std::vector<hkQsTransform> poseLocalLow{};
+	poseLocalLow.resize(numBones);
+	//hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+	hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, poseLocalHigh, poseLocalLow.data());
+	static std::vector<hkQsTransform> poseLocalScaled{};
+	poseLocalScaled.resize(numBones);
+	float worldFromModelScale = driver->character->worldFromModel->m_scale(0);
+	CopyAndApplyScaleToPose(true, numBones, poseLocalLow.data(), poseLocalScaled.data(), worldFromModelScale);
+
+	static std::vector<hkQsTransform> poseWorld{};
+	poseWorld.resize(numBones);
+
+	worldFromModel.m_translation = NiPointToHkVector(HkVectorToNiPoint(worldFromModel.m_translation) * *g_havokWorldScale);
+	//PrintVector(HkVectorToNiPoint(worldFromModel.m_scale));
+	worldFromModel.m_scale = NiPointToHkVector({ 1.f, 1.f, 1.f });
+
+	hkbPoseLocalToPoseWorld(numBones, driver->ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, poseLocalScaled.data(), poseWorld.data());
+
+	for (int i = 0; i < numBones; i++) {
+		int index = driver->ragdoll->m_boneToRigidBodyMap[i];
+		if (index < 0) continue;
+		hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[index];
+		hkQsTransform &pose = poseWorld[i];
+		hkpKeyFrameUtility_applyHardKeyFrame(pose.m_translation, pose.m_rotation, 1.f / ragdoll.deltaTime, rb);
+	}
+
+	//driver->allBonesKeyframed = true;
+	*/
+
 	ragdoll.stress.clear();
 
 	float totalStress = 0.f;
@@ -1520,11 +1616,13 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
 
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
-	if (ragdoll.easeConstraintsAction) {
-		// Restore constraint limits from before we loosened them
-		// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
-		hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
-		ragdoll.easeConstraintsAction = nullptr;
+	if (Config::options.loosenRagdollContraintsToMatchPose) {
+		if (ragdoll.easeConstraintsAction) {
+			// Restore constraint limits from before we loosened them
+			// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
+			hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
+			ragdoll.easeConstraintsAction = nullptr;
+		}
 	}
 
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
@@ -1574,15 +1672,10 @@ void PrePhysicsStepHook()
 
 	// At this point we can apply any impulses / velocity adjustments without fear of them being overwritten
 
-	for (LinearImpulseJob &job : g_linearImpulsejobs) {
-		job.Run();
+	for (auto &job : g_prePhysicsStepJobs) {
+		job.get()->Run();
 	}
-	g_linearImpulsejobs.clear();
-
-	for (PointImpulseJob &job : g_pointImpulsejobs) {
-		job.Run();
-	}
-	g_pointImpulsejobs.clear();
+	g_prePhysicsStepJobs.clear();
 
 	// With the exe patched to not enable its melee collision, we still need to disable it once (after it's created)
 	for (int i = 0; i < 2; i++) {
@@ -1613,6 +1706,47 @@ void PreCullActorsHook(Actor *actor)
 	}
 }
 
+void GenerateHook(hkbBehaviorGraph *_this, const hkbContext& context, hkbGeneratorOutput& output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst)
+{
+	hkbBehaviorGraph_generate(_this, context, output, setCharacterPose, timeOffset, doUpdateActiveNodesFirst);
+
+	Actor *actor = context.character ? GetActorFromCharacter(context.character) : nullptr;
+	if (actor && actor != *g_thePlayer) {
+		TESForm *baseForm = actor->baseForm;
+		if (baseForm) {
+			TESFullName *fullName = DYNAMIC_CAST(baseForm, TESForm, TESFullName);
+			if (fullName) {
+				//if (std::string(fullName->name.data) == "Mallus Maccius") {
+				if (std::string(fullName->name.data) == "Rabbit") {
+					hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(output, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+					hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(output, *worldFromModelHeader);
+					//PrintVector(HkVectorToNiPoint(worldFromModel.m_translation));
+
+					static hkQsTransform prevWorldFromModel;
+					PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation))), "worldfrommodelgenerate.txt");
+					//_MESSAGE("%.2f", VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation)));
+					prevWorldFromModel = worldFromModel;
+
+					static double prevTime;
+					double t = GetTime();
+					//_MESSAGE("%.2f", (t - prevTime) * 1000);
+					prevTime = t;
+				}
+			}
+		}
+	}
+}
+
+void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
+{
+	Actor *actor = _this->holder;
+	if (a3 && actor && IsAddedToWorld(actor)) { // a3 is null if the graph is not active
+		updateData->unk2A = true; // forces animation update (hkbGenerator::generate()) without skipping frames
+	}
+
+	BShkbAnimationGraph_UpdateAnimation(_this, updateData, a3);
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -1626,6 +1760,8 @@ uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver::driveToPose()
 
+auto generateHookLoc = RelocAddr<uintptr_t>(0xB27207);
+
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
 auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRagdollRigidBodyController::driveToPose()
@@ -1635,6 +1771,9 @@ auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
 
 auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
+
+auto BShkbAnimationGraph_UpdateAnimation_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
+
 
 void PerformHooks(void)
 {
@@ -1681,6 +1820,16 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(processHavokHitJobsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("ProcessHavokHitJobs hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(generateHookLoc.GetUIntPtr(), uintptr_t(GenerateHook));
+		_MESSAGE("hkbBehaviorGraph::generate hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(BShkbAnimationGraph_UpdateAnimation_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_UpdateAnimation_Hook));
+		_MESSAGE("BShkbAnimationGraph::UpdateAnimation hook complete");
 	}
 
 	{
@@ -1915,7 +2064,7 @@ void PerformHooks(void)
 		_MESSAGE("Pre-physics-step hook complete");
 	}
 
-	{
+	if (Config::options.disableCullingForActiveRagdolls) {
 		struct Code : Xbyak::CodeGenerator {
 			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
 			{
@@ -2081,6 +2230,8 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 			}
 		}
 	}
+
+	return true;
 }
 
 extern "C" {

@@ -177,11 +177,9 @@ NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor)
 	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharProxyController);
 }
 
-Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
-{
-	hkbCharacter *character = driver->character;
-	if (!character) return nullptr;
 
+Actor * GetActorFromCharacter(hkbCharacter *character)
+{
 	hkbBehaviorGraph *behaviorGraph = character->behaviorGraph;
 	if (!behaviorGraph) return nullptr;
 
@@ -189,6 +187,14 @@ Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
 	if (!graph) return nullptr;
 
 	return graph->holder;
+}
+
+Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
+{
+	hkbCharacter *character = driver->character;
+	if (!character) return nullptr;
+
+	return GetActorFromCharacter(character);
 }
 
 void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield)

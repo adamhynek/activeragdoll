@@ -22,6 +22,7 @@ struct ActiveRagdoll
 	std::vector<float> stress{};
 	hkQsTransform hipBoneTransform{};
 	float avgStress = 0.f;
+	float deltaTime = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	double frameTime = 0.0;
 	double stateChangedTime = 0.0;

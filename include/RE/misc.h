@@ -254,7 +254,7 @@ struct BSTSmallArray
 
 	inline T * GetData() { return heapSize >= 0 ? data.heap : data.local; }
 
-	SInt32 heapSize = 0x80000000; // 00
+	SInt32 heapSize = 0x80000000; // 00 - default -0.f
 	UInt32 unk04; // 04
 	Data data; // 08
 	UInt32 size;
@@ -301,6 +301,17 @@ struct BSFadeNodeCuller
 	struct BSMultiBoundNode *boundNode; // 128
 	struct BSMultiBound *bound; // 130
 	struct BSMultiBoundSphere *boundSphere; // 138
+};
+
+struct MovementControllerNPC
+{
+	struct Entry
+	{
+		BSFixedString name; // 00
+		void *unk08; // 08
+	};
+
+	BSTSmallArray<Entry> unk48; // 48
 };
 
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);

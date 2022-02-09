@@ -24,9 +24,9 @@ namespace Config {
 
 		float activeRagdollDistance = 10.f;
 
-		float collideHierarchyGain = 0.6f;
-		float collideVelocityGain = 0.6f;
-		float collidePositionGain = 0.05f;
+		float hierarchyGain = 0.6f;
+		float velocityGain = 0.6f;
+		float positionGain = 0.05f;
 
 		float blendOutHierarchyGain = 0.6f;
 		float blendOutVelocityGain = 0.6f;
@@ -42,9 +42,14 @@ namespace Config {
 
 		bool enableBipedBipedCollision = false;
 		bool enablePlayerBipedCollision = true;
+		bool disableBipedGroundCollision = true;
+		bool loosenRagdollContraintsToMatchPose = true;
+		bool convertHingeConstraintsToRagdollConstraints = true;
+		bool disableCullingForActiveRagdolls = true;
 		bool keyframeBones = false;
 		bool forceRagdollPose = true;
 		bool doBlending = false;
+		bool applyImpulseOnHit = true;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;
