@@ -449,6 +449,9 @@ extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagd
 typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, hkQsTransform* lowResPoseLocal);
 extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal;
 
+typedef hkQsTransform * (*_hkbCharacter_getPoseLocal)(hkbCharacter *_this);
+extern RelocAddr<_hkbCharacter_getPoseLocal> hkbCharacter_getPoseLocal;
+
 typedef void(*_hkRotation_setFromQuat)(hkRotation *_this, hkQuaternionParameter q);
 extern RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat;
 

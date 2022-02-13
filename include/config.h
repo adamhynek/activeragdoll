@@ -22,7 +22,8 @@ namespace Config {
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
-		float activeRagdollDistance = 10.f;
+		float activeRagdollStartDistance = 10.f;
+		float activeRagdollEndDistance = 15.f;
 
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;
@@ -42,9 +43,10 @@ namespace Config {
 
 		bool enableBipedBipedCollision = false;
 		bool enablePlayerBipedCollision = true;
-		bool disableBipedGroundCollision = true;
+		bool disableBipedGroundCollision = false;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
+		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;
 		bool keyframeBones = false;
 		bool forceRagdollPose = true;

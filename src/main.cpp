@@ -1167,7 +1167,8 @@ void ProcessHavokHitJobsHook()
 
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 
-			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollDistance;
+			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
+			bool shouldRemoveFromWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
 			bool isAddedToWorld = IsAddedToWorld(actor) || g_charControllerActors.count(actor);
 			bool canAddToWorld = CanAddToWorld(actor);
@@ -1184,7 +1185,7 @@ void ProcessHavokHitJobsHook()
 					}
 				}
 			}
-			else { // should not add to world
+			else if (shouldRemoveFromWorld) {
 				if (isAddedToWorld) {
 					if (canAddToWorld) {
 						RemoveRagdollFromWorld(actor);
@@ -1391,10 +1392,27 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
+	if (Config::options.copyFootIkToPoseTrack) {
+		// When the game does foot ik, the output of the foot ik is put into a temporary hkbGeneratorOutput and copied into the hkbCharacter.poseLocal.
+		// However, the physics ragdoll driving is done on the hkbGeneratorOutput from hkbBehaviorGraph::generate() which does not have the foot ik incorporated.
+		// So, copy the pose from hkbCharacter.poseLocal into the hkbGeneratorOutput pose track to have the ragdoll driving take the foot ik into account.
+		hkbCharacter *character = driver->character;
+		if (character && poseHeader && poseHeader->m_onFraction > 0.f) {
+			BShkbAnimationGraph *graph = GetAnimationGraph(character);
+			if (graph && graph->doFootIK) {
+				if (character->footIkDriver && character->setup && character->setup->m_data && character->setup->m_data->m_footIkDriverInfo) {
+					hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(character);
+					hkInt16 numPoses = poseHeader->m_numData;
+					memcpy(Track_getData(generatorOutput, *poseHeader), poseLocal, numPoses * sizeof(hkQsTransform));
+				}
+			}
+		}
+	}
+
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-
+			/*
 			static hkQsTransform prevWorldFromModel;
 			PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation))), "worldfrommodel.txt");
 			prevWorldFromModel = worldFromModel;
@@ -1408,9 +1426,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				prevWorldFromModelNode = root->m_worldTransform;
 
 				PrintToFile(std::to_string(VectorLength(root->m_worldTransform.pos - HkVectorToNiPoint(worldFromModel.m_translation))), "worldfrommodelcomp.txt");
-			}
+			}*/
 
-			int numPosesHigh = poseHeader->m_numData;
 			hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
 			int numPosesLow = driver->ragdoll->getNumBones();
@@ -1686,7 +1703,7 @@ void PrePhysicsStepHook()
 		if (!rb) continue;
 		if (!(rb->hkBody->m_collidable.getCollisionFilterInfo() >> 14 & 1)) {
 			// collision is enabled
-			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; //disable collision
+			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; // disable collision
 			bhkWorldObject_UpdateCollisionFilter(rb);
 		}
 	}
@@ -1702,6 +1719,7 @@ void PreCullActorsHook(Actor *actor)
 	actor->unk274 |= cullState & 0xF;
 	
 	if (NiPointer<NiNode> root = actor->GetNiNode()) {
+		// TODO: it might be okay to just set the cull state above and still cull the root node (i.e. get rid of this line)
 		root->m_flags &= ~(1 << 20);  // zero out bit 20 -> do not cull the actor's root node
 	}
 }

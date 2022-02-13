@@ -178,12 +178,18 @@ NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor)
 }
 
 
-Actor * GetActorFromCharacter(hkbCharacter *character)
+BShkbAnimationGraph * GetAnimationGraph(hkbCharacter *character)
 {
 	hkbBehaviorGraph *behaviorGraph = character->behaviorGraph;
 	if (!behaviorGraph) return nullptr;
 
 	BShkbAnimationGraph *graph = (BShkbAnimationGraph *)behaviorGraph->userData;
+	return graph;
+}
+
+Actor * GetActorFromCharacter(hkbCharacter *character)
+{
+	BShkbAnimationGraph *graph = GetAnimationGraph(character);
 	if (!graph) return nullptr;
 
 	return graph->holder;

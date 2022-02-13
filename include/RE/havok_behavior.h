@@ -70,6 +70,29 @@ struct hkbRagdollDriver : hkReferencedObject
 static_assert(offsetof(hkbRagdollDriver, character) == 0x80);
 static_assert(sizeof(hkbRagdollDriver) == 0xD0);
 
+struct hkbCharacterData : hkReferencedObject
+{
+	float unk10;
+	float unk14;
+	UInt64 unk18;
+	UInt64 unk20;
+	UInt64 unk28;
+	hkVector4 m_modelUpMS; // 30
+	hkVector4 m_modelForwardMS; // 40
+	hkVector4 m_modelRightMS; // 50
+	hkArray<class hkbVariableInfo> m_characterPropertyInfos; // 60
+	hkArray<hkInt32> m_numBonesPerLod; // 70
+	hkRefPtr<struct hkbVariableValueSet> m_characterPropertyValues; // 80
+	hkRefPtr<struct hkbFootIkDriverInfo> m_footIkDriverInfo; // 88
+	hkRefPtr<struct hkbHandIkDriverInfo> m_handIkDriverInfo; // 90
+	hkRefPtr<struct hkbCharacterStringData> m_stringData; // 98
+	hkRefPtr<struct hkbMirroredSkeletonInfo> m_mirroredSkeletonInfo; // A0
+	hkReal m_scale;	// A8
+	hkInt16 m_numHands; // AC
+	hkInt16 m_numFloatSlots; // AE
+};
+static_assert(sizeof(hkbCharacterData) == 0xB0);
+
 struct hkbCharacterSetup : hkReferencedObject
 {
 	hkArray<hkRefPtr<hkaSkeletonMapper>> m_retargetingSkeletonMappers; // 10
@@ -77,7 +100,7 @@ struct hkbCharacterSetup : hkReferencedObject
 	hkRefPtr<hkaSkeletonMapper> m_ragdollToAnimationSkeletonMapper; // 28
 	hkRefPtr<hkaSkeletonMapper> m_animationToRagdollSkeletonMapper; // 30
 	hkRefPtr<struct hkbAnimationBindingSet> m_animationBindingSet; // 38
-	hkRefPtr<struct hkbCharacterData> m_data; // 40
+	hkRefPtr<hkbCharacterData> m_data; // 40
 	UInt64 unk48; // probably either m_unscaledAnimationSkeleton or m_mirroredSkeleton
 	hkRefPtr<struct hkbSymbolIdMap> m_characterPropertyIdMap; // 50
 	mutable hkCriticalSection *m_criticalSection; // 58
@@ -276,7 +299,7 @@ struct BShkbAnimationGraph
 		UInt8 unk2A;
 		UInt8 unk2B;
 		UInt8 unk2C;
-		UInt8 unk2D;
+		UInt8 unk2D; // if 0, call generate(). If not 0, do something else?
 		UInt8 unk2E;
 		UInt8 unk2F;
 		float scale1; // 30 - for rabbit, 1.3f
@@ -286,10 +309,20 @@ struct BShkbAnimationGraph
 	static_assert(offsetof(UpdateData, unk2A) == 0x2A);
 	static_assert(offsetof(UpdateData, scale1) == 0x30);
 
+	struct BoneNodeEntry
+	{
+		NiNode *node; // 00
+		UInt32 unk08;
+		UInt32 unk0C;
+	};
+
 	void *vtbl; // 00
 	UInt8 unk08[0xC0 - 0x08];
 	hkbCharacter character; // C0
-	UInt8 unk160[0x1E8 - 0x160];
+	tArray<BoneNodeEntry> boneNodes; // 160 - the number of these is the same as the number of anim bones
+	tArray<void *> fadeControllers; // 178
+	tArray<UInt64> unk190;
+	UInt8 unk1A8[0x1E8 - 0x1A8];
 	float interpolationTimeOffsets[2]; // 1E8
 	BSFixedString projectName; // 1F0
 	UInt64 unk1F8;
@@ -297,12 +330,28 @@ struct BShkbAnimationGraph
 	hkbBehaviorGraph *behaviorGraph; // 208
 	Actor *holder; // 210
 	BSFadeNode *rootNode; // 218
-	UInt8 unk220[0x238 - 0x220];
+	// these two get swapped in B2A190
+	// hkbGeneratorOutput *unk220; // actually has active tracks - gets cleared in B26EE0. This one is passed to hkbBehaviorGraph::generate()
+	// hkbGeneratorOutput *unk228; // all tracks onFraction appears to be 0 - gets cleared in B2A190
+	hkbGenerator * generatorOutputs[2]; // 220
+	float interpolationAmounts[2]; // 230 - {1.0f, 0.0f} if generating every frame
 	bhkWorld *world; // 238
-	// more...
+	UInt16 numAnimBones; // 240
+	UInt8 unk242; // 242 - determines something to do with AnimObjects/Shield/magicnodes and fading
+	UInt8 unk243; // 243
+	UInt8 unk244; // 244
+	UInt8 unk245; // 245
+	UInt8 unk246; // 246
+	UInt8 unk247; // 247
+	UInt8 unk248; // 248
+	UInt8 doFootIK; // 249
+	UInt16 pad24A; // 24A
+	UInt32 pad24C; // 24C
 };
 static_assert(offsetof(BShkbAnimationGraph, character) == 0xC0);
 static_assert(offsetof(BShkbAnimationGraph, holder) == 0x210);
+static_assert(offsetof(BShkbAnimationGraph, world) == 0x238);
+static_assert(offsetof(BShkbAnimationGraph, doFootIK) == 0x249);
 
 class BSAnimationGraphManager :
 	BSTEventSink<BSAnimationGraphEvent>, // 00
@@ -410,6 +459,20 @@ struct hkbGeneratorOutput
 	bool m_deleteTracks; // 08
 };
 
+struct hkbFootIkDriver : hkReferencedObject
+{
+	hkArray<struct InternalLegData> m_internalLegData; // 10
+	hkVector4 unk20;
+	hkQuaternion unk30;
+	UInt64 unk40;
+	UInt16 unk48;
+	UInt8 disableFootIk; // 4A - doFootIk checks this and bails if it's set
+	UInt8 unk4B;
+	float deltaTime; // 4C
+};
+static_assert(sizeof(hkbFootIkDriver) == 0x50);
+static_assert(offsetof(hkbFootIkDriver, disableFootIk) == 0x4A);
+
 inline hkReal * Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header) {
 	return reinterpret_cast<hkReal*>(reinterpret_cast<char*>(output.m_tracks) + header.m_dataOffset);
 }
@@ -436,6 +499,7 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
 
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
+BShkbAnimationGraph * GetAnimationGraph(hkbCharacter *character);
 Actor * GetActorFromCharacter(hkbCharacter *character);
 Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver);
 void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield);
