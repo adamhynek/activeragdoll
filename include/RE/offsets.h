@@ -437,6 +437,9 @@ extern RelocAddr<_hkbBehaviorGraph_generate> hkbBehaviorGraph_generate;
 typedef bool(*_BShkbAnimationGraph_UpdateAnimation)(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3);
 extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_UpdateAnimation;
 
+typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform* poseLocalSpace, const hkQsTransform& worldFromModel, hkaKeyFrameHierarchyUtility::Output* stressOut);
+extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBodyController_driveToPose;
+
 typedef bool(*_hkbRagdollDriver_driveToPose)(hkbRagdollDriver *_this, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput);
 extern RelocAddr<_hkbRagdollDriver_driveToPose> hkbRagdollDriver_driveToPose;
 

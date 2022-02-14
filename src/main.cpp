@@ -1364,17 +1364,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 					elem.m_hierarchyGain = Config::options.hierarchyGain;
 					elem.m_velocityGain = Config::options.velocityGain;
 					elem.m_positionGain = Config::options.positionGain;
-					/*elem.m_hierarchyGain = 0.f;
-					elem.m_velocityGain = 0.f;
-					elem.m_positionGain = 1.f;
-					elem.m_accelerationGain = 0.f;
-					elem.m_positionMaxLinearVelocity = 100.f;
-					elem.m_positionMaxAngularVelocity = 100.f;
-					elem.m_snapGain = 1.f;
-					elem.m_snapMaxLinearDistance = 10.f;
-					elem.m_snapMaxLinearVelocity = 100.f;
-					elem.m_snapMaxAngularDistance = 10.f;
-					elem.m_snapMaxAngularVelocity = 100.f;*/
 				}
 			}
 		}
@@ -1524,7 +1513,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 }
 
-void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
@@ -1536,53 +1525,6 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
 	int numBones = driver->ragdoll->getNumBones();
 	if (numBones <= 0) return;
-
-	/*
-	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
-	keyframedBonesHeader->m_onFraction = 0.f;
-	for (hkpRigidBody *rb : driver->ragdoll->m_rigidBodies) {
-		hkpRigidBody_setMotionType(rb, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
-	}
-	for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
-		hkpConstraintInstance_setEnabled(constraint, 0);
-	}
-
-
-	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-	hkQsTransform worldFromModel = *(hkQsTransform *)Track_getData(inOut, *worldFromModelHeader);
-
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
-	int numPosesHigh = poseHeader->m_numData;
-	hkQsTransform *poseLocalHigh = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-
-	static std::vector<hkQsTransform> poseLocalLow{};
-	poseLocalLow.resize(numBones);
-	//hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
-	hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, poseLocalHigh, poseLocalLow.data());
-	static std::vector<hkQsTransform> poseLocalScaled{};
-	poseLocalScaled.resize(numBones);
-	float worldFromModelScale = driver->character->worldFromModel->m_scale(0);
-	CopyAndApplyScaleToPose(true, numBones, poseLocalLow.data(), poseLocalScaled.data(), worldFromModelScale);
-
-	static std::vector<hkQsTransform> poseWorld{};
-	poseWorld.resize(numBones);
-
-	worldFromModel.m_translation = NiPointToHkVector(HkVectorToNiPoint(worldFromModel.m_translation) * *g_havokWorldScale);
-	//PrintVector(HkVectorToNiPoint(worldFromModel.m_scale));
-	worldFromModel.m_scale = NiPointToHkVector({ 1.f, 1.f, 1.f });
-
-	hkbPoseLocalToPoseWorld(numBones, driver->ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, poseLocalScaled.data(), poseWorld.data());
-
-	for (int i = 0; i < numBones; i++) {
-		int index = driver->ragdoll->m_boneToRigidBodyMap[i];
-		if (index < 0) continue;
-		hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[index];
-		hkQsTransform &pose = poseWorld[i];
-		hkpKeyFrameUtility_applyHardKeyFrame(pose.m_translation, pose.m_rotation, 1.f / ragdoll.deltaTime, rb);
-	}
-
-	//driver->allBonesKeyframed = true;
-	*/
 
 	ragdoll.stress.clear();
 
@@ -1617,7 +1559,7 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	}
 }
 
-void PostPostPhysicsHook(hkbRagdollDriver *driver, hkbGeneratorOutput &inOut)
+void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
@@ -1709,6 +1651,20 @@ void PrePhysicsStepHook()
 	}
 }
 
+void DriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
+{
+	PreDriveToPoseHook(driver, deltaTime, context, generatorOutput);
+	hkbRagdollDriver_driveToPose(driver, deltaTime, context, generatorOutput);
+	PostDriveToPoseHook(driver, deltaTime, context, generatorOutput);
+}
+
+void PostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+{
+	PrePostPhysicsHook(driver, context, inOut);
+	hkbRagdollDriver_postPhysics(driver, context, inOut);
+	PostPostPhysicsHook(driver, context, inOut);
+}
+
 void PreCullActorsHook(Actor *actor)
 {
 	if (!IsAddedToWorld(actor)) return; // let the game decide
@@ -1739,17 +1695,12 @@ uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
 auto processHavokHitJobsHookedFunc = RelocAddr<uintptr_t>(0x75AC20);
 
-uintptr_t postPhysicsHookedFuncAddr = 0;
 auto postPhysicsHookLoc = RelocAddr<uintptr_t>(0xB268DC);
-auto postPhysicsHookedFunc = RelocAddr<uintptr_t>(0xA27730); // hkbRagdollDriver::postPhysics()
 
-uintptr_t driveToPoseHookedFuncAddr = 0;
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
-auto driveToPoseHookedFunc = RelocAddr<uintptr_t>(0xA25B60); // hkbRagdollDriver::driveToPose()
 
 uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
-auto controllerDriveToPoseHookedFunc = RelocAddr<uintptr_t>(0xB4CFF0); // hkaRagdollRigidBodyController::driveToPose()
 
 auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 
@@ -1764,9 +1715,7 @@ void PerformHooks(void)
 {
 	// First, set our addresses
 	processHavokHitJobsHookedFuncAddr = processHavokHitJobsHookedFunc.GetUIntPtr();
-	driveToPoseHookedFuncAddr = driveToPoseHookedFunc.GetUIntPtr();
-	postPhysicsHookedFuncAddr = postPhysicsHookedFunc.GetUIntPtr();
-	controllerDriveToPoseHookedFuncAddr = controllerDriveToPoseHookedFunc.GetUIntPtr();
+	controllerDriveToPoseHookedFuncAddr = hkaRagdollRigidBodyController_driveToPose.GetUIntPtr();
 
 	{
 		struct Code : Xbyak::CodeGenerator {
@@ -1813,141 +1762,12 @@ void PerformHooks(void)
 	}
 
 	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
-
-				push(rax);
-				push(rcx);
-				push(rdx);
-				push(r8);
-				push(r9);
-				push(r10);
-				push(r11);
-				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
-				movsd(ptr[rsp + 0x20], xmm0);
-				movsd(ptr[rsp + 0x30], xmm1);
-				movsd(ptr[rsp + 0x40], xmm2);
-				movsd(ptr[rsp + 0x50], xmm3);
-				movsd(ptr[rsp + 0x60], xmm4);
-				movsd(ptr[rsp + 0x70], xmm5);
-
-				// Call our pre hook
-				mov(rax, (uintptr_t)PreDriveToPoseHook);
-				call(rax);
-
-				movsd(xmm0, ptr[rsp + 0x20]);
-				movsd(xmm1, ptr[rsp + 0x30]);
-				movsd(xmm2, ptr[rsp + 0x40]);
-				movsd(xmm3, ptr[rsp + 0x50]);
-				movsd(xmm4, ptr[rsp + 0x60]);
-				movsd(xmm5, ptr[rsp + 0x70]);
-				add(rsp, 0x88);
-				pop(r11);
-				pop(r10);
-				pop(r9);
-				pop(r8);
-				pop(rdx);
-				pop(rcx);
-				pop(rax);
-
-				// Original code
-				mov(rax, driveToPoseHookedFuncAddr);
-				call(rax);
-
-				// Restore args to pass to our post hook
-				mov(rcx, ptr[rsi + 0xF0]); // hkbRagdollDriver
-				lea(rdx, ptr[rsp + 0x60]); // hkbContext
-				mov(r8, r12); // hkbGeneratorOutput
-
-				// Call our post hook
-				mov(rax, (uintptr_t)PostDriveToPoseHook);
-				call(rax);
-
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
-
-				L(jumpBack);
-				dq(driveToPoseHookLoc.GetUIntPtr() + 5);
-			}
-		};
-
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
-
-		g_branchTrampoline.Write5Branch(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
+		g_branchTrampoline.Write5Call(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(DriveToPoseHook));
 		_MESSAGE("hkbRagdollDriver::driveToPose hook complete");
 	}
 
 	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
-
-				push(rax);
-				push(rcx);
-				push(rdx);
-				push(r8);
-				push(r9);
-				push(r10);
-				push(r11);
-				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
-				movsd(ptr[rsp + 0x20], xmm0);
-				movsd(ptr[rsp + 0x30], xmm1);
-				movsd(ptr[rsp + 0x40], xmm2);
-				movsd(ptr[rsp + 0x50], xmm3);
-				movsd(ptr[rsp + 0x60], xmm4);
-				movsd(ptr[rsp + 0x70], xmm5);
-
-				// Call our pre hook
-				mov(rax, (uintptr_t)PrePostPhysicsHook);
-				call(rax);
-
-				movsd(xmm0, ptr[rsp + 0x20]);
-				movsd(xmm1, ptr[rsp + 0x30]);
-				movsd(xmm2, ptr[rsp + 0x40]);
-				movsd(xmm3, ptr[rsp + 0x50]);
-				movsd(xmm4, ptr[rsp + 0x60]);
-				movsd(xmm5, ptr[rsp + 0x70]);
-				add(rsp, 0x88);
-				pop(r11);
-				pop(r10);
-				pop(r9);
-				pop(r8);
-				pop(rdx);
-				pop(rcx);
-				pop(rax);
-
-				// Original code
-				mov(rax, postPhysicsHookedFuncAddr);
-				call(rax);
-
-				// Restore args to pass to our post hook
-				mov(rcx, ptr[rsi + 0xF0]); // hkbRagdollDriver
-				lea(rdx, ptr[rsp + 0x30]); // hkbGeneratorOutput
-
-				// Call our post hook
-				mov(rax, (uintptr_t)PostPostPhysicsHook);
-				call(rax);
-
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
-
-				L(jumpBack);
-				dq(postPhysicsHookLoc.GetUIntPtr() + 5);
-			}
-		};
-
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
-
-		g_branchTrampoline.Write5Branch(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
+		g_branchTrampoline.Write5Call(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(PostPhysicsHook));
 		_MESSAGE("hkbRagdollDriver::postPhysics hook complete");
 	}
 
