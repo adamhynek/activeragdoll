@@ -415,12 +415,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	std::unordered_set<hkbRagdollDriver *> activeDrivers;
 	std::vector<CollisionEvent> events{};
 
-	std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
+	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
 	}
 
-	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
+	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
@@ -429,14 +429,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		BGSAttackData *attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, false, &attackData);
 		if (!attackData) return;
-
-		float havokWorldScale = *g_havokWorldScale;
-
-		hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
-		NiPoint3 hitPosition = HkVectorToNiPoint(hkHitPos) / havokWorldScale;
-
-		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
-		NiPoint3 hitVelocity = HkVectorToNiPoint(pointVelocity) / havokWorldScale;
 
 		// TODO: Consider using hand velocity for hit velocity instead of the actual point velocity at the hit
 		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
@@ -458,6 +450,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
 		);
 
+		float havokWorldScale = *g_havokWorldScale;
 		NiPoint3 impulse = hitVelocity * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
 		impulse *= impulseStrength; // Scale the velocity as we see fit
 		impulse *= impulseMult;
@@ -487,7 +480,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				});
 
 				// Apply a point impulse at the hit location to the body we actually hit
-				QueuePrePhysicsJob<PointImpulseJob>(hitRigidBody, HkVectorToNiPoint(hkHitPos), impulse, targetHandle);
+				QueuePrePhysicsJob<PointImpulseJob>(hitRigidBody, hitPosition * havokWorldScale, impulse, targetHandle);
 
 				hitReactionTargets[targetHandle] = now;
 			}
@@ -565,7 +558,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// A contact point of any sort confirms a collision, regardless of any collision added or removed events
 
-		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(evnt.m_contactPoint->getPosition(), pointVelocity);
+		hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
+		hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
 		NiPoint3 hkHitVelocity = HkVectorToNiPoint(pointVelocity);
 		float hitSpeed = VectorLength(hkHitVelocity);
 		// TODO: Make the hit speed affect damage? (how?)
@@ -574,8 +568,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		TESForm *equippedObj = player->GetEquippedObject(isOffhand);
 		TESObjectWEAP *weap = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
 
-		NiPoint3 handVelocity = g_controllerVelocities[isLeft].avgVelocity;
+		NiPoint3 handDirection = VectorNormalized(g_controllerVelocities[isLeft].avgVelocity);
 		float handSpeedRoomspace = g_controllerVelocities[isLeft].avgSpeed;
+		if (g_higgsInterface->IsTwoHanding()) {
+			handDirection = VectorNormalized(g_controllerVelocities[0].avgVelocity + g_controllerVelocities[1].avgVelocity);
+			handSpeedRoomspace = max(g_controllerVelocities[0].avgSpeed, g_controllerVelocities[1].avgSpeed);
+		}
 
 		bool isStab = false, isPunch = false, isSwing = false;
 		if (weap && CanWeaponStab(weap)) {
@@ -583,9 +581,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			// All stabbable weapons use the melee weapon offset node
 			NiPointer<NiAVObject> weaponOffsetNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
 			if (weaponOffsetNode) {
-				// TODO: Does not work properly when 2handing with higgs
-				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_worldTransform.rot);
-				float stabAmount = DotProduct(VectorNormalized(handVelocity), weaponForward);
+				// Use last frame's offset node transform because this frame is not over yet and it can still be modified by e.g. higgs two-handing
+				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_oldWorldTransform.rot);
+				float stabAmount = DotProduct(handDirection, weaponForward);
 				_MESSAGE("Stab amount: %.2f", stabAmount);
 				if (stabAmount > Config::options.hitStabDirectionThreshold && hitSpeed > Config::options.hitStabSpeedThreshold) {
 					isStab = true;
@@ -598,7 +596,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			NiPointer<NiAVObject> handNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftHandBone: PlayerCharacter::Node::kNode_RightHandBone];
 			if (handNode) {
 				NiPoint3 punchVector = UpVector(handNode->m_worldTransform.rot); // in the direction of fingers when fingers are extended
-				float punchAmount = DotProduct(VectorNormalized(handVelocity), punchVector);
+				float punchAmount = DotProduct(handDirection, punchVector);
 				_MESSAGE("Punch amount: %.2f", punchAmount);
 				if (punchAmount > Config::options.hitPunchDirectionThreshold && hitSpeed > Config::options.hitPunchSpeedThreshold) {
 					isPunch = true;
@@ -612,9 +610,23 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Thresholding on some (small) roomspace hand velocity helps prevent hits while moving around / turning
 
-		if ((isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace) {
+		bool doHit = (isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace;
+		bool disableHit = !player->actorState.IsWeaponDrawn() && Config::options.disableHitIfSheathed;
+
+		if (doHit && !disableHit) {
+			float havokWorldScale = *g_havokWorldScale;
+
+			NiPoint3 hitPosition = HkVectorToNiPoint(hkHitPos) / havokWorldScale; // skyrim units
+			NiPoint3 hitVelocity; // skyrim units
+			if (isStab && Config::options.useHandVelocityForStabHitDirection) {
+				hitVelocity = handDirection * handSpeedRoomspace / havokWorldScale;
+			}
+			else {
+				hitVelocity = hkHitVelocity / havokWorldScale;
+			}
+
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, equippedObj, impulseMult, isLeft, isOffhand);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand);
 		}
 		else {
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -946,10 +958,8 @@ void ProcessHavokHitJobsHook()
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
 
-	if (g_higgsInterface) {
-		if (!g_higgsInterface->GetGrabbedObject(false) && !g_higgsInterface->GetGrabbedObject(true)) {
-			g_higgsDrivers.clear();
-		}
+	if (!g_higgsInterface->GetGrabbedObject(false) && !g_higgsInterface->GetGrabbedObject(true)) {
+		g_higgsDrivers.clear();
 	}
 
 	if (world != g_contactListener.world) {
@@ -985,11 +995,11 @@ void ProcessHavokHitJobsHook()
 			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 
 			if (Config::options.enableBipedBipedCollision) {
-				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= (1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
 			}
 
 			if (Config::options.disableBipedGroundCollision) {
-				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~(1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision;
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision;
 				ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
 			}
 
@@ -1010,8 +1020,7 @@ void ProcessHavokHitJobsHook()
 				// Set whether other layers should collide with our new layer
 				ReSyncLayerBitfields(filter, bitfield);
 
-				NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer);
-				if (controller) {
+				if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
 					hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
 					{ // Shrink convex charcontroller shape
@@ -1087,9 +1096,6 @@ void ProcessHavokHitJobsHook()
 					bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
 				}
 			}
-
-			filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] = 0;
-			ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
 		}
 
 		g_contactListener.world = world;
@@ -1111,48 +1117,45 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
-	if (g_higgsInterface) {
-		NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer);
-		if (controller) {
-			hkUint32 &filterInfo = controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo;
-			UInt32 layer = filterInfo & 0x7f;
+	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+		hkUint32 &filterInfo = controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo;
+		UInt32 layer = filterInfo & 0x7f;
 
-			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
-			UInt64 bitfield = filter->layerBitfields[57];
+		bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
+		UInt64 bitfield = filter->layerBitfields[57];
 
-			bool updateFilter = false;
+		bool updateFilter = false;
 
-			if (g_higgsDrivers.size() > 0) {
-				// When something is grabbed, disable collision with bipeds (since we're holding one)
-				if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped)) {
-					bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
-					updateFilter = true;
-				}
-				if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
-					bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
-					updateFilter = true;
-				}
+		if (g_higgsDrivers.size() > 0) {
+			// When something is grabbed, disable collision with bipeds (since we're holding one)
+			if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped)) {
+				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
+				updateFilter = true;
 			}
-			else if (Config::options.enablePlayerBipedCollision) {
-				// Nothing grabbed, make sure we're colliding with bipeds again
-				if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped))) {
-					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
-					updateFilter = true;
-				}
-				if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC))) {
-					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
-					updateFilter = true;
-				}
+			if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
+				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
+				updateFilter = true;
 			}
+		}
+		else if (Config::options.enablePlayerBipedCollision) {
+			// Nothing grabbed, make sure we're colliding with bipeds again
+			if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped))) {
+				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
+				updateFilter = true;
+			}
+			if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC))) {
+				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
+				updateFilter = true;
+			}
+		}
 
-			if (updateFilter) {
-				{
-					BSWriteLocker lock(&world->worldLock);
-					filter->layerBitfields[57] = bitfield;
-					ReSyncLayerBitfields(filter, bitfield);
-				}
-				bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
+		if (updateFilter) {
+			{
+				BSWriteLocker lock(&world->worldLock);
+				filter->layerBitfields[57] = bitfield;
+				ReSyncLayerBitfields(filter, bitfield);
 			}
+			bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
 		}
 	}
 
@@ -1455,57 +1458,50 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	if (actor) {
-		NiPointer<NiNode> root = actor->GetNiNode();
-		if (root) {
-			bhkCharRigidBodyController *controller = GetCharRigidBodyController(actor);
-			if (controller) {
+	if (NiPointer<NiNode> root = actor->GetNiNode()) {
+		if (bhkCharRigidBodyController *controller = GetCharRigidBodyController(actor)) {
+			if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+				if (NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root)) {
+					NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
+					//std::string boneName = std::string("Ragdoll_") + collNode->m_name;
+					//_MESSAGE(collNode->m_name);
 
-				if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-					NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root);
-					if (rb) {
-						NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
-						//std::string boneName = std::string("Ragdoll_") + collNode->m_name;
-						//_MESSAGE(collNode->m_name);
+					if (int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name); boneIndex >= 0) {
+						const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 
-						int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name);
-						if (boneIndex >= 0) {
-							const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-
-							hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-							// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this _is_ the 'root' collision node...
-							hkQsTransform poseT;
-							poseT.setMul(worldFromModel, poseData[boneIndex]);
+						hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this _is_ the 'root' collision node...
+						hkQsTransform poseT;
+						poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
-							if (Config::options.doRootMotion && state == RagdollState::Dynamic && ragdoll.hasHipBoneTransform) {
-								hkTransform actualT;
-								rb->getTransform(actualT);
+						if (Config::options.doRootMotion && state == RagdollState::Dynamic && ragdoll.hasHipBoneTransform) {
+							hkTransform actualT;
+							rb->getTransform(actualT);
 
-								NiPoint3 posePos = HkVectorToNiPoint(ragdoll.hipBoneTransform.m_translation) * *g_havokWorldScale;
-								NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
-								NiPoint3 posDiff = actualPos - posePos;
+							NiPoint3 posePos = HkVectorToNiPoint(ragdoll.hipBoneTransform.m_translation) * *g_havokWorldScale;
+							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
+							NiPoint3 posDiff = actualPos - posePos;
 
-								PrintVector(posDiff);
-								hkpSurfaceInfo &surface = controller->surfaceInfo;
-								if (surface.m_supportedState == hkpSurfaceInfo::SupportedState::SUPPORTED) {
-									NiPoint3 supportNorm = HkVectorToNiPoint(surface.m_surfaceNormal);
-									NiPoint3 posDiffInSupportPlane = ProjectVectorOntoPlane(posDiff, supportNorm);
+							PrintVector(posDiff);
+							hkpSurfaceInfo &surface = controller->surfaceInfo;
+							if (surface.m_supportedState == hkpSurfaceInfo::SupportedState::SUPPORTED) {
+								NiPoint3 supportNorm = HkVectorToNiPoint(surface.m_surfaceNormal);
+								NiPoint3 posDiffInSupportPlane = ProjectVectorOntoPlane(posDiff, supportNorm);
 
-									//PrintToFile(std::to_string(VectorLength(posDiffInSupportPlane)), "posdiff.txt");
+								//PrintToFile(std::to_string(VectorLength(posDiffInSupportPlane)), "posdiff.txt");
 
-									if (VectorLength(posDiffInSupportPlane) > Config::options.rootMotionMinOffset) {
-										float deltaTime = *g_deltaTime;
-										NiPoint3 vel = posDiffInSupportPlane / deltaTime;
-										vel *= Config::options.rootMotionVelocityMultiplier;
-										vel += HkVectorToNiPoint(ahkpCharacterRigidBody_getLinearVelocity(controller->characterRigidBody.characterRigidBody));
-										ahkpCharacterRigidBody_setLinearVelocity(controller->characterRigidBody.characterRigidBody, NiPointToHkVector(vel), deltaTime);
-									}
+								if (VectorLength(posDiffInSupportPlane) > Config::options.rootMotionMinOffset) {
+									float deltaTime = *g_deltaTime;
+									NiPoint3 vel = posDiffInSupportPlane / deltaTime;
+									vel *= Config::options.rootMotionVelocityMultiplier;
+									vel += HkVectorToNiPoint(ahkpCharacterRigidBody_getLinearVelocity(controller->characterRigidBody.characterRigidBody));
+									ahkpCharacterRigidBody_setLinearVelocity(controller->characterRigidBody.characterRigidBody, NiPointToHkVector(vel), deltaTime);
 								}
 							}
-
-							ragdoll.hipBoneTransform = poseT;
-							ragdoll.hasHipBoneTransform = true;
 						}
+
+						ragdoll.hipBoneTransform = poseT;
+						ragdoll.hasHipBoneTransform = true;
 					}
 				}
 			}

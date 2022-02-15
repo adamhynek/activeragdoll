@@ -134,7 +134,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <AdditionalDependencies>%(AdditionalDependencies);winmm.lib</AdditionalDependencies>
-      <OutputFile>D:\Steam\steamapps\common\SkyrimVR\Data\SKSE\Plugins\$(TargetName)$(TargetExt)</OutputFile>
+      <OutputFile>E:\Steam\steamapps\common\SkyrimVR\Data\SKSE\Plugins\$(TargetName)$(TargetExt)</OutputFile>
     </Link>
     <PreBuildEvent>
       <Command>

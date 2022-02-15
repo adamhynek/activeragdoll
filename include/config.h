@@ -52,6 +52,8 @@ namespace Config {
 		bool forceRagdollPose = true;
 		bool doBlending = false;
 		bool applyImpulseOnHit = true;
+		bool useHandVelocityForStabHitDirection = true;
+		bool disableHitIfSheathed = true;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;

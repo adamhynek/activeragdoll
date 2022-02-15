@@ -333,7 +333,7 @@ struct BShkbAnimationGraph
 	// these two get swapped in B2A190
 	// hkbGeneratorOutput *unk220; // actually has active tracks - gets cleared in B26EE0. This one is passed to hkbBehaviorGraph::generate()
 	// hkbGeneratorOutput *unk228; // all tracks onFraction appears to be 0 - gets cleared in B2A190
-	hkbGenerator * generatorOutputs[2]; // 220
+	struct hkbGeneratorOutput * generatorOutputs[2]; // 220
 	float interpolationAmounts[2]; // 230 - {1.0f, 0.0f} if generating every frame
 	bhkWorld *world; // 238
 	UInt16 numAnimBones; // 240
