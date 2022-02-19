@@ -390,6 +390,7 @@ struct ControllerVelocityData
 };
 ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 
+std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<Actor *> g_charControllerActors{};
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -408,9 +409,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	};
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
-	std::unordered_map<UInt32, double> hitReactionTargets{};
 	std::unordered_map<TESObjectREFR *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
-	std::unordered_set<hkbRagdollDriver *> activeDrivers;
 	std::vector<CollisionEvent> events{};
 
 	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
@@ -428,7 +427,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, false, &attackData);
 		if (!attackData) return;
 
-		// TODO: Consider using hand velocity for hit velocity instead of the actual point velocity at the hit
 		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
 		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
 		*playerLastHitPosition = hitPosition;
@@ -479,8 +477,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 				// Apply a point impulse at the hit location to the body we actually hit
 				QueuePrePhysicsJob<PointImpulseJob>(hitRigidBody, hitPosition * havokWorldScale, impulse, targetHandle);
-
-				hitReactionTargets[targetHandle] = now;
 			}
 		}
 		else {
@@ -519,6 +515,24 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+
+		if ((layerA == BGSCollisionLayer::kCollisionLayer_CharController && layerB == BGSCollisionLayer::kCollisionLayer_Clutter) ||
+			(layerB == BGSCollisionLayer::kCollisionLayer_CharController && layerA == BGSCollisionLayer::kCollisionLayer_Clutter)) {
+			if (Config::options.disableClutterVsCharacterControllerCollisionForActiveActors) {
+				hkpCollidable *charControllerCollidable = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? &rigidBodyA->m_collidable : &rigidBodyB->m_collidable;
+				if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(charControllerCollidable)) {
+					if (refr->formType == kFormType_Character) {
+						if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+							if (g_activeActors.count(actor)) {
+								// We'll let the clutter object collide with the biped instead
+								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+								return;
+							}
+						}
+					}
+				}
+			}
+		}
 
 		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
@@ -687,31 +701,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
-		// Clear first, then add any that are hit. Not thread-safe obviously.
-		activeDrivers.clear();
 
 		double now = GetTime();
-
-		// Process hit targets (not hit cooldown targets) and condider them the same as if they were collided with.
-		// Fill in active drivers with any hit targets that haven't expired yet.
-		for (auto it = hitReactionTargets.begin(); it != hitReactionTargets.end();) {
-			auto[handle, hitTime] = *it;
-			if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.hitReactionTime)
-				it = hitReactionTargets.erase(it);
-			else {
-				UInt32 handleCopy = handle;
-				NiPointer<TESObjectREFR> refr;
-				if (LookupREFRByHandle(handleCopy, refr)) {
-					Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
-					if (actor) {
-						ForEachRagdollDriver(actor, [this](hkbRagdollDriver *driver) {
-							activeDrivers.insert(driver);
-						});
-					}
-				}
-				++it;
-			}
-		}
 
 		// Now fill in the currently collided-with actors based on active collisions
 		for (auto[pair, count] : activeCollisions) {
@@ -725,13 +716,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 			if (hitRefr) {
-				Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
-				if (hitActor) {
-					ForEachRagdollDriver(hitActor, [this](hkbRagdollDriver *driver) {
-						activeDrivers.insert(driver);
-					});
-				}
-
 				UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
 				bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
 
@@ -760,6 +744,56 @@ ContactListener g_contactListener{};
 
 bool g_collidePlayerWithBiped = true;
 UInt32 g_playerCollisionGroup = 0;
+
+using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
+CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, UInt32 filterInfoA, UInt32 filterInfoB)
+{
+	UInt32 layerA = filterInfoA & 0x7f;
+	UInt32 layerB = filterInfoB & 0x7f;
+
+	if (layerA != BGSCollisionLayer::kCollisionLayer_CharController && layerB != BGSCollisionLayer::kCollisionLayer_CharController) {
+		// Neither collidee is a character controller
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	if (layerA == BGSCollisionLayer::kCollisionLayer_CharController && layerB == BGSCollisionLayer::kCollisionLayer_CharController) {
+		// Both collidees are character controllers. If one of them is the player, ignore the collision.
+		UInt32 groupA = (filterInfoA >> 16) & 0xFFFF;
+		UInt32 groupB = (filterInfoB >> 16) & 0xFFFF;
+		if (groupA == g_playerCollisionGroup || groupB == g_playerCollisionGroup) {
+			return CollisionFilterComparisonResult::Ignore;
+		}
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	// One of the collidees is a character controller
+
+	UInt32 charControllerFilter = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? filterInfoA : filterInfoB;
+	UInt32 group = (charControllerFilter >> 16) & 0xFFFF;
+	if (group != g_playerCollisionGroup) {
+		// It's not the player
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	// The character controller belongs to the player
+
+	UInt32 otherFilter = charControllerFilter == filterInfoA ? filterInfoB : filterInfoA;
+	UInt32 otherLayer = otherFilter & 0x7f;
+	UInt32 otherGroup = (otherFilter >> 16) & 0xFFFF;
+
+	if (otherGroup != g_playerCollisionGroup) {
+		if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
+			if (g_collidePlayerWithBiped) {
+				return CollisionFilterComparisonResult::Collide;
+			}
+			else {
+				return CollisionFilterComparisonResult::Ignore;
+			}
+		}
+	}
+
+	return CollisionFilterComparisonResult::Continue;
+}
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
@@ -883,6 +917,16 @@ bool AddRagdollToWorld(Actor *actor)
 					if (driver) {
 						g_activeRagdolls[driver] = ActiveRagdoll{};
 
+						// TODO: We should try keyframing bones for 1 frame initially and see if that converges faster
+						Blender &blender = g_activeRagdolls[driver].blender;
+						blender.StartBlend(Blender::BlendType::AnimToRagdoll, GetTime(), Config::options.blendInTime);
+						hkbCharacter *character = &graph.ptr->character;
+						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(character);
+						blender.initialPose.assign(poseLocal, poseLocal + character->numPoseLocal);
+						blender.isFirstBlendFrame = false;
+
+						g_activeRagdolls[driver].state = RagdollState::BlendIn;
+
 						if (!graph.ptr->world) {
 							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
 							graph.ptr->world = GetHavokWorldFromCell(actor->parentCell);
@@ -963,9 +1007,8 @@ void ProcessHavokHitJobsHook()
 	}
 
 	{
-		UInt32 collisionFilterInfo;
-		Actor_GetCollisionFilterInfo(player, collisionFilterInfo);
-		g_playerCollisionGroup = (collisionFilterInfo >> 16) & 0xFFFF;
+		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
+		g_playerCollisionGroup = (filterInfo >> 16) & 0xFFFF;
 	}
 
 	if (world != g_contactListener.world) {
@@ -1003,8 +1046,9 @@ void ProcessHavokHitJobsHook()
 			if (Config::options.disableBipedCollisionWithWorld) {
 				//filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] = 0; // disable biped collision with anything
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Clutter); // enable collision with clutter objects
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << 56); // enable collision with higgs
-				ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
+				ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_Biped);
 			}
 
 			if (Config::options.enableBipedBipedCollision) {
@@ -1116,6 +1160,8 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
+	g_activeActors.clear();
+
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
 		NiPointer<TESObjectREFR> refr;
@@ -1154,6 +1200,10 @@ void ProcessHavokHitJobsHook()
 						}
 					}
 				}
+			}
+
+			if (IsAddedToWorld(actor)) {
+				g_activeActors.insert(actor);
 			}
 		}
 	}
@@ -1230,8 +1280,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
 	hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
-	bool isCollidedWith = g_contactListener.activeDrivers.count(driver) || g_higgsDrivers.count(driver);
-
 	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 	ragdoll.deltaTime = deltaTime;
 
@@ -1263,47 +1311,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	ragdoll.isOn = true;
 	if (!isRigidBodyOn) {
 		ragdoll.isOn = false;
-		ragdoll.wantKeyframe = true;
-		ragdoll.state = RagdollState::Keyframed; // reset state
+		ragdoll.state = RagdollState::Idle; // reset state
 		return;
-	}
-
-	RagdollState state = ragdoll.state;
-	if (state == RagdollState::Keyframed) {
-		if (isCollidedWith) {
-			ragdoll.stateChangedTime = frameTime;
-			ragdoll.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
-			state = RagdollState::BlendIn;
-		}
-	}
-	if (state == RagdollState::Dynamic) {
-		if (!isCollidedWith) {
-			double stressLerp = max(0.0, (double)ragdoll.avgStress - Config::options.blendOutDurationStressMin) / (Config::options.blendOutDurationStressMax - Config::options.blendOutDurationStressMin);
-			double blendDuration = lerp(Config::options.blendOutDurationMin, Config::options.blendOutDurationMax, stressLerp);
-			ragdoll.blender.StartBlend(Blender::BlendType::CurrentRagdollToAnim, frameTime, Blender::PowerCurve(blendDuration, Config::options.blendOutBlendPower));
-			ragdoll.stateChangedTime = frameTime;
-			state = RagdollState::BlendOut;
-		}
-	}
-	if (state == RagdollState::BlendOut) {
-		if (isCollidedWith) {
-			ragdoll.blender.StartBlend(Blender::BlendType::AnimToRagdoll, frameTime, Config::options.blendInTime);
-			state = RagdollState::BlendIn;
-		}
-	}
-	ragdoll.state = state;
-
-	if (Config::options.keyframeBones) {
-		if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-			if (state == RagdollState::Keyframed && ragdoll.wantKeyframe) { // Don't keyframe bones if we've collided with the actor
-				ragdoll.wantKeyframe = false;
-				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
-			}
-			else {
-				// Explicitly make bones not keyframed
-				keyframedBonesHeader->m_onFraction = 0.f;
-			}
-		}
 	}
 
 	//SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
@@ -1312,7 +1321,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
 		for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
 			hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
-			if (state == RagdollState::BlendOut) {
+			if (ragdoll.state == RagdollState::BlendOut) {
 				elem.m_hierarchyGain = Config::options.blendOutHierarchyGain;
 				elem.m_velocityGain = Config::options.blendOutVelocityGain;
 				elem.m_positionGain = Config::options.blendOutPositionGain;
@@ -1427,7 +1436,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 						hkQsTransform poseT;
 						poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
-						if (Config::options.doRootMotion && state == RagdollState::Dynamic && ragdoll.hasHipBoneTransform) {
+						if (Config::options.doRootMotion && ragdoll.hasHipBoneTransform) {
 							hkTransform actualT;
 							rb->getTransform(actualT);
 
@@ -1539,11 +1548,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
 		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
 		ragdoll.ragdollPose.assign(poseOut, poseOut + numPoses);
-
-		if (ragdoll.state == RagdollState::Keyframed) {
-			// When in keyframed state, force the output pose to be the anim pose
-			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
-		}
 	}
 
 	Blender &blender = ragdoll.blender;
@@ -1554,11 +1558,10 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {
-				state = RagdollState::Dynamic;
+				state = RagdollState::Idle;
 			}
 			else if (state == RagdollState::BlendOut) {
-				ragdoll.wantKeyframe = true;
-				state = RagdollState::Keyframed;
+				state = RagdollState::Idle;
 			}
 		}
 	}
@@ -1616,7 +1619,7 @@ void PostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGen
 
 void PreCullActorsHook(Actor *actor)
 {
-	if (!IsAddedToWorld(actor)) return; // let the game decide
+	if (!g_activeActors.count(actor)) return; // let the game decide
 
 	UInt32 cullState = 7; // do not cull this actor
 	
@@ -1632,7 +1635,7 @@ void PreCullActorsHook(Actor *actor)
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
 {
 	Actor *actor = _this->holder;
-	if (a3 && actor && IsAddedToWorld(actor)) { // a3 is null if the graph is not active
+	if (a3 && actor && g_activeActors.count(actor)) { // a3 is null if the graph is not active
 		updateData->unk2A = true; // forces animation update (hkbGenerator::generate()) without skipping frames
 	}
 
@@ -1902,55 +1905,6 @@ void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 			g_higgsDrivers.insert(driver);
 		});
 	}
-}
-
-using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
-CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, UInt32 filterInfoA, UInt32 filterInfoB)
-{
-	UInt32 layerA = filterInfoA & 0x7f;
-	UInt32 layerB = filterInfoB & 0x7f;
-
-	if (layerA != BGSCollisionLayer::kCollisionLayer_CharController && layerB != BGSCollisionLayer::kCollisionLayer_CharController) {
-		// Neither collidee is a character controller
-		return CollisionFilterComparisonResult::Continue;
-	}
-
-	if (layerA == BGSCollisionLayer::kCollisionLayer_CharController && layerB == BGSCollisionLayer::kCollisionLayer_CharController) {
-		// Both collidees are character controllers. If one of them is the player, ignore the collision.
-		UInt32 groupA = (filterInfoA >> 16) & 0xFFFF;
-		UInt32 groupB = (filterInfoB >> 16) & 0xFFFF;
-		if (groupA == g_playerCollisionGroup || groupB == g_playerCollisionGroup) {
-			return CollisionFilterComparisonResult::Ignore;
-		}
-		return CollisionFilterComparisonResult::Continue;
-	}
-
-	// One of the collidees is a character controller
-
-	UInt32 charControllerFilter = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? filterInfoA : filterInfoB;
-	UInt32 group = (charControllerFilter >> 16) & 0xFFFF;
-	if (group != g_playerCollisionGroup) {
-		return CollisionFilterComparisonResult::Continue;
-	}
-
-	// The character controller belongs to the player
-
-	UInt32 otherFilter = charControllerFilter == filterInfoA ? filterInfoB : filterInfoA;
-	UInt32 otherLayer = otherFilter & 0x7f;
-	UInt32 otherGroup = (otherFilter >> 16) & 0xFFFF;
-
-	if (otherGroup != g_playerCollisionGroup) {
-		if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
-			if (g_collidePlayerWithBiped) {
-				return CollisionFilterComparisonResult::Collide;
-			}
-			else {
-				return CollisionFilterComparisonResult::Ignore;
-			}
-		}
-	}
-
-	return CollisionFilterComparisonResult::Continue;
 }
 
 bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)

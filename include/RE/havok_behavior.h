@@ -502,4 +502,4 @@ NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
 BShkbAnimationGraph * GetAnimationGraph(hkbCharacter *character);
 Actor * GetActorFromCharacter(hkbCharacter *character);
 Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver);
-void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield);
+void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt8 layer);

@@ -8,9 +8,8 @@
 
 enum class RagdollState : UInt8
 {
-	Keyframed,
+	Idle,
 	BlendIn,
-	Dynamic,
 	BlendOut,
 };
 
@@ -25,10 +24,8 @@ struct ActiveRagdoll
 	float deltaTime = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	double frameTime = 0.0;
-	double stateChangedTime = 0.0;
-	RagdollState state = RagdollState::Keyframed;
+	RagdollState state = RagdollState::Idle;
 	bool isOn = false;
-	bool wantKeyframe = true;
 	bool hasHipBoneTransform = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 };

@@ -22,11 +22,11 @@ struct bhkCollisionFilter : hkpCollisionFilter
 {
 	UInt32 unk48;
 	UInt32 nextCollisionGroup; // 4C - this gets incremented when something gets added to the world - used for unique collision groups?
-	UInt32 bipedBitfields[32]; // 50 - About 18 of them seem to be actually filled in
+	UInt32 bipedBitfields[32]; // 50 - About 0x18 of them seem to be actually filled in
 	UInt32 layerCollisionGroups[64]; // D0 - if zero, use the counter from the collision filter (4C) as the collision group - afaik only 3 have non-zero entries: 9 (trees), 11 (water), and 13 (terrain)
 	UInt64 layerBitfields[64]; // 1D0 - only 56 are valid in vanilla - these are used to determine which layers collide with each other
-	UInt64 unk3D0;
-	UInt64 unk3D8;
+	UInt64 triggerBitfield1; // 3D0 - bit x determines if layer x should be tested against if a charcontroller with bit 15 set and bit 7 unset collides with it. Mostly used for triggers/traps
+	UInt64 triggerBitfield2; // 3D8 - similar to above, but it's not used in the collision filter comparison, so not sure where it's actually used
 	BSFixedString layerNames[64]; // 3E0 - only 56 are non-null
 };
 static_assert(offsetof(bhkCollisionFilter, nextCollisionGroup) == 0x4C);

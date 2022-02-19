@@ -203,11 +203,15 @@ Actor * GetActorFromRagdollDriver(hkbRagdollDriver *driver)
 	return GetActorFromCharacter(character);
 }
 
-void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt64 bitfield)
+void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt8 layer)
 {
-	for (int i = 0; i < 56; i++) { // 56 layers in vanilla
+	UInt64 bitfield = filter->layerBitfields[layer];
+	for (int i = 0; i < 64; i++) { // 56 layers in vanilla
 		if ((bitfield >> i) & 1) {
-			filter->layerBitfields[i] |= ((UInt64)1 << 57);
+			filter->layerBitfields[i] |= ((UInt64)1 << layer);
+		}
+		else {
+			filter->layerBitfields[i] &= ~((UInt64)1 << layer);
 		}
 	}
 }

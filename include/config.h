@@ -13,10 +13,9 @@ namespace Config {
 		double blendOutDurationStressMin = 5.0;
 		double blendOutDurationStressMax = 40.0;
 		double blendOutBlendPower = 2.5;
-		double blendInTime = 0.06;
+		double blendInTime = 0.2f;
 
 		double hitRecoveryTime = 0.2f;
-		double hitReactionTime = 0.3f;
 
 		bool doRootMotion = false;
 		float rootMotionMinOffset = 0.02f;
@@ -49,9 +48,9 @@ namespace Config {
 		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;
 		bool forceGenerateForActiveRagdolls = true;
-		bool keyframeBones = false;
-		bool forceRagdollPose = true;
-		bool doBlending = false;
+		bool disableClutterVsCharacterControllerCollisionForActiveActors = true;
+		bool forceRagdollPose = false;
+		bool doBlending = true;
 		bool applyImpulseOnHit = true;
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = true;
