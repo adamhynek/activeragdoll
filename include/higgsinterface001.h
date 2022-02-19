@@ -72,6 +72,16 @@ namespace HiggsPluginAPI {
 		// Returns whether the given hand can actually grab an object right now.
 		// This includes whether it is in a grabbable state, but also whether it is holding a blocking weapon or disabled through the api.
 		virtual bool CanGrabObject(bool isLeft) = 0;
+
+		enum class CollisionFilterComparisonResult : UInt8 {
+			Continue, // Do not affect whether the two objects should collide
+			Collide, // Force the two objects to collide
+			Ignore, // Force the two objects to not collide
+		};
+		// Add a callback for when havok compares collision filter info to determine if two objects should collide. This can be called hundreds of times per frame, so be brief.
+		// collisionFilter is really of type bhkCollisionFilter
+		typedef CollisionFilterComparisonResult(*CollisionFilterComparisonCallback)(void *collisionFilter, UInt32 filterInfoA, UInt32 filterInfoB);
+		virtual void AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback callback) = 0;
 	};
 }
 

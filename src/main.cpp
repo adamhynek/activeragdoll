@@ -53,8 +53,6 @@ static SKSEMessagingInterface *g_messaging = nullptr;
 SKSEVRInterface *g_vrInterface = nullptr;
 SKSETrampolineInterface *g_trampoline = nullptr;
 
-bool initComplete = false; // Whether hands have been initialized
-
 
 // Potentially, could hook TESObjectREFR::InitHavok to set the collision layer for the weapon when we drop it so it doesn't collide with the bumper
 
@@ -521,6 +519,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+
 		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
 		if (layerA == 56 && layerB == 56) {
@@ -584,7 +583,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				// Use last frame's offset node transform because this frame is not over yet and it can still be modified by e.g. higgs two-handing
 				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_oldWorldTransform.rot);
 				float stabAmount = DotProduct(handDirection, weaponForward);
-				_MESSAGE("Stab amount: %.2f", stabAmount);
+				//_MESSAGE("Stab amount: %.2f", stabAmount);
 				if (stabAmount > Config::options.hitStabDirectionThreshold && hitSpeed > Config::options.hitStabSpeedThreshold) {
 					isStab = true;
 				}
@@ -597,7 +596,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (handNode) {
 				NiPoint3 punchVector = UpVector(handNode->m_worldTransform.rot); // in the direction of fingers when fingers are extended
 				float punchAmount = DotProduct(handDirection, punchVector);
-				_MESSAGE("Punch amount: %.2f", punchAmount);
+				//_MESSAGE("Punch amount: %.2f", punchAmount);
 				if (punchAmount > Config::options.hitPunchDirectionThreshold && hitSpeed > Config::options.hitPunchSpeedThreshold) {
 					isPunch = true;
 				}
@@ -611,7 +610,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		// Thresholding on some (small) roomspace hand velocity helps prevent hits while moving around / turning
 
 		bool doHit = (isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace;
-		bool disableHit = !player->actorState.IsWeaponDrawn() && Config::options.disableHitIfSheathed;
+		bool disableHit = !player->actorState.IsWeaponDrawn() && Config::options.disableHitIfSheathed; // TODO: perhaps still disable collision / impart impulse even when hit is disabled. Currently you can make the physics spaz out while sheathed and swinging at someone.
 
 		if (doHit && !disableHit) {
 			float havokWorldScale = *g_havokWorldScale;
@@ -758,6 +757,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	NiPointer<bhkWorld> world = nullptr;
 };
 ContactListener g_contactListener{};
+
+bool g_collidePlayerWithBiped = true;
+UInt32 g_playerCollisionGroup = 0;
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
@@ -944,8 +946,6 @@ bool RemoveRagdollFromWorld(Actor *actor)
 
 void ProcessHavokHitJobsHook()
 {
-	if (!initComplete) return;
-
 	PlayerCharacter *player = *g_thePlayer;
 	if (!player || !player->GetNiNode()) return;
 
@@ -960,6 +960,12 @@ void ProcessHavokHitJobsHook()
 
 	if (!g_higgsInterface->GetGrabbedObject(false) && !g_higgsInterface->GetGrabbedObject(true)) {
 		g_higgsDrivers.clear();
+	}
+
+	{
+		UInt32 collisionFilterInfo;
+		Actor_GetCollisionFilterInfo(player, collisionFilterInfo);
+		g_playerCollisionGroup = (collisionFilterInfo >> 16) & 0xFFFF;
 	}
 
 	if (world != g_contactListener.world) {
@@ -994,106 +1000,87 @@ void ProcessHavokHitJobsHook()
 
 			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 
+			if (Config::options.disableBipedCollisionWithWorld) {
+				//filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] = 0; // disable biped collision with anything
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << 56); // enable collision with higgs
+				ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
+			}
+
 			if (Config::options.enableBipedBipedCollision) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
 			}
 
-			if (Config::options.disableBipedGroundCollision) {
-				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision;
-				ReSyncLayerBitfields(filter, filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped]);
-			}
+			if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+				hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
-			if (Config::options.enablePlayerBipedCollision) {
-				// TODO: Instead of doing this, we may need to keep the player on the charcontroller layer and disable contact points from the contact listener,
-				//       since the game does check specific things for specifically the charcontroller layer, and if the player charcontroller is not on that layer that may cause issues.
+				if (Config::options.resizePlayerCharController) {
+					// Shrink convex charcontroller shape
+					g_scratchHkArray.clear();
+					hkArray<hkVector4> &verts = g_scratchHkArray;
 
-				// Add a new layer for the player that will not collide with charcontrollers but will collide with the biped layer instead
-				UInt64 bitfield = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_CharController]; // copy of L_CHARCONTROLLER layer bitfield
+					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
+					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
-				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
-				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters with no charcontroller (likely they are in an animation)
-				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // remove collision with character controllers
+					// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
+					// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
+					for (int i : {
+						1, 3, 4, 5, 7, 11, 13, 16, // top ring
+						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+					}) {
+						NiPoint3 vert = HkVectorToNiPoint(verts[i]);
+						NiPoint3 newVert = vert;
+						newVert.z = 0;
+						newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
+						newVert.z = vert.z;
 
-				// Layer 56 is taken (higgs) so use 57
-				filter->layerBitfields[57] = bitfield;
-				filter->layerNames[57] = BSFixedString("L_PLAYERCAPSULE");
-				// Set whether other layers should collide with our new layer
-				ReSyncLayerBitfields(filter, bitfield);
-
-				if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-					hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
-
-					{ // Shrink convex charcontroller shape
-						g_scratchHkArray.clear();
-						hkArray<hkVector4> &verts = g_scratchHkArray;
-
-						hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
-						hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
-
-						// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
-						// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
-						for (int i : {
-							1, 3, 4, 5, 7, 11, 13, 16, // top ring
-							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
-						}) {
-							NiPoint3 vert = HkVectorToNiPoint(verts[i]);
-							NiPoint3 newVert = vert;
-							newVert.z = 0;
-							newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
-							newVert.z = vert.z;
-
-							verts[i] = NiPointToHkVector(newVert);
-						}
-
-						hkStridedVertices newVerts(verts);
-
-						//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
-						//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
-						hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
-
-						hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
-						hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
-
-						// set vtbl
-						static auto hkCharControllerShape_vtbl = RelocAddr<void *>(0x1838E78);
-						set_vtbl(newShape, hkCharControllerShape_vtbl);
-
-						bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
-						wrapper->SetHavokObject(newShape);
-
-						// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
-						listShape->m_childInfo[0].m_shape = newShape;
-						hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
-
-						// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
-						// hkReferencedObject_removeReference(newShape);
+						verts[i] = NiPointToHkVector(newVert);
 					}
 
-					{ // Shrink capsule shape too. It's active when weapons are unsheathed.
-						float radius = Config::options.playerCapsuleRadius;
-						hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
-						float originalRadius = capsule->m_radius;
-						capsule->m_radius = radius;
+					hkStridedVertices newVerts(verts);
 
-						NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
-						NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
+					//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
+					//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
+					hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
 
-						if (vert0.z < vert1.z) {
-							// vert0 is the lower vertex
-							vert1.z += originalRadius - radius;;
-							vert0.z -= originalRadius - radius;
-						}
-						else {
-							vert0.z += originalRadius - radius;;
-							vert1.z -= originalRadius - radius;
-						}
-						capsule->setVertex(0, NiPointToHkVector(vert0));
-						capsule->setVertex(1, NiPointToHkVector(vert1));
+					hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
+					hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
+
+					// it's actually a hkCharControllerShape not just a hkpConvexVerticesShape
+					set_vtbl(newShape, hkCharControllerShape_vtbl);
+
+					bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
+					wrapper->SetHavokObject(newShape);
+
+					// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
+					listShape->m_childInfo[0].m_shape = newShape;
+					hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
+
+					// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
+					// hkReferencedObject_removeReference(newShape);
+				}
+
+				if (Config::options.resizePlayerCapsule) {
+					// Shrink capsule shape too. It's active when weapons are unsheathed.
+					float radius = Config::options.playerCapsuleRadius;
+					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
+					float originalRadius = capsule->m_radius;
+					capsule->m_radius = radius;
+
+					NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
+					NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
+
+					if (vert0.z < vert1.z) {
+						// vert0 is the lower vertex
+						vert1.z += originalRadius - radius;;
+						vert0.z -= originalRadius - radius;
 					}
-
-					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo &= ~0x7f; // zero out collision layer
-					controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 57; // set layer to the layer we just created
-					bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
+					else {
+						vert0.z += originalRadius - radius;;
+						vert1.z -= originalRadius - radius;
+					}
+					capsule->setVertex(0, NiPointToHkVector(vert0));
+					capsule->setVertex(1, NiPointToHkVector(vert1));
 				}
 			}
 		}
@@ -1118,48 +1105,16 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		hkUint32 &filterInfo = controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo;
-		UInt32 layer = filterInfo & 0x7f;
-
-		bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
-		UInt64 bitfield = filter->layerBitfields[57];
-
-		bool updateFilter = false;
-
-		if (g_higgsDrivers.size() > 0) {
+		// TODO: We can actually do this per-npc now
+		if (!Config::options.enablePlayerBipedCollision || g_higgsDrivers.size() > 0) {
 			// When something is grabbed, disable collision with bipeds (since we're holding one)
-			if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped)) {
-				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
-				updateFilter = true;
-			}
-			if (bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
-				bitfield &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
-				updateFilter = true;
-			}
+			g_collidePlayerWithBiped = false;
 		}
 		else if (Config::options.enablePlayerBipedCollision) {
 			// Nothing grabbed, make sure we're colliding with bipeds again
-			if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped))) {
-				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped);
-				updateFilter = true;
-			}
-			if (!(bitfield & ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC))) {
-				bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
-				updateFilter = true;
-			}
-		}
-
-		if (updateFilter) {
-			{
-				BSWriteLocker lock(&world->worldLock);
-				filter->layerBitfields[57] = bitfield;
-				ReSyncLayerBitfields(filter, bitfield);
-			}
-			bhkWorld_UpdateCollisionFilterOnWorldObject(world, (bhkWorldObject *)controller->proxy.characterProxy->m_shapePhantom->m_userData);
+			g_collidePlayerWithBiped = true;
 		}
 	}
-
-	// if (!g_enableRagdoll) return;
 
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
@@ -1353,34 +1308,32 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	//SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 
-	if ((state == RagdollState::BlendIn || state == RagdollState::Dynamic || state == RagdollState::BlendOut)) {
-		if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
-			hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
-			for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
-				hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
-				if (state == RagdollState::BlendOut) {
-					elem.m_hierarchyGain = Config::options.blendOutHierarchyGain;
-					elem.m_velocityGain = Config::options.blendOutVelocityGain;
-					elem.m_positionGain = Config::options.blendOutPositionGain;
-				}
-				else {
-					elem.m_hierarchyGain = Config::options.hierarchyGain;
-					elem.m_velocityGain = Config::options.velocityGain;
-					elem.m_positionGain = Config::options.positionGain;
-				}
+	if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
+		hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
+		for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
+			hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
+			if (state == RagdollState::BlendOut) {
+				elem.m_hierarchyGain = Config::options.blendOutHierarchyGain;
+				elem.m_velocityGain = Config::options.blendOutVelocityGain;
+				elem.m_positionGain = Config::options.blendOutPositionGain;
+			}
+			else {
+				elem.m_hierarchyGain = Config::options.hierarchyGain;
+				elem.m_velocityGain = Config::options.velocityGain;
+				elem.m_positionGain = Config::options.positionGain;
 			}
 		}
+	}
 
-		if (poweredHeader && poweredHeader->m_onFraction > 0.f && poweredHeader->m_numData > 0) {
-			hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
-			for (int i = 0; i < poweredHeader->m_numData; i++) {
-				hkbPoweredRagdollControlData &elem = data[i];
-				elem.m_maxForce = Config::options.poweredMaxForce;
-				elem.m_tau = Config::options.poweredTau;
-				elem.m_damping = Config::options.poweredDaming;
-				elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
-				elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
-			}
+	if (poweredHeader && poweredHeader->m_onFraction > 0.f && poweredHeader->m_numData > 0) {
+		hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
+		for (int i = 0; i < poweredHeader->m_numData; i++) {
+			hkbPoweredRagdollControlData &elem = data[i];
+			elem.m_maxForce = Config::options.poweredMaxForce;
+			elem.m_tau = Config::options.poweredTau;
+			elem.m_damping = Config::options.poweredDaming;
+			elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
+			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
 		}
 	}
 
@@ -1670,10 +1623,10 @@ void PreCullActorsHook(Actor *actor)
 	actor->unk274 &= 0xFFFFFFF0;
 	actor->unk274 |= cullState & 0xF;
 	
-	if (NiPointer<NiNode> root = actor->GetNiNode()) {
-		// TODO: it might be okay to just set the cull state above and still cull the root node (i.e. get rid of this line)
-		root->m_flags &= ~(1 << 20);  // zero out bit 20 -> do not cull the actor's root node
-	}
+	// It might be okay to just set the cull state above and still cull the root node (i.e. get rid of this line)
+	//if (NiPointer<NiNode> root = actor->GetNiNode()) {
+	//	root->m_flags &= ~(1 << 20);  // zero out bit 20 -> do not cull the actor's root node
+	//}
 }
 
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
@@ -1752,7 +1705,7 @@ void PerformHooks(void)
 		_MESSAGE("ProcessHavokHitJobs hook complete");
 	}
 
-	{
+	if (Config::options.forceGenerateForActiveRagdolls) {
 		g_branchTrampoline.Write5Call(BShkbAnimationGraph_UpdateAnimation_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_UpdateAnimation_Hook));
 		_MESSAGE("BShkbAnimationGraph::UpdateAnimation hook complete");
 	}
@@ -1951,10 +1904,57 @@ void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 	}
 }
 
+using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
+CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, UInt32 filterInfoA, UInt32 filterInfoB)
+{
+	UInt32 layerA = filterInfoA & 0x7f;
+	UInt32 layerB = filterInfoB & 0x7f;
+
+	if (layerA != BGSCollisionLayer::kCollisionLayer_CharController && layerB != BGSCollisionLayer::kCollisionLayer_CharController) {
+		// Neither collidee is a character controller
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	if (layerA == BGSCollisionLayer::kCollisionLayer_CharController && layerB == BGSCollisionLayer::kCollisionLayer_CharController) {
+		// Both collidees are character controllers. If one of them is the player, ignore the collision.
+		UInt32 groupA = (filterInfoA >> 16) & 0xFFFF;
+		UInt32 groupB = (filterInfoB >> 16) & 0xFFFF;
+		if (groupA == g_playerCollisionGroup || groupB == g_playerCollisionGroup) {
+			return CollisionFilterComparisonResult::Ignore;
+		}
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	// One of the collidees is a character controller
+
+	UInt32 charControllerFilter = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? filterInfoA : filterInfoB;
+	UInt32 group = (charControllerFilter >> 16) & 0xFFFF;
+	if (group != g_playerCollisionGroup) {
+		return CollisionFilterComparisonResult::Continue;
+	}
+
+	// The character controller belongs to the player
+
+	UInt32 otherFilter = charControllerFilter == filterInfoA ? filterInfoB : filterInfoA;
+	UInt32 otherLayer = otherFilter & 0x7f;
+	UInt32 otherGroup = (otherFilter >> 16) & 0xFFFF;
+
+	if (otherGroup != g_playerCollisionGroup) {
+		if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
+			if (g_collidePlayerWithBiped) {
+				return CollisionFilterComparisonResult::Collide;
+			}
+			else {
+				return CollisionFilterComparisonResult::Ignore;
+			}
+		}
+	}
+
+	return CollisionFilterComparisonResult::Continue;
+}
+
 bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)
 {
-	if (!initComplete) return true;
-
 	PlayerCharacter *player = *g_thePlayer;
 	if (!player || !player->GetNiNode()) return true;
 	NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
@@ -2037,7 +2037,6 @@ extern "C" {
 		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
 		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;
 
-		initComplete = true;
 		_MESSAGE("Successfully loaded all forms");
 	}
 
@@ -2062,9 +2061,10 @@ extern "C" {
 				if (g_higgsInterface) {
 					_MESSAGE("Got higgs interface!");
 					g_higgsInterface->AddGrabbedCallback(HiggsGrab);
+					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
 				}
 				else {
-					_MESSAGE("Did not get higgs interface. This is okay.");
+					_MESSAGE("Did NOT get higgs interface.");
 				}
 			}
 		}

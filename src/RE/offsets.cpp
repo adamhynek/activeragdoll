@@ -52,6 +52,8 @@ RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
+RelocAddr<void *> hkCharControllerShape_vtbl(0x1838E78);
+
 RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 
 // Used by NiCloningProcess...
@@ -214,6 +216,7 @@ RelocAddr<_hkpConvexVerticesShape_getOriginalVertices> hkpConvexVerticesShape_ge
 RelocAddr<_hkpConvexVerticesShape_ctor> hkpConvexVerticesShape_ctor(0xE9F890);
 RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild(0xA9C3F0);
 RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild(0xA9C420);
+RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_IsGhost> Actor_IsGhost(0x5DAAE0);
 RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);
 RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData(0x6B9F30);

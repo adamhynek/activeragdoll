@@ -43,11 +43,12 @@ namespace Config {
 
 		bool enableBipedBipedCollision = false;
 		bool enablePlayerBipedCollision = true;
-		bool disableBipedGroundCollision = false;
+		bool disableBipedCollisionWithWorld = true;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
 		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;
+		bool forceGenerateForActiveRagdolls = true;
 		bool keyframeBones = false;
 		bool forceRagdollPose = true;
 		bool doBlending = false;
@@ -84,6 +85,8 @@ namespace Config {
 		float meleeSwingLinearVelocityThreshold = 3.f;
 		float shieldSwingLinearVelocityThreshold = 3.f;
 
+		bool resizePlayerCharController = true;
+		bool resizePlayerCapsule = true;
 		float playerCharControllerRadius = 0.15f;
 		float playerCapsuleRadius = 0.1f;
 	};

@@ -71,6 +71,8 @@ extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
+extern RelocAddr<void *> hkCharControllerShape_vtbl;
+
 
 // Havok / Bethesda havok wrappers
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
@@ -493,6 +495,9 @@ extern RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild;
 
 typedef void(*_hkpListShape_enableChild)(hkpListShape *_this, hkpShapeKey index);
 extern RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild;
+
+typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
+extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 
 typedef bool(*_Actor_IsGhost)(Actor *_this);
 extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
