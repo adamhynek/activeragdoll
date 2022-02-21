@@ -296,6 +296,48 @@ bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigid
 	return didDispatchHitEvent;
 }
 
+float GetPhysicsDamage(float mass, float speed)
+{
+	/*
+	// defaults
+	g_fPhysicsDamage1Mass = 10.f;
+	g_fPhysicsDamage2Mass = 50.f;
+	g_fPhysicsDamage3Mass = 100.f;
+	g_fPhysicsDamage1Damage = 1.f;
+	g_fPhysicsDamage2Damage = 5.f;
+	g_fPhysicsDamage3Damage = 10.f;
+	g_fPhysicsDamageSpeedBase = 1.f;
+	g_fPhysicsDamageSpeedMult = 0.0001f;
+	g_fPhysicsDamageSpeedMin = 500.f;
+	*/
+
+	if (mass < Config::options.collisionDamageMinMass) return 0.f;
+	if (speed < Config::options.collisionDamageMinSpeed) return 0.f;
+
+	float damage = 0.f;
+	if (mass >= *g_fPhysicsDamage1Mass) {
+		if (mass >= *g_fPhysicsDamage2Mass) {
+			if (mass >= *g_fPhysicsDamage3Mass) {
+				damage = *g_fPhysicsDamage3Damage;
+			}
+			else {
+				damage = lerp(*g_fPhysicsDamage2Damage, *g_fPhysicsDamage3Damage, (mass - *g_fPhysicsDamage2Mass) / (*g_fPhysicsDamage3Mass - *g_fPhysicsDamage2Mass));
+			}
+		}
+		else {
+			damage = lerp(*g_fPhysicsDamage1Damage, *g_fPhysicsDamage2Damage, (mass - *g_fPhysicsDamage1Mass) / (*g_fPhysicsDamage2Mass - *g_fPhysicsDamage1Mass));
+		}
+	}
+	else {
+		damage = lerp(0.f, *g_fPhysicsDamage1Damage, mass / *g_fPhysicsDamage1Mass);
+	}
+
+	float base = lerp(0.f, *g_fPhysicsDamageSpeedBase, min(1.f, speed / *g_fPhysicsDamageSpeedMin));
+	float damageMult = base + (*g_fPhysicsDamageSpeedMult * speed);
+
+	return damageMult * damage;
+}
+
 struct PrePhysicsStepJob
 {
 	virtual void Run() = 0;
@@ -393,6 +435,12 @@ ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<Actor *> g_charControllerActors{};
 
+std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
+std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
+NiPointer<bhkRigidBody> g_higgsHands[2]{};
+NiPointer<bhkRigidBody> g_higgsWeapons[2]{};
+UInt32 g_higgsCollisionLayer = 56;
+
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
 	struct CollisionEvent
@@ -408,8 +456,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		Type type;
 	};
 
-	std::map<std::pair<hkpRigidBody *, hkpRigidBody*>, int> activeCollisions{};
+	std::map<std::pair<hkpRigidBody *, hkpRigidBody *>, int> activeCollisions{};
 	std::unordered_map<TESObjectREFR *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
+	std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
 	std::vector<CollisionEvent> events{};
 
 	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
@@ -507,6 +556,44 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		return false;
 	}
 
+	void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal)
+	{
+		bhkCharacterController::CollisionEvent collisionEvent {
+			collidingBody,
+			hitPos * *g_inverseHavokWorldScale,
+			hitNormal * *g_inverseHavokWorldScale,
+			HkVectorToNiPoint(collidingBody->hkBody->getLinearVelocity()) * *g_inverseHavokWorldScale
+		};
+
+		float massInv = collidingBody->hkBody->getMassInv();
+		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
+		float speed = VectorLength(collisionEvent.bodyVelocity);
+		float damage = GetPhysicsDamage(mass, speed);
+		_MESSAGE("%.2f", damage);
+
+		if (damage > 0.f) {
+			HitData hitData;
+			HitData_ctor(&hitData);
+			HitData_PopulateFromPhysicalHit(&hitData, source, target, damage, collisionEvent);
+			// PopulateFromPhysicalHit moves the hit position out from the character a bit, but I don't like that.
+			if (Config::options.showCollisionDamageHitFx) {
+				hitData.hitPosition = collisionEvent.position;
+			}
+			else {
+				hitData.hitPosition.z -= 10000.f; // move it far below to hide it
+			}
+			if (source) {
+				hitData.aggressor = GetOrCreateRefrHandle(source);
+			}
+			if (hitData.totalDamage > 0.f) {
+				Actor_GetHit(target, hitData);
+				if (Config::options.physicsHitRecoveryTime > 0) {
+					physicsHitCooldownTargets[{ target, collidingBody->hkBody }] = GetTime();
+				}
+			}
+		}
+	}
+
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
 		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED) return;
 
@@ -516,8 +603,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
-		if ((layerA == BGSCollisionLayer::kCollisionLayer_CharController && layerB == BGSCollisionLayer::kCollisionLayer_Clutter) ||
-			(layerB == BGSCollisionLayer::kCollisionLayer_CharController && layerA == BGSCollisionLayer::kCollisionLayer_Clutter)) {
+		if ((layerA == BGSCollisionLayer::kCollisionLayer_CharController && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
+			(layerB == BGSCollisionLayer::kCollisionLayer_CharController && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon))) {
 			if (Config::options.disableClutterVsCharacterControllerCollisionForActiveActors) {
 				hkpCollidable *charControllerCollidable = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? &rigidBodyA->m_collidable : &rigidBodyB->m_collidable;
 				if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(charControllerCollidable)) {
@@ -534,9 +621,27 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
+		if (((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
+			((layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon))) {
+			if (Config::options.doClutterVsBipedCollisionDamage) {
+				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
+					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
+						bool isATarget = refrA->formType == kFormType_Character;
+						Actor *actor = DYNAMIC_CAST(isATarget ? refrA : refrB, TESObjectREFR, Actor);
+						hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
+						if (actor && !physicsHitCooldownTargets.count({ actor, hittingBody })) {
+							bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
+							Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
+							ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()));
+						}
+					}
+				}
+			}
+		}
 
-		if (layerA == 56 && layerB == 56) {
+		if (layerA != g_higgsCollisionLayer && layerB != g_higgsCollisionLayer) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
+
+		if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) {
 			// Both objects are on the higgs layer
 			if (!IsMoveableEntity(rigidBodyA) && !IsMoveableEntity(rigidBodyB)) {
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
@@ -544,7 +649,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			return;
 		}
 
-		hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+		hkpRigidBody *hitRigidBody = layerA == g_higgsCollisionLayer ? rigidBodyB : rigidBodyA;
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
@@ -656,9 +761,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (layerA != 56 && layerB != 56) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
+		if (layerA != g_higgsCollisionLayer && layerB != g_higgsCollisionLayer) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
-		if (layerA == 56 && layerB == 56) return; // Both objects are on the higgs layer
+		if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) return; // Both objects are on the higgs layer
 
 		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::ADDED });
 		//_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
@@ -711,7 +816,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 			UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
-			hkpRigidBody *hitRigidBody = layerA == 56 ? rigidBodyB : rigidBodyA;
+			hkpRigidBody *hitRigidBody = layerA == g_higgsCollisionLayer ? rigidBodyB : rigidBodyA;
 			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
@@ -735,6 +840,15 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				else
 					++it;
 			}
+		}
+
+		// Clear out old physics hit cooldown targets
+		for (auto it = physicsHitCooldownTargets.begin(); it != physicsHitCooldownTargets.end();) {
+			auto[target, hitTime] = *it;
+			if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.physicsHitRecoveryTime)
+				it = physicsHitCooldownTargets.erase(it);
+			else
+				++it;
 		}
 	}
 
@@ -796,7 +910,6 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 }
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
-std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
@@ -1002,10 +1115,6 @@ void ProcessHavokHitJobsHook()
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
 
-	if (!g_higgsInterface->GetGrabbedObject(false) && !g_higgsInterface->GetGrabbedObject(true)) {
-		g_higgsDrivers.clear();
-	}
-
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
 		g_playerCollisionGroup = (filterInfo >> 16) & 0xFFFF;
@@ -1044,16 +1153,18 @@ void ProcessHavokHitJobsHook()
 			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 
 			if (Config::options.disableBipedCollisionWithWorld) {
-				//filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] &= ~((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Ground); // disable biped->ground collision
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] = 0; // disable biped collision with anything
-				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Clutter); // enable collision with clutter objects
-				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << 56); // enable collision with higgs
-				ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_Biped);
 			}
-
 			if (Config::options.enableBipedBipedCollision) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // enable biped->biped collision;
 			}
+			if (Config::options.enableBipedClutterCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Clutter); // enable collision with clutter objects
+			}
+			if (Config::options.enableBipedWeaponCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Weapon);
+			}
+			ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_Biped);
 
 			if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
 				hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
@@ -1130,6 +1241,57 @@ void ProcessHavokHitJobsHook()
 		}
 
 		g_contactListener.world = world;
+	}
+
+	{ // Update higgs info
+		// Modify higgs layer
+		bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
+		bool updateFilter = false;
+		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_CharController) {
+			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // ensure collision with character controllers
+		}
+		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_Biped) {
+			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
+		}
+		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
+			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters using furniture
+		}
+		if (updateFilter) {
+			ReSyncLayerBitfields(filter, g_higgsCollisionLayer);
+		}
+
+		g_higgsHands[false] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
+		g_higgsHands[true] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
+
+		g_higgsWeapons[false] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
+		g_higgsWeapons[true] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
+
+		if (g_higgsHands[false]) {
+			g_higgsCollisionLayer = g_higgsHands[false]->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
+		}
+
+		bhkRigidBody *rightHeldBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
+		bhkRigidBody *leftHeldBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
+		if (!rightHeldBody && !leftHeldBody) {
+			g_higgsDrivers.clear();
+		}
+
+		double now = GetTime();
+		if (rightHeldBody) {
+			g_higgsLingeringRigidBodies[rightHeldBody] = now;
+		}
+		if (leftHeldBody) {
+			g_higgsLingeringRigidBodies[leftHeldBody] = now;
+		}
+
+		// Clear out old dropped / thrown rigidbodies
+		for (auto it = g_higgsLingeringRigidBodies.begin(); it != g_higgsLingeringRigidBodies.end();) {
+			auto[target, hitTime] = *it;
+			if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectLingerTime)
+				it = g_higgsLingeringRigidBodies.erase(it);
+			else
+				++it;
+		}
 	}
 
 	{ // Ensure our listener is the last one (will be called first)
@@ -1642,6 +1804,13 @@ void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbA
 	BShkbAnimationGraph_UpdateAnimation(_this, updateData, a3);
 }
 
+void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
+{
+	// We do our own physics damage for active actors, so don't have the game do its as well
+	if (g_activeActors.count(_this)) return;
+	Actor_GetHit(_this, hitData);
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -1661,6 +1830,8 @@ auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
 auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 
 auto BShkbAnimationGraph_UpdateAnimation_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
+
+auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
 
 
 void PerformHooks(void)
@@ -1721,6 +1892,11 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write5Call(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(PostPhysicsHook));
 		_MESSAGE("hkbRagdollDriver::postPhysics hook complete");
+	}
+
+	if (Config::options.doClutterVsBipedCollisionDamage) {
+		g_branchTrampoline.Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
+		_MESSAGE("Actor take physics damage hook complete");
 	}
 
 	{

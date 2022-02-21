@@ -47,12 +47,24 @@ RelocPtr<float> g_fMagicHandRotateY(0x1EAEAB8);
 RelocPtr<float> g_fMagicHandRotateZ(0x1EAEAD0);
 RelocPtr<float> g_fMagicHandScale(0x1EAEAE8);
 
+RelocPtr<float> g_fPhysicsDamage1Mass(0x1E9D610);
+RelocPtr<float> g_fPhysicsDamage2Mass(0x1E9D628);
+RelocPtr<float> g_fPhysicsDamage3Mass(0x1E9D640);
+RelocPtr<float> g_fPhysicsDamage1Damage(0x1E9D658);
+RelocPtr<float> g_fPhysicsDamage2Damage(0x1E9D670);
+RelocPtr<float> g_fPhysicsDamage3Damage(0x1E9D688);
+RelocPtr<float> g_fPhysicsDamageSpeedBase(0x1E9D6A0);
+RelocPtr<float> g_fPhysicsDamageSpeedMult(0x1E9D6B8);
+RelocPtr<float> g_fPhysicsDamageSpeedMin(0x1E9D6D0);
+
 RelocPtr<float> g_fMeleeLinearVelocityThreshold(0x1EAE500);
 RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
 RelocAddr<void *> hkCharControllerShape_vtbl(0x1838E78);
+
+RelocPtr<FOCollisionListener *> g_foCollisionListener(0x1F850F0);
 
 RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 
@@ -234,9 +246,13 @@ RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEqu
 RelocAddr<_HitData_ctor> HitData_ctor(0x76D000);
 RelocAddr<_HitData_dtor> HitData_dtor(0x76D0F0);
 RelocAddr<_HitData_populate> HitData_populate(0x76D400);
+RelocAddr<_HitData_PopulateFromPhysicalHit> HitData_PopulateFromPhysicalHit(0x76DAF0);
+RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage(0x3B5540);
+RelocAddr<_Actor_GetHit> Actor_GetHit(0x62F270);
 RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor(0xAAC200);
 RelocAddr<_hkpUnaryAction_setEntity> hkpUnaryAction_setEntity(0xAAC350);
 RelocAddr<_hkpWorld_addAction> hkpWorld_addAction(0xAB1D40);
 RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction(0xAB1F60);
 RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld(0xB4D7C0);
 RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose(0xA27BC0);
+RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage(0x3AC280);

@@ -16,6 +16,12 @@ namespace Config {
 		double blendInTime = 0.2f;
 
 		double hitRecoveryTime = 0.2f;
+		double physicsHitRecoveryTime = 0.01f;
+
+		double thrownObjectLingerTime = 5.f;
+
+		float collisionDamageMinSpeed = 400.f; // skyrim units
+		float collisionDamageMinMass = 5.f;
 
 		bool doRootMotion = false;
 		float rootMotionMinOffset = 0.02f;
@@ -43,12 +49,16 @@ namespace Config {
 		bool enableBipedBipedCollision = false;
 		bool enablePlayerBipedCollision = true;
 		bool disableBipedCollisionWithWorld = true;
+		bool enableBipedClutterCollision = true;
+		bool enableBipedWeaponCollision = true;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
 		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;
 		bool forceGenerateForActiveRagdolls = true;
 		bool disableClutterVsCharacterControllerCollisionForActiveActors = true;
+		bool doClutterVsBipedCollisionDamage = true;
+		bool showCollisionDamageHitFx = false;
 		bool forceRagdollPose = false;
 		bool doBlending = true;
 		bool applyImpulseOnHit = true;

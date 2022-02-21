@@ -82,6 +82,13 @@ namespace HiggsPluginAPI {
 		// collisionFilter is really of type bhkCollisionFilter
 		typedef CollisionFilterComparisonResult(*CollisionFilterComparisonCallback)(void *collisionFilter, UInt32 filterInfoA, UInt32 filterInfoB);
 		virtual void AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback callback) = 0;
+
+		// Get the hand and weapon rigidbodies that higgs creates. Both return types are really bhkRigidBody.
+		virtual NiObject * GetHandRigidBody(bool isLeft) = 0;
+		virtual NiObject * GetWeaponRigidBody(bool isLeft) = 0;
+
+		// Get the currently held rigid body. Return type is actually bhkRigidBody.
+		virtual NiObject * GetGrabbedRigidBody(bool isLeft) = 0;
 	};
 }
 

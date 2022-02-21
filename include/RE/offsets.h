@@ -66,12 +66,24 @@ extern RelocPtr<float> g_fMagicHandRotateY;
 extern RelocPtr<float> g_fMagicHandRotateZ;
 extern RelocPtr<float> g_fMagicHandScale;
 
+extern RelocPtr<float> g_fPhysicsDamage1Mass;
+extern RelocPtr<float> g_fPhysicsDamage2Mass;
+extern RelocPtr<float> g_fPhysicsDamage3Mass;
+extern RelocPtr<float> g_fPhysicsDamage1Damage;
+extern RelocPtr<float> g_fPhysicsDamage2Damage;
+extern RelocPtr<float> g_fPhysicsDamage3Damage;
+extern RelocPtr<float> g_fPhysicsDamageSpeedBase;
+extern RelocPtr<float> g_fPhysicsDamageSpeedMult;
+extern RelocPtr<float> g_fPhysicsDamageSpeedMin;
+
 extern RelocPtr<float> g_fMeleeLinearVelocityThreshold;
 extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
 extern RelocAddr<void *> hkCharControllerShape_vtbl;
+
+extern RelocPtr<FOCollisionListener *> g_foCollisionListener;
 
 
 // Havok / Bethesda havok wrappers
@@ -550,6 +562,15 @@ extern RelocAddr<_HitData_dtor> HitData_dtor;
 typedef void(*_HitData_populate)(HitData *_this, Actor *src, Actor *target, InventoryEntryData *weapon, bool isOffhand);
 extern RelocAddr<_HitData_populate> HitData_populate;
 
+typedef void(*_HitData_PopulateFromPhysicalHit)(HitData *_this, Actor *src, Actor *target, float damage, bhkCharacterController::CollisionEvent &collisionEvent);
+extern RelocAddr<_HitData_PopulateFromPhysicalHit> HitData_PopulateFromPhysicalHit;
+
+typedef float(*_CalculatePhysicsDamage)(float mass, float speed);
+extern RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage;
+
+typedef void(*_Actor_GetHit)(Actor *_this, HitData &hitData);
+extern RelocAddr<_Actor_GetHit> Actor_GetHit;
+
 typedef void(*_hkpUnaryAction_ctor)(hkpUnaryAction *_this, hkpEntity* entity, hkUlong userData);
 extern RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor;
 
@@ -567,3 +588,6 @@ extern RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld;
 
 typedef void(*_CopyAndApplyScaleToPose)(bool useHavokWorldScaleOrInverseScale, UInt32 numBones, hkQsTransform *poseLowResLocal, hkQsTransform *poseOut, float worldFromModelScale);
 extern RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose;
+
+typedef void(*_FOCollisionListener_TryApplyCollisionDamage)(FOCollisionListener *_this, float separatingSpeed, hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, TESObjectREFR *refrA, TESObjectREFR *refrB);
+extern RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage;

@@ -178,6 +178,16 @@ struct hkbBehaviorGraph : hkbGenerator { /* TODO */ };
 
 struct bhkCharacterController : NiRefObject
 {
+	struct CollisionEvent
+	{
+		NiPointer<bhkRigidBody> body; // 00
+		// All 3 of these are multiplied by inverseHavokWorldScale
+		NiPoint3 position; // 08
+		NiPoint3 separatingNormal; // 14
+		NiPoint3 bodyVelocity; // 20
+	};
+	static_assert(sizeof(CollisionEvent) == 0x30);
+
 	UInt8 unk10[0x70 - 0x10];
 	hkVector4                                        forwardVec;                 // 070
 	hkStepInfo                                       stepInfo;                   // 080
@@ -232,7 +242,7 @@ struct bhkCharacterController : NiRefObject
 	std::uint32_t                                    pad2BC;                     // 2BC
 	hkRefPtr<hkpRigidBody>                           bumpedBody;                 // 2C0
 	hkRefPtr<hkpRigidBody>                           bumpedCharCollisionObject;  // 2C8
-	UInt8                     unk2D0[0x300 - 0x2D0];                     // 2D0
+	UInt8                     unk2D0[0x300 - 0x2D0];                     // 2D0 - BSTHashMap<bhkRigidBody, CollisionEvent>
 	std::uint64_t                                    unk300;                     // 300
 	std::uint64_t                                    unk308;                     // 308
 	std::uint64_t                                    unk310;                     // 310

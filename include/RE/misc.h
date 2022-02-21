@@ -314,6 +314,20 @@ struct MovementControllerNPC
 	BSTSmallArray<Entry> unk48; // 48
 };
 
+struct FOCollisionListener : hkpContactListener
+{
+	struct CollisionDamageEvent
+	{
+		NiPointer<bhkRigidBody> body; // 00
+		float damage; // 04
+		NiPointer<ActorCause> actorCause; // 08
+	};
+	static_assert(sizeof(CollisionDamageEvent) == 0x18);
+
+	UInt64 unk08;
+	tArray<CollisionDamageEvent> collisionEvents; // 10
+};
+
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);
