@@ -83,6 +83,10 @@ namespace HiggsPluginAPI {
 		typedef CollisionFilterComparisonResult(*CollisionFilterComparisonCallback)(void *collisionFilter, UInt32 filterInfoA, UInt32 filterInfoB);
 		virtual void AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback callback) = 0;
 
+		// Get/set the collision layer bitfield for the higgs collision layer (used for hands, weapons, and held objects).
+		virtual UInt64 GetHiggsLayerBitfield() = 0;
+		virtual void SetHiggsLayerBitfield(UInt64 bitfield) = 0;
+
 		// Get the hand and weapon rigidbodies that higgs creates. Both return types are really bhkRigidBody.
 		virtual NiObject * GetHandRigidBody(bool isLeft) = 0;
 		virtual NiObject * GetWeaponRigidBody(bool isLeft) = 0;

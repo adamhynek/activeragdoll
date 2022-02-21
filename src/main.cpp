@@ -355,8 +355,7 @@ struct PointImpulseJob : PrePhysicsStepJob
 	virtual void Run() override
 	{
 		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
-		NiPointer<TESObjectREFR> refr;
-		if (LookupREFRByHandle(refrHandle, refr)) {
+		if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(refrHandle, refr)) {
 			NiPointer<NiNode> root = refr->GetNiNode();
 			if (root && FindRigidBody(root, rigidBody)) {
 				if (IsMoveableEntity(rigidBody)) {
@@ -380,8 +379,7 @@ struct LinearImpulseJob : PrePhysicsStepJob
 	virtual void Run() override
 	{
 		// Need to be safe since the job could run next frame where the rigidbody might not exist anymore
-		NiPointer<TESObjectREFR> refr;
-		if (LookupREFRByHandle(refrHandle, refr)) {
+		if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(refrHandle, refr)) {
 			NiPointer<NiNode> root = refr->GetNiNode();
 			if (root && FindRigidBody(root, rigidBody)) {
 				if (IsMoveableEntity(rigidBody)) {
@@ -1269,22 +1267,6 @@ void ProcessHavokHitJobsHook()
 	}
 
 	{ // Update higgs info
-		// Modify higgs layer
-		bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
-		bool updateFilter = false;
-		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_CharController) {
-			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // ensure collision with character controllers
-		}
-		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_Biped) {
-			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
-		}
-		if (filter->layerBitfields[g_higgsCollisionLayer] >> BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
-			filter->layerBitfields[g_higgsCollisionLayer] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters using furniture
-		}
-		if (updateFilter) {
-			ReSyncLayerBitfields(filter, g_higgsCollisionLayer);
-		}
-
 		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
 		g_higgsHands[false] = rightHand;
 		g_higgsHands[true] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
@@ -2218,6 +2200,12 @@ extern "C" {
 					_MESSAGE("Got higgs interface!");
 					g_higgsInterface->AddGrabbedCallback(HiggsGrab);
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
+
+					UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
+					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // ensure collision with character controllers
+					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
+					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters using furniture
+					g_higgsInterface->SetHiggsLayerBitfield(bitfield);
 				}
 				else {
 					_MESSAGE("Did NOT get higgs interface.");
