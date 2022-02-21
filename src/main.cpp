@@ -437,9 +437,15 @@ std::unordered_set<Actor *> g_charControllerActors{};
 
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
 std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
-NiPointer<bhkRigidBody> g_higgsHands[2]{};
-NiPointer<bhkRigidBody> g_higgsWeapons[2]{};
+bhkRigidBody * g_higgsHands[2]{};
+bhkRigidBody * g_higgsWeapons[2]{};
+bhkRigidBody * g_higgsHeldObjects[2]{};
 UInt32 g_higgsCollisionLayer = 56;
+
+inline bool IsLeftRigidBody(bhkRigidBody *rigidBody)
+{
+	return rigidBody == g_higgsHands[true] || rigidBody == g_higgsWeapons[true] || rigidBody == g_higgsHeldObjects[true];
+}
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
@@ -466,7 +472,23 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else return { b, a };
 	}
 
-	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand)
+	// 0 -> right, 1 -> left, 2-> both
+	void PlayMeleeImpactRumble(int hand)
+	{
+		if (hand > 1) {
+			VRMeleeData *meleeData = GetVRMeleeData(false);
+			PlayRumble(true, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+			meleeData = GetVRMeleeData(true);
+			PlayRumble(false, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+		}
+		else {
+			bool isLeft = hand == 1;
+			VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+			PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+		}
+	}
+
+	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
@@ -496,7 +518,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		);
 
 		float havokWorldScale = *g_havokWorldScale;
-		NiPoint3 impulse = hitVelocity * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
+		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity); // limit the imparted velocity to some reasonable value
+		NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
 		impulse *= impulseStrength; // Scale the velocity as we see fit
 		impulse *= impulseMult;
 		if (impulse.z < 0) {
@@ -510,8 +533,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			HitActor(player, hitChar, weapon, isOffhand);
 
-			VRMeleeData *meleeData = GetVRMeleeData(isLeft);
-			PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
 			if (Config::options.applyImpulseOnHit) {
 				// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
@@ -531,8 +553,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else {
 			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
-				VRMeleeData *meleeData = GetVRMeleeData(isLeft);
-				PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 			}
 
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -569,7 +590,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
 		float speed = VectorLength(collisionEvent.bodyVelocity);
 		float damage = GetPhysicsDamage(mass, speed);
-		_MESSAGE("%.2f", damage);
+		//_MESSAGE("%.2f", damage);
 
 		if (damage > 0.f) {
 			HitData hitData;
@@ -652,15 +673,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *hitRigidBody = layerA == g_higgsCollisionLayer ? rigidBodyB : rigidBodyA;
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
+		bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
+		if (!hittingRigidBody) return;
+
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) {
-			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-			return;
-		}
+		if (!hitRefr) return;
 
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
-		UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-		bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
+
+		bool isLeft = IsLeftRigidBody(hittingRigidBodyWrapper);
+		bool isWeapon = hittingRigidBodyWrapper == g_higgsWeapons[true];
+		bool isHeldObject = hittingRigidBodyWrapper == g_higgsHeldObjects[true];
+		bool isHand = hittingRigidBodyWrapper == g_higgsHands[true];
 
 		if (hitCooldownTargets[isLeft].count(hitRefr)) {
 			// refr is currently under a hit cooldown, so disable the contact point and gtfo
@@ -688,7 +712,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		NiPoint3 handDirection = VectorNormalized(g_controllerVelocities[isLeft].avgVelocity);
 		float handSpeedRoomspace = g_controllerVelocities[isLeft].avgSpeed;
-		if (g_higgsInterface->IsTwoHanding()) {
+		bool isTwoHanding = g_higgsInterface->IsTwoHanding();
+		if (isTwoHanding) {
 			handDirection = VectorNormalized(g_controllerVelocities[0].avgVelocity + g_controllerVelocities[1].avgVelocity);
 			handSpeedRoomspace = max(g_controllerVelocities[0].avgSpeed, g_controllerVelocities[1].avgSpeed);
 		}
@@ -744,7 +769,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
 		}
 		else {
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -821,8 +846,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
 			if (hitRefr) {
-				UInt8 ragdollBits = (hittingRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo >> 8) & 0x1f;
-				bool isLeft = ragdollBits == 5 || ragdollBits == 6; // stupid. Right hand would be 3.
+				bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
+				bool isLeft = IsLeftRigidBody(hittingRigidBodyWrapper);
 
 				if (hitCooldownTargets[isLeft].count(hitRefr)) {
 					// refr is still collided with, so refresh its hit cooldown
@@ -1260,28 +1285,29 @@ void ProcessHavokHitJobsHook()
 			ReSyncLayerBitfields(filter, g_higgsCollisionLayer);
 		}
 
-		g_higgsHands[false] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
+		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
+		g_higgsHands[false] = rightHand;
 		g_higgsHands[true] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
 
 		g_higgsWeapons[false] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
 		g_higgsWeapons[true] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
 
-		if (g_higgsHands[false]) {
-			g_higgsCollisionLayer = g_higgsHands[false]->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
+		if (rightHand) {
+			g_higgsCollisionLayer = rightHand->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
 		}
 
-		bhkRigidBody *rightHeldBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
-		bhkRigidBody *leftHeldBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
-		if (!rightHeldBody && !leftHeldBody) {
+		g_higgsHeldObjects[false] = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
+		g_higgsHeldObjects[true] = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
+		if (!g_higgsHeldObjects[false] && !g_higgsHeldObjects[true]) {
 			g_higgsDrivers.clear();
 		}
 
 		double now = GetTime();
-		if (rightHeldBody) {
-			g_higgsLingeringRigidBodies[rightHeldBody] = now;
+		if (g_higgsHeldObjects[false]) {
+			g_higgsLingeringRigidBodies[g_higgsHeldObjects[false]] = now;
 		}
-		if (leftHeldBody) {
-			g_higgsLingeringRigidBodies[leftHeldBody] = now;
+		if (g_higgsHeldObjects[true]) {
+			g_higgsLingeringRigidBodies[g_higgsHeldObjects[true]] = now;
 		}
 
 		// Clear out old dropped / thrown rigidbodies

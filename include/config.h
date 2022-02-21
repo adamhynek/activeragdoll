@@ -71,6 +71,7 @@ namespace Config {
 
 		float hitImpulseMinStrength = 0.2f;
 		float hitImpulseMaxStrength = 1.f;
+		float hitImpulseMaxVelocity = 1500.f; // skyrim units
 
 		float hitImpulseDownwardsMultiplier = 0.3f;
 
@@ -88,8 +89,8 @@ namespace Config {
 
 		float hitRequiredHandSpeedRoomspace = 1.f;
 
-		float hitImpulseDecayMult1 = 0.5f;
-		float hitImpulseDecayMult2 = 0.25f;
+		float hitImpulseDecayMult1 = 0.3f;
+		float hitImpulseDecayMult2 = 0.15f;
 
 		float meleeSwingLinearVelocityThreshold = 3.f;
 		float shieldSwingLinearVelocityThreshold = 3.f;
