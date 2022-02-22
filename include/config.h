@@ -79,7 +79,7 @@ namespace Config {
 
 		float hitStabDirectionThreshold = 0.8f;
 		float hitStabSpeedThreshold = 2.f;
-		float hitStabImpulseMult = 2.f;
+		float hitStabImpulseMult = 2.5f;
 
 		float hitPunchDirectionThreshold = 0.7f;
 		float hitPunchSpeedThreshold = 2.5f;

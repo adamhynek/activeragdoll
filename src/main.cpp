@@ -2218,6 +2218,9 @@ extern "C" {
 					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
 					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC); // add collision with ragdoll of live characters using furniture
 					g_higgsInterface->SetHiggsLayerBitfield(bitfield);
+
+					g_higgsInterface->ForceWeaponCollisionEnabled(false);
+					g_higgsInterface->ForceWeaponCollisionEnabled(true);
 				}
 				else {
 					_MESSAGE("Did NOT get higgs interface.");

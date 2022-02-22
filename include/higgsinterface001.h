@@ -93,6 +93,9 @@ namespace HiggsPluginAPI {
 
 		// Get the currently held rigid body. Return type is actually bhkRigidBody.
 		virtual NiObject * GetGrabbedRigidBody(bool isLeft) = 0;
+
+		// Forces the weapon collision to stay enabled, unless sheathed or disabled through the API.
+		virtual void ForceWeaponCollisionEnabled(bool isLeft) = 0;
 	};
 }
 
