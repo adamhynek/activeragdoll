@@ -1271,8 +1271,20 @@ void ProcessHavokHitJobsHook()
 		g_higgsHands[false] = rightHand;
 		g_higgsHands[true] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
 
-		g_higgsWeapons[false] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
-		g_higgsWeapons[true] = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
+		NiPointer<bhkRigidBody> rightWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
+		NiPointer<bhkRigidBody> leftWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
+		g_higgsWeapons[false] = rightWeapon;
+		g_higgsWeapons[true] = leftWeapon;
+
+		// TODO: We don't make held objects or hands keyframed_reporting, so those can't do hits on statics
+		if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+			rightWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+			bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightWeapon);
+		}
+		if (leftWeapon && leftWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+			leftWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+			bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftWeapon);
+		}
 
 		if (rightHand) {
 			g_higgsCollisionLayer = rightHand->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;

@@ -73,7 +73,7 @@ namespace Config {
 		float hitImpulseMaxStrength = 1.f;
 		float hitImpulseMaxVelocity = 1500.f; // skyrim units
 
-		float hitImpulseDownwardsMultiplier = 0.3f;
+		float hitImpulseDownwardsMultiplier = 0.5f;
 
 		float hitSwingSpeedThreshold = 5.f;
 

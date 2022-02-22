@@ -212,11 +212,11 @@ struct HitData
 	};
 
 	// members
-	NiPoint3                 hitPosition;                   // 00
-	NiPoint3                 hitDirection;                   // 0C
-	UInt32              aggressor;               // 18
-	UInt32              target;                  // 1C
-	UInt32          sourceRef;               // 20
+	NiPoint3                 hitPosition;             // 00
+	NiPoint3                 hitDirection;            // 0C
+	UInt32                   aggressor;               // 18
+	UInt32                   target;                  // 1C
+	UInt32                   sourceRef;               // 20
 	std::uint32_t            pad24;                   // 24
 	NiPointer<BGSAttackData> attackData;              // 28
 	TESObjectWEAP*           weapon;                  // 30
@@ -230,7 +230,7 @@ struct HitData
 	float                    percentBlocked;          // 5C
 	float                    resistedPhysicalDamage;  // 60
 	float                    resistedTypedDamage;     // 64
-	std::uint32_t            stagger;                 // 68
+	float                    stagger;                 // 68
 	float                    sneakAttackBonus;        // 6C
 	float                    bonusHealthDamageMult;   // 70
 	float                    pushBack;                // 74
