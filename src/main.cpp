@@ -350,7 +350,8 @@ struct PointImpulseJob : PrePhysicsStepJob
 	NiPoint3 impulse{};
 	UInt32 refrHandle{};
 
-	PointImpulseJob(hkpRigidBody *rigidBody, NiPoint3 &point, NiPoint3 &impulse, UInt32 refrHandle) : rigidBody(rigidBody), point(point), impulse(impulse), refrHandle(refrHandle) {}
+	PointImpulseJob(hkpRigidBody *rigidBody, const NiPoint3 &point, const NiPoint3 &impulse, UInt32 refrHandle) :
+		rigidBody(rigidBody), point(point), impulse(impulse), refrHandle(refrHandle) {}
 
 	virtual void Run() override
 	{
@@ -374,7 +375,8 @@ struct LinearImpulseJob : PrePhysicsStepJob
 	NiPoint3 impulse{};
 	UInt32 refrHandle{};
 
-	LinearImpulseJob(hkpRigidBody *rigidBody, NiPoint3 &impulse, UInt32 refrHandle) : rigidBody(rigidBody), impulse(impulse), refrHandle(refrHandle) {}
+	LinearImpulseJob(hkpRigidBody *rigidBody, const NiPoint3 &impulse, UInt32 refrHandle) :
+		rigidBody(rigidBody), impulse(impulse), refrHandle(refrHandle) {}
 
 	virtual void Run() override
 	{
@@ -451,8 +453,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	{
 		enum class Type
 		{
-			ADDED,
-			REMOVED
+			Added,
+			Removed
 		};
 
 		hkpRigidBody *rbA = nullptr;
@@ -486,6 +488,45 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 	}
 
+	NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, float impulseMult)
+	{
+		float massInv = rigidBody->getMassInv();
+		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
+
+		float impulseStrength = std::clamp(
+			Config::options.hitImpulseBaseStrength + Config::options.hitImpulseProportionalStrength * powf(mass, Config::options.hitImpulseMassExponent),
+			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
+		);
+
+		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity); // limit the imparted velocity to some reasonable value
+		NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * *g_havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
+		impulse *= impulseStrength; // Scale the velocity as we see fit
+		impulse *= impulseMult;
+		if (impulse.z < 0) {
+			// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
+			impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
+		}
+
+		return impulse;
+	}
+
+	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &impulse, const NiPoint3 position)
+	{
+		UInt32 targetHandle = GetOrCreateRefrHandle(actor);
+		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+		ForEachRagdollDriver(actor, [rigidBody, impulse, targetHandle](hkbRagdollDriver *driver) {
+			ForEachAdjacentBody(driver, rigidBody, [driver, impulse, targetHandle](hkpRigidBody *adjacentBody) {
+				QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle);
+				ForEachAdjacentBody(driver, adjacentBody, [impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
+					QueuePrePhysicsJob<LinearImpulseJob>(semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle);
+				});
+			});
+		});
+
+		// Apply a point impulse at the hit location to the body we actually hit
+		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, impulse, targetHandle);
+	}
+
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
 	{
 		PlayerCharacter *player = *g_thePlayer;
@@ -503,28 +544,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
 		*playerLastHitVelocity = hitVelocity;
 
-		UInt32 targetHandle = GetOrCreateRefrHandle(hitRefr);
-		double now = GetTime();
-
-		// TODO: Different impulse for different weapon types? (e.g. dagger is not much, but two-hander is much)
-		float massInv = hitRigidBody->getMassInv();
-		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
-
-		float impulseStrength = std::clamp(
-			Config::options.hitImpulseBaseStrength + Config::options.hitImpulseProportionalStrength * powf(mass, Config::options.hitImpulseMassExponent),
-			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
-		);
-
-		float havokWorldScale = *g_havokWorldScale;
-		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity); // limit the imparted velocity to some reasonable value
-		NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
-		impulse *= impulseStrength; // Scale the velocity as we see fit
-		impulse *= impulseMult;
-		if (impulse.z < 0) {
-			// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
-			impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
-		}
-
 		Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
@@ -534,18 +553,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
 			if (Config::options.applyImpulseOnHit) {
-				// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-				ForEachRagdollDriver(hitChar, [hitRigidBody, &impulse, targetHandle](hkbRagdollDriver *driver) {
-					ForEachAdjacentBody(driver, hitRigidBody, [driver, &impulse, targetHandle](hkpRigidBody *adjacentBody) {
-						QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle);
-						ForEachAdjacentBody(driver, adjacentBody, [&impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
-							QueuePrePhysicsJob<LinearImpulseJob>(semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle);
-						});
-					});
-				});
-
-				// Apply a point impulse at the hit location to the body we actually hit
-				QueuePrePhysicsJob<PointImpulseJob>(hitRigidBody, hitPosition * havokWorldScale, impulse, targetHandle);
+				NiPoint3 impulse = CalculateHitImpulse(hitRigidBody, hitVelocity, impulseMult);
+				ApplyHitImpulse(hitChar, hitRigidBody, impulse, hitPosition * *g_havokWorldScale);
 			}
 		}
 		else {
@@ -560,6 +569,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
+		double now = GetTime();
 		hitCooldownTargets[isLeft][hitRefr] = now;
 	}
 
@@ -751,8 +761,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Thresholding on some (small) roomspace hand velocity helps prevent hits while moving around / turning
 
-		bool doHit = (isSwing || isStab || isPunch) && handSpeedRoomspace > Config::options.hitRequiredHandSpeedRoomspace;
-		bool disableHit = !player->actorState.IsWeaponDrawn() && Config::options.disableHitIfSheathed; // TODO: perhaps still disable collision / impart impulse even when hit is disabled. Currently you can make the physics spaz out while sheathed and swinging at someone.
+		bool doHit = (isSwing || isStab || isPunch);
+		bool disableHit = handSpeedRoomspace < Config::options.hitRequiredHandSpeedRoomspace || (!player->actorState.IsWeaponDrawn() && Config::options.disableHitIfSheathed);
 
 		if (doHit && !disableHit) {
 			float havokWorldScale = *g_havokWorldScale;
@@ -768,6 +778,13 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
 			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
+		}
+		else if (Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character); doHit && disableHit && hitChar) {
+			// Hit is disabled and we hit a character
+			double now = GetTime();
+			hitCooldownTargets[isLeft][hitRefr] = now;
+
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 		}
 		else {
 			if (!IsMoveableEntity(hitRigidBody)) {
@@ -788,7 +805,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) return; // Both objects are on the higgs layer
 
-		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::ADDED });
+		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::Added });
 		//_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
@@ -798,21 +815,21 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
 		// Technically our objects could have changed layers or something between added and removed
-		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::REMOVED });
+		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::Removed });
 		//_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void postSimulationCallback(hkpWorld* world)
 	{
-		// First just accumulate adds/removes. Why? While ADDED always occurs before REMOVED for a single contact point,
+		// First just accumulate adds/removes. Why? While Added always occurs before Removed for a single contact point,
 		// a single pair of rigid bodies can have multiple contact points, and adds/removes between these different contact points can be non-deterministic.
 		for (CollisionEvent &evnt : events) {
-			if (evnt.type == CollisionEvent::Type::ADDED) {
+			if (evnt.type == CollisionEvent::Type::Added) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
 				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
 				activeCollisions[pair] = count + 1;
 			}
-			else if (evnt.type == CollisionEvent::Type::REMOVED) {
+			else if (evnt.type == CollisionEvent::Type::Removed) {
 				auto pair = SortPair(evnt.rbA, evnt.rbB);
 				int count = activeCollisions.count(pair) ? activeCollisions[pair] : 0;
 				activeCollisions[pair] = count - 1;
