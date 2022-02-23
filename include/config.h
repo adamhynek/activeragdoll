@@ -96,6 +96,7 @@ namespace Config {
 		float shieldSwingLinearVelocityThreshold = 3.f;
 
 		bool resizePlayerCharController = true;
+		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;
 		bool resizePlayerCapsule = true;
 		float playerCharControllerRadius = 0.15f;
 		float playerCapsuleRadius = 0.1f;

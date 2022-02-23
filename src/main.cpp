@@ -1217,8 +1217,33 @@ void ProcessHavokHitJobsHook()
 					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
 					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
-					// Shrink the two "rings" of the charcontroller shape by moving the rings' vertices inwards
+					// The charcontroller shape is composed of two vertically concentric "rings" with a single point above and below the top/bottom ring.
 					// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
+
+					if (Config::options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope) {
+						// Move the bottom ring downwards so that the the slope between the bottom ring and the bottom point remains the same with the new ring radius.
+						// This is to try and maintain the same stair-climbing behavior, though it could be an issue for very high steps since we move the bottom ring down.
+
+						NiPoint3 bottomVert = HkVectorToNiPoint(verts[8]); // the single bottom point of the shape
+						NiPoint3 bottomRingVert = HkVectorToNiPoint(verts[2]); // one of the points on the bottom ring of the shape
+
+						float zOld = bottomRingVert.z - bottomVert.z;
+						float rOld = VectorLength({ bottomRingVert.x, bottomRingVert.y });
+
+						float rNew = Config::options.playerCharControllerRadius;
+						float zNew = rNew * (zOld / rOld);
+						float newBottomRingHeight = bottomVert.z + zNew;
+
+						for (int i : {
+							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+						}) {
+							NiPoint3 vert = HkVectorToNiPoint(verts[i]);
+							vert.z = newBottomRingHeight;
+							verts[i] = NiPointToHkVector(vert);
+						}
+					}
+
+					// Shrink the two rings of the charcontroller shape by moving the rings' vertices inwards
 					for (int i : {
 						1, 3, 4, 5, 7, 11, 13, 16, // top ring
 						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
