@@ -780,14 +780,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
 		}
 		else if (Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character); doHit && disableHit && hitChar) {
-			// Hit is disabled and we hit a character
-			double now = GetTime();
-			hitCooldownTargets[isLeft][hitRefr] = now;
-
+			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 		}
 		else {
-			if (!IsMoveableEntity(hitRigidBody)) {
+			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
 				// It's not a hit, so disable contact for keyframed/fixed objects in this case
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
