@@ -12,6 +12,7 @@ struct Blender
 	enum class BlendType : UInt8
 	{
 		AnimToRagdoll,
+		CurrentAnimToRagdoll,
 		RagdollToAnim,
 		CurrentRagdollToAnim
 	};
@@ -37,7 +38,7 @@ struct Blender
 
 	inline void StopBlend() { isActive = false; }
 
-	bool Update(struct ActiveRagdoll &ragdoll, hkbGeneratorOutput &inOut, double frameTime);
+	bool Update(const struct ActiveRagdoll &ragdoll, const hkbRagdollDriver &driver, hkbGeneratorOutput &inOut, double frameTime);
 
 	std::vector<hkQsTransform> initialPose{};
 	std::vector<hkQsTransform> currentPose{};

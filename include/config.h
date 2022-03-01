@@ -13,30 +13,30 @@ namespace Config {
 		double blendOutDurationStressMin = 5.0;
 		double blendOutDurationStressMax = 40.0;
 		double blendOutBlendPower = 2.5;
-		double blendInTime = 0.2f;
+		double blendInTime = 0.2;
 
-		double hitRecoveryTime = 0.2f;
-		double physicsHitRecoveryTime = 0.01f;
+		bool enableKeyframes = true;
+		double blendInKeyframeTime = 0.05;
 
-		double thrownObjectLingerTime = 5.f;
+		double hitCooldownTimeStoppedColliding = 0.2;
+		double hitCooldownTimeFallback = 1.0;
+		double physicsHitRecoveryTime = 0.01;
+
+		double thrownObjectLingerTime = 5.0;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units
-		float collisionDamageMinMass = 5.f;
+		float collisionDamageMinMass = 6.f;
 
 		bool doRootMotion = false;
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
 		float activeRagdollStartDistance = 10.f;
-		float activeRagdollEndDistance = 15.f;
+		float activeRagdollEndDistance = 10.f;
 
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;
 		float positionGain = 0.05f;
-
-		float blendOutHierarchyGain = 0.6f;
-		float blendOutVelocityGain = 0.6f;
-		float blendOutPositionGain = 0.05f;
 
 		float poweredControllerOnFraction = 0.05f;
 
@@ -76,6 +76,7 @@ namespace Config {
 		float hitImpulseDownwardsMultiplier = 0.5f;
 
 		float hitSwingSpeedThreshold = 5.f;
+		float hitSwingImpulseMult = 1.f;
 
 		float hitStabDirectionThreshold = 0.8f;
 		float hitStabSpeedThreshold = 2.f;
@@ -84,8 +85,6 @@ namespace Config {
 		float hitPunchDirectionThreshold = 0.7f;
 		float hitPunchSpeedThreshold = 2.5f;
 		float hitPunchImpulseMult = 1.75f;
-
-		float hitSwingImpulseMult = 1.f;
 
 		float hitRequiredHandSpeedRoomspace = 1.f;
 

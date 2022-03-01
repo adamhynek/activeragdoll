@@ -41,7 +41,7 @@ void Blender::StartBlend(BlendType blendType, double currentTime, const Curve &b
 	isActive = true;
 }
 
-bool Blender::Update(ActiveRagdoll &ragdoll, hkbGeneratorOutput &inOut, double frameTime)
+bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &driver, hkbGeneratorOutput &inOut, double frameTime)
 {
 	double elapsedTime = (frameTime - startTime) * *g_globalTimeMultiplier;
 
@@ -49,8 +49,7 @@ bool Blender::Update(ActiveRagdoll &ragdoll, hkbGeneratorOutput &inOut, double f
 
 	hkInt32 numTracks = inOut.m_tracks->m_masterHeader.m_numTracks;
 
-	int poseTrackId = (int)hkbGeneratorOutput::StandardTracks::TRACK_POSE;
-	hkbGeneratorOutput::TrackHeader *poseHeader = numTracks > poseTrackId ? &(inOut.m_tracks->m_trackHeaders[poseTrackId]) : nullptr;
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
@@ -70,6 +69,9 @@ bool Blender::Update(ActiveRagdoll &ragdoll, hkbGeneratorOutput &inOut, double f
 		}
 		else if (type == BlendType::RagdollToAnim) {
 			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);
+		}
+		else if (type == BlendType::CurrentAnimToRagdoll) {
+			hkbBlendPoses(numPoses, ragdoll.animPose.data(), ragdoll.ragdollPose.data(), lerpAmount, poseOut);
 		}
 		else if (type == BlendType::CurrentRagdollToAnim) {
 			hkbBlendPoses(numPoses, ragdoll.ragdollPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);

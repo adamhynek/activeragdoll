@@ -463,7 +463,14 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	};
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody *>, int> activeCollisions{};
-	std::unordered_map<TESObjectREFR *, double> hitCooldownTargets[2]{}; // each hand has its own cooldown
+
+	struct HitCooldownData
+	{
+		double hitTime = 0.0;
+		double stoppedCollidingTime = 0.0;
+	};
+	std::unordered_map<TESObjectREFR *, HitCooldownData> hitCooldownTargets[2]{}; // each hand has its own cooldown
+
 	std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
 	std::vector<CollisionEvent> events{};
 
@@ -563,14 +570,14 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 			}
 
-			if (!IsMoveableEntity(hitRigidBody)) {
+			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
 				// Disable contact for keyframed/fixed objects in this case
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
 		}
 
 		double now = GetTime();
-		hitCooldownTargets[isLeft][hitRefr] = now;
+		hitCooldownTargets[isLeft][hitRefr] = { now, now };
 	}
 
 	inline bool IsHittableCharController(TESObjectREFR *refr)
@@ -699,11 +706,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			return;
 		}
-		else if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController) {
-			if (!IsHittableCharController(hitRefr)) {
-				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				return;
-			}
+
+		if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController && !IsHittableCharController(hitRefr)) {
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
 		}
 
 		// A contact point of any sort confirms a collision, regardless of any collision added or removed events
@@ -779,7 +785,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
 			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
 		}
-		else if (Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character); doHit && disableHit && hitChar) {
+		else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
 			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 		}
@@ -790,7 +796,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 	}
-
+	
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
@@ -863,7 +869,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 				if (hitCooldownTargets[isLeft].count(hitRefr)) {
 					// refr is still collided with, so refresh its hit cooldown
-					hitCooldownTargets[isLeft][hitRefr] = now;
+					hitCooldownTargets[isLeft][hitRefr].stoppedCollidingTime = now;
 				}
 			}
 		}
@@ -871,8 +877,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		// Clear out old hit cooldown targets
 		for (auto &targets : hitCooldownTargets) { // For each hand's cooldown targets
 			for (auto it = targets.begin(); it != targets.end();) {
-				auto[target, hitTime] = *it;
-				if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.hitRecoveryTime)
+				auto[target, hitCooldown] = *it;
+				if ((now - hitCooldown.stoppedCollidingTime) * *g_globalTimeMultiplier >= Config::options.hitCooldownTimeStoppedColliding ||
+					(now - hitCooldown.hitTime) * *g_globalTimeMultiplier >= Config::options.hitCooldownTimeFallback)
 					it = targets.erase(it);
 				else
 					++it;
@@ -1066,21 +1073,22 @@ bool AddRagdollToWorld(Actor *actor)
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
 						g_activeRagdolls[driver] = ActiveRagdoll{};
+						ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
 
-						// TODO: We should try keyframing bones for 1 frame initially and see if that converges faster
-						Blender &blender = g_activeRagdolls[driver].blender;
-						blender.StartBlend(Blender::BlendType::AnimToRagdoll, GetTime(), Config::options.blendInTime);
-						hkbCharacter *character = &graph.ptr->character;
-						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(character);
-						blender.initialPose.assign(poseLocal, poseLocal + character->numPoseLocal);
+						double now = GetTime();
+						Blender &blender = ragdoll.blender;
+						blender.StartBlend(Blender::BlendType::AnimToRagdoll, now, Config::options.blendInTime);
+						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
+						blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
 						blender.isFirstBlendFrame = false;
 
-						g_activeRagdolls[driver].state = RagdollState::BlendIn;
+						ragdoll.stateChangedTime = now;
+						ragdoll.state = RagdollState::BlendIn;
 
 						if (!graph.ptr->world) {
 							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
 							graph.ptr->world = GetHavokWorldFromCell(actor->parentCell);
-							g_activeRagdolls[driver].shouldNullOutWorldWhenRemovingFromWorld = true;
+							ragdoll.shouldNullOutWorldWhenRemovingFromWorld = true;
 						}
 					}
 				}
@@ -1370,7 +1378,7 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		// TODO: We can actually do this per-npc now
+		// TODO: We can actually do this per-npc now with the collision filter compare callback
 		if (!Config::options.enablePlayerBipedCollision || g_higgsDrivers.size() > 0) {
 			// When something is grabbed, disable collision with bipeds (since we're holding one)
 			g_collidePlayerWithBiped = false;
@@ -1536,22 +1544,22 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		return;
 	}
 
-	//SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+	if (Config::options.enableKeyframes) {
+		double elapsedTime = (frameTime - ragdoll.stateChangedTime) * *g_globalTimeMultiplier;
+		if (elapsedTime <= Config::options.blendInKeyframeTime) {
+			if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
+				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+			}
+		}
+	}
 
 	if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
 		hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
 		for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
 			hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
-			if (ragdoll.state == RagdollState::BlendOut) {
-				elem.m_hierarchyGain = Config::options.blendOutHierarchyGain;
-				elem.m_velocityGain = Config::options.blendOutVelocityGain;
-				elem.m_positionGain = Config::options.blendOutPositionGain;
-			}
-			else {
-				elem.m_hierarchyGain = Config::options.hierarchyGain;
-				elem.m_velocityGain = Config::options.velocityGain;
-				elem.m_positionGain = Config::options.positionGain;
-			}
+			elem.m_hierarchyGain = Config::options.hierarchyGain;
+			elem.m_velocityGain = Config::options.velocityGain;
+			elem.m_positionGain = Config::options.positionGain;
 		}
 	}
 
@@ -1587,22 +1595,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-			/*
-			static hkQsTransform prevWorldFromModel;
-			PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation) - HkVectorToNiPoint(prevWorldFromModel.m_translation))), "worldfrommodel.txt");
-			prevWorldFromModel = worldFromModel;
-
-			static NiTransform prevWorldFromModelNode;
-			if (NiPointer<NiAVObject> root = actor->GetNiNode()) {
-				//worldFromModel.m_translation = NiPointToHkVector(root->m_worldTransform.pos);
-				//worldFromModel.m_rotation = NiQuatToHkQuat(MatrixToQuaternion(root->m_worldTransform.rot));
-
-				PrintToFile(std::to_string(VectorLength(root->m_worldTransform.pos - prevWorldFromModelNode.pos)), "worldfrommodelnode.txt");
-				prevWorldFromModelNode = root->m_worldTransform;
-
-				PrintToFile(std::to_string(VectorLength(root->m_worldTransform.pos - HkVectorToNiPoint(worldFromModel.m_translation))), "worldfrommodelcomp.txt");
-			}*/
-
 			hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
 			int numPosesLow = driver->ragdoll->getNumBones();
@@ -1641,6 +1633,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
+	// Root motion
 	if (NiPointer<NiNode> root = actor->GetNiNode()) {
 		if (bhkCharRigidBodyController *controller = GetCharRigidBodyController(actor)) {
 			if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
@@ -1775,7 +1768,7 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	if (blender.isActive) {
 		bool done = !Config::options.doBlending;
 		if (!done) {
-			done = blender.Update(ragdoll, inOut, ragdoll.frameTime);
+			done = blender.Update(ragdoll, *driver, inOut, ragdoll.frameTime);
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {

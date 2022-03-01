@@ -24,6 +24,7 @@ struct ActiveRagdoll
 	float deltaTime = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	double frameTime = 0.0;
+	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
 	bool isOn = false;
 	bool hasHipBoneTransform = false;
