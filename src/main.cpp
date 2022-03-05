@@ -437,14 +437,20 @@ std::unordered_set<Actor *> g_charControllerActors{};
 
 std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
 std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
-bhkRigidBody * g_higgsHands[2]{};
-bhkRigidBody * g_higgsWeapons[2]{};
-bhkRigidBody * g_higgsHeldObjects[2]{};
+bhkRigidBody * g_rightHand{};
+bhkRigidBody * g_leftHand{};
+bhkRigidBody * g_rightWeapon{};
+bhkRigidBody * g_leftWeapon{};
+bhkRigidBody * g_rightHeldObject{};
+bhkRigidBody * g_leftHeldObject{};
 UInt32 g_higgsCollisionLayer = 56;
+
+bool g_collidePlayerWithBiped = true;
+UInt32 g_playerCollisionGroup = 0;
 
 inline bool IsLeftRigidBody(bhkRigidBody *rigidBody)
 {
-	return rigidBody == g_higgsHands[true] || rigidBody == g_higgsWeapons[true] || rigidBody == g_higgsHeldObjects[true];
+	return rigidBody == g_leftHand || rigidBody == g_leftWeapon || rigidBody == g_leftHeldObject;
 }
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -517,21 +523,24 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		return impulse;
 	}
 
-	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &impulse, const NiPoint3 position)
+	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 position, float impulseMult)
 	{
 		UInt32 targetHandle = GetOrCreateRefrHandle(actor);
 		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-		ForEachRagdollDriver(actor, [rigidBody, impulse, targetHandle](hkbRagdollDriver *driver) {
-			ForEachAdjacentBody(driver, rigidBody, [driver, impulse, targetHandle](hkpRigidBody *adjacentBody) {
-				QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse * Config::options.hitImpulseDecayMult1, targetHandle);
-				ForEachAdjacentBody(driver, adjacentBody, [impulse, targetHandle](hkpRigidBody *semiAdjacentBody) {
-					QueuePrePhysicsJob<LinearImpulseJob>(semiAdjacentBody, impulse * Config::options.hitImpulseDecayMult2, targetHandle);
+		ForEachRagdollDriver(actor, [this, rigidBody, hitVelocity, impulseMult, targetHandle](hkbRagdollDriver *driver) {
+			ForEachAdjacentBody(driver, rigidBody, [this, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+				QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult1, targetHandle);
+				ForEachAdjacentBody(driver, adjacentBody, [this, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+					QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
+					ForEachAdjacentBody(driver, adjacentBody, [this, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+						QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
+					});
 				});
 			});
 		});
 
 		// Apply a point impulse at the hit location to the body we actually hit
-		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, impulse, targetHandle);
+		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 	}
 
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
@@ -560,8 +569,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
 			if (Config::options.applyImpulseOnHit) {
-				NiPoint3 impulse = CalculateHitImpulse(hitRigidBody, hitVelocity, impulseMult);
-				ApplyHitImpulse(hitChar, hitRigidBody, impulse, hitPosition * *g_havokWorldScale);
+				ApplyHitImpulse(hitChar, hitRigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
 			}
 		}
 		else {
@@ -697,9 +705,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 
 		bool isLeft = IsLeftRigidBody(hittingRigidBodyWrapper);
-		bool isWeapon = hittingRigidBodyWrapper == g_higgsWeapons[true];
-		bool isHeldObject = hittingRigidBodyWrapper == g_higgsHeldObjects[true];
-		bool isHand = hittingRigidBodyWrapper == g_higgsHands[true];
 
 		if (hitCooldownTargets[isLeft].count(hitRefr)) {
 			// refr is currently under a hit cooldown, so disable the contact point and gtfo
@@ -849,6 +854,17 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
+		if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+			// TODO: We can actually do this per-npc now with the collision filter compare callback
+			if (!Config::options.enablePlayerBipedCollision || g_higgsDrivers.size() > 0) {
+				// When something is grabbed, disable collision with bipeds (since we're holding one)
+				g_collidePlayerWithBiped = false;
+			}
+			else if (Config::options.enablePlayerBipedCollision) {
+				// Nothing grabbed, make sure we're colliding with bipeds again
+				g_collidePlayerWithBiped = true;
+			}
+		}
 
 		double now = GetTime();
 
@@ -900,8 +916,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 };
 ContactListener g_contactListener{};
 
-bool g_collidePlayerWithBiped = true;
-UInt32 g_playerCollisionGroup = 0;
 
 using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
 CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, UInt32 filterInfoA, UInt32 filterInfoB)
@@ -951,6 +965,32 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 	}
 
 	return CollisionFilterComparisonResult::Continue;
+}
+
+void PrePhysicsStepCallback(void *world)
+{
+	// This hook is after all ragdolls' driveToPose(), and before the hkpWorld physics step
+
+	// At this point we can apply any impulses / velocity adjustments without fear of them being overwritten
+
+	for (auto &job : g_prePhysicsStepJobs) {
+		job.get()->Run();
+	}
+	g_prePhysicsStepJobs.clear();
+
+	// With the exe patched to not enable its melee collision, we still need to disable it once (after it's created)
+	for (int i = 0; i < 2; i++) {
+		VRMeleeData *meleeData = GetVRMeleeData(i);
+		NiPointer<NiAVObject> collNode = meleeData->collisionNode;
+		if (!collNode) continue;
+		NiPointer<bhkRigidBody> rb = GetRigidBody(collNode);
+		if (!rb) continue;
+		if (!(rb->hkBody->m_collidable.getCollisionFilterInfo() >> 14 & 1)) {
+			// collision is enabled
+			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; // disable collision
+			bhkWorldObject_UpdateCollisionFilter(rb);
+		}
+	}
 }
 
 std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
@@ -1286,6 +1326,7 @@ void ProcessHavokHitJobsHook()
 				}
 
 				if (Config::options.resizePlayerCapsule) {
+					// TODO: Am I accidentally modifying every npc's capsule too?
 					// Shrink capsule shape too. It's active when weapons are unsheathed.
 					float radius = Config::options.playerCapsuleRadius;
 					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
@@ -1315,13 +1356,13 @@ void ProcessHavokHitJobsHook()
 
 	{ // Update higgs info
 		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
-		g_higgsHands[false] = rightHand;
-		g_higgsHands[true] = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
+		g_rightHand = rightHand;
+		g_leftHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
 
 		NiPointer<bhkRigidBody> rightWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
 		NiPointer<bhkRigidBody> leftWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
-		g_higgsWeapons[false] = rightWeapon;
-		g_higgsWeapons[true] = leftWeapon;
+		g_rightWeapon = rightWeapon;
+		g_leftWeapon = leftWeapon;
 
 		// TODO: We don't make held objects or hands keyframed_reporting, so those can't do hits on statics
 		if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
@@ -1337,18 +1378,18 @@ void ProcessHavokHitJobsHook()
 			g_higgsCollisionLayer = rightHand->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
 		}
 
-		g_higgsHeldObjects[false] = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
-		g_higgsHeldObjects[true] = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
-		if (!g_higgsHeldObjects[false] && !g_higgsHeldObjects[true]) {
+		g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
+		g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
+		if (!g_rightHeldObject && !g_leftHeldObject) {
 			g_higgsDrivers.clear();
 		}
 
 		double now = GetTime();
-		if (g_higgsHeldObjects[false]) {
-			g_higgsLingeringRigidBodies[g_higgsHeldObjects[false]] = now;
+		if (g_rightHeldObject) {
+			g_higgsLingeringRigidBodies[g_rightHeldObject] = now;
 		}
-		if (g_higgsHeldObjects[true]) {
-			g_higgsLingeringRigidBodies[g_higgsHeldObjects[true]] = now;
+		if (g_leftHeldObject) {
+			g_higgsLingeringRigidBodies[g_leftHeldObject] = now;
 		}
 
 		// Clear out old dropped / thrown rigidbodies
@@ -1374,18 +1415,6 @@ void ProcessHavokHitJobsHook()
 				}
 				listeners[numListeners - 1] = &g_contactListener;
 			}
-		}
-	}
-
-	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		// TODO: We can actually do this per-npc now with the collision filter compare callback
-		if (!Config::options.enablePlayerBipedCollision || g_higgsDrivers.size() > 0) {
-			// When something is grabbed, disable collision with bipeds (since we're holding one)
-			g_collidePlayerWithBiped = false;
-		}
-		else if (Config::options.enablePlayerBipedCollision) {
-			// Nothing grabbed, make sure we're colliding with bipeds again
-			g_collidePlayerWithBiped = true;
 		}
 	}
 
@@ -1791,32 +1820,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	ragdoll.state = state;
 }
 
-void PrePhysicsStepHook()
-{
-	// This hook is after all ragdolls' driveToPose(), and before the hkpWorld physics step
-
-	// At this point we can apply any impulses / velocity adjustments without fear of them being overwritten
-
-	for (auto &job : g_prePhysicsStepJobs) {
-		job.get()->Run();
-	}
-	g_prePhysicsStepJobs.clear();
-
-	// With the exe patched to not enable its melee collision, we still need to disable it once (after it's created)
-	for (int i = 0; i < 2; i++) {
-		VRMeleeData *meleeData = GetVRMeleeData(i);
-		NiPointer<NiAVObject> collNode = meleeData->collisionNode;
-		if (!collNode) continue;
-		NiPointer<bhkRigidBody> rb = GetRigidBody(collNode);
-		if (!rb) continue;
-		if (!(rb->hkBody->m_collidable.getCollisionFilterInfo() >> 14 & 1)) {
-			// collision is enabled
-			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; // disable collision
-			bhkWorldObject_UpdateCollisionFilter(rb);
-		}
-	}
-}
-
 void DriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	PreDriveToPoseHook(driver, deltaTime, context, generatorOutput);
@@ -1876,8 +1879,6 @@ uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
 
 auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
-
-auto prePhysicsStepHookLoc = RelocAddr<uintptr_t>(0xDFB709);
 
 auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 
@@ -1981,67 +1982,6 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(controllerDriveToPoseHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("hkaRagdollRigidBodyController::driveToPose hook complete");
-	}
-
-	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
-
-				push(rax);
-				push(rcx);
-				push(rdx);
-				push(r8);
-				push(r9);
-				push(r10);
-				push(r11);
-				sub(rsp, 0x88); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
-				movsd(ptr[rsp + 0x20], xmm0);
-				movsd(ptr[rsp + 0x30], xmm1);
-				movsd(ptr[rsp + 0x40], xmm2);
-				movsd(ptr[rsp + 0x50], xmm3);
-				movsd(ptr[rsp + 0x60], xmm4);
-				movsd(ptr[rsp + 0x70], xmm5);
-
-				// Call our hook
-				mov(rax, (uintptr_t)PrePhysicsStepHook);
-				call(rax);
-
-				movsd(xmm0, ptr[rsp + 0x20]);
-				movsd(xmm1, ptr[rsp + 0x30]);
-				movsd(xmm2, ptr[rsp + 0x40]);
-				movsd(xmm3, ptr[rsp + 0x50]);
-				movsd(xmm4, ptr[rsp + 0x60]);
-				movsd(xmm5, ptr[rsp + 0x70]);
-				add(rsp, 0x88);
-				pop(r11);
-				pop(r10);
-				pop(r9);
-				pop(r8);
-				pop(rdx);
-				pop(rcx);
-				pop(rax);
-
-				// Original code
-				mov(rcx, r13);
-				test(r14b, r14b);
-
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
-
-				L(jumpBack);
-				dq(prePhysicsStepHookLoc.GetUIntPtr() + 6);
-			}
-		};
-
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
-
-		g_branchTrampoline.Write6Branch(prePhysicsStepHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-		_MESSAGE("Pre-physics-step hook complete");
 	}
 
 	if (Config::options.disableCullingForActiveRagdolls) {
@@ -2244,6 +2184,7 @@ extern "C" {
 					_MESSAGE("Got higgs interface!");
 					g_higgsInterface->AddGrabbedCallback(HiggsGrab);
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
+					g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
 
 					UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
 					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_CharController); // ensure collision with character controllers

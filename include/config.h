@@ -80,16 +80,17 @@ namespace Config {
 
 		float hitStabDirectionThreshold = 0.8f;
 		float hitStabSpeedThreshold = 2.f;
-		float hitStabImpulseMult = 2.5f;
+		float hitStabImpulseMult = 5.0f;
 
 		float hitPunchDirectionThreshold = 0.7f;
 		float hitPunchSpeedThreshold = 2.5f;
-		float hitPunchImpulseMult = 1.75f;
+		float hitPunchImpulseMult = 2.25f;
 
 		float hitRequiredHandSpeedRoomspace = 1.f;
 
-		float hitImpulseDecayMult1 = 0.3f;
-		float hitImpulseDecayMult2 = 0.15f;
+		float hitImpulseDecayMult1 = 0.225f;
+		float hitImpulseDecayMult2 = 0.125f;
+		float hitImpulseDecayMult3 = 0.075f;
 
 		float meleeSwingLinearVelocityThreshold = 3.f;
 		float shieldSwingLinearVelocityThreshold = 3.f;

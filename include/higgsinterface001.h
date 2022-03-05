@@ -83,6 +83,11 @@ namespace HiggsPluginAPI {
 		typedef CollisionFilterComparisonResult(*CollisionFilterComparisonCallback)(void *collisionFilter, UInt32 filterInfoA, UInt32 filterInfoB);
 		virtual void AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback callback) = 0;
 
+		// Add a callback for right before hkpWorld::stepDeltaTime is called.
+		// world is really of type bhkWorld
+		typedef void(*PrePhysicsStepCallback)(void *world);
+		virtual void AddPrePhysicsStepCallback(PrePhysicsStepCallback callback) = 0;
+
 		// Get/set the collision layer bitfield for the higgs collision layer (used for hands, weapons, and held objects).
 		virtual UInt64 GetHiggsLayerBitfield() = 0;
 		virtual void SetHiggsLayerBitfield(UInt64 bitfield) = 0;
