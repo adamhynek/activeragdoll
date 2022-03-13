@@ -48,13 +48,13 @@ namespace HiggsPluginAPI {
 		virtual bool IsHandInGrabbableState(bool isLeft) = 0;
 
 		// Disable and enable grabbing, selecting, pulling, etc. for each hand. Every disable should be accompanied by a later enable.
-		// Multiple mods can disable at once, and the hand is only re-enabled once all mods have have called enable.
+		// Multiple mods can disable at once, and the hand is only re-enabled once all mods have called enable.
 		virtual void DisableHand(bool isLeft) = 0;
 		virtual void EnableHand(bool isLeft) = 0;
 		virtual bool IsDisabled(bool isLeft) = 0;
 
 		// Disable and enable collision for the weapon held in each hand.
-		// Multiple mods can disable at once, and the collision is only re-enabled once all mods have have called enable.
+		// Multiple mods can disable at once, and the collision is only re-enabled once all mods have called enable.
 		virtual void DisableWeaponCollision(bool isLeft) = 0;
 		virtual void EnableWeaponCollision(bool isLeft) = 0;
 		virtual bool IsWeaponCollisionDisabled(bool isLeft) = 0;

@@ -178,6 +178,13 @@ struct hkbBehaviorGraph : hkbGenerator { /* TODO */ };
 
 struct bhkCharacterController : NiRefObject
 {
+	struct UpdateData
+	{
+		float deltaTime; // 00
+		NiPoint3 rot; // 04 - euler
+		NiPoint3 targetPos; // 10
+	};
+
 	struct CollisionEvent
 	{
 		NiPointer<bhkRigidBody> body; // 00
@@ -200,16 +207,16 @@ struct bhkCharacterController : NiRefObject
 	hkVector4                                        fakeSupportStart;           // 0F0
 	hkVector4                                        up;                         // 100
 	hkVector4                                        supportNorm;                // 110
-	UInt8                                          collisionBound[0x150 - 0x120];             // 120
-	UInt8                                          bumperCollisionBound[0x180 - 0x150];       // 150
+	UInt8                                            collisionBound[0x150 - 0x120];             // 120
+	UInt8                                            bumperCollisionBound[0x180 - 0x150];       // 150
 	std::uint64_t                                    unk180;                     // 180
 	std::uint64_t                                    unk188;                     // 188
-	struct bhkICharOrientationController*                   orientationCtrl;            // 190
+	struct bhkICharOrientationController*            orientationCtrl;            // 190
 	std::uint64_t                                    pad198;                     // 198
 	hkpSurfaceInfo                                   surfaceInfo;                // 1A0
 	hkpCharacterContext                              context;                    // 1E0
-	UInt32 flags;                      // 218
-	hkpCharacterStateType                            wantState;                  // 218
+	UInt32 flags;                                                                // 218
+	hkpCharacterStateType                            wantState;                  // 21C
 	float                                            velocityTime;               // 220
 	float                                            rotMod;                     // 224
 	float                                            rotModTime;                 // 228
@@ -242,7 +249,7 @@ struct bhkCharacterController : NiRefObject
 	std::uint32_t                                    pad2BC;                     // 2BC
 	hkRefPtr<hkpRigidBody>                           bumpedBody;                 // 2C0
 	hkRefPtr<hkpRigidBody>                           bumpedCharCollisionObject;  // 2C8
-	UInt8                     unk2D0[0x300 - 0x2D0];                     // 2D0 - BSTHashMap<bhkRigidBody, CollisionEvent>
+	UInt8                                            unk2D0[0x300 - 0x2D0];      // 2D0 - BSTHashMap<bhkRigidBody, CollisionEvent>
 	std::uint64_t                                    unk300;                     // 300
 	std::uint64_t                                    unk308;                     // 308
 	std::uint64_t                                    unk310;                     // 310
@@ -297,6 +304,21 @@ static_assert(offsetof(bhkCharRigidBodyController, characterRigidBody) == 0x340)
 
 struct BShkbAnimationGraph
 {
+	virtual ~BShkbAnimationGraph(); // 00
+	virtual bool HasRagdoll(); // 01
+	virtual bool AddRagdollToWorld(); // 02
+	virtual bool RemoveRagdollFromWorld(); // 03
+	virtual void SetWorld(bhkWorld *world); // 04
+	virtual void ResetRagdoll(); // 05
+	virtual void Unk_06(); // 06
+	virtual void SetRagdollConstraintsFromBhkConstraints(); // 07
+	virtual void SetMotionType(UInt32 motionType); // 08
+	virtual void Unk_09(); // 09
+	virtual void DisableOrEnableSyncOnUpdate(bool disable); // 0A
+	virtual void Unk_0B(); // 0B
+	virtual void DisableOrEnableConstraints(bool disable); // 0C
+	virtual void Unk_0D(); // 0D
+
 	struct UpdateData
 	{
 		float deltaTime; // 00
@@ -326,7 +348,6 @@ struct BShkbAnimationGraph
 		UInt32 unk0C;
 	};
 
-	void *vtbl; // 00
 	UInt8 unk08[0xC0 - 0x08];
 	hkbCharacter character; // C0
 	tArray<BoneNodeEntry> boneNodes; // 160 - the number of these is the same as the number of anim bones

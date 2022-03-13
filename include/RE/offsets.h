@@ -85,6 +85,9 @@ extern RelocAddr<void *> hkCharControllerShape_vtbl;
 
 extern RelocPtr<FOCollisionListener *> g_foCollisionListener;
 
+extern RelocPtr<AIProcessManager *> g_aiProcessManager;
+extern RelocPtr<float> g_bAlwaysDriveRagdoll;
+
 
 // Havok / Bethesda havok wrappers
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
@@ -223,10 +226,10 @@ extern RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeR
 typedef bhkWorld * (*_GetHavokWorldFromCell)(TESObjectCELL *cell);
 extern RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell;
 
-typedef NiAVObject * (*_GetNodeFromCollidable)(hkpCollidable * a_collidable);
+typedef NiAVObject * (*_GetNodeFromCollidable)(const hkpCollidable * a_collidable);
 extern RelocAddr<_GetNodeFromCollidable> GetNodeFromCollidable;
 
-typedef TESObjectREFR * (*_GetRefFromCollidable)(hkpCollidable * a_collidable);
+typedef TESObjectREFR * (*_GetRefFromCollidable)(const hkpCollidable * a_collidable);
 extern RelocAddr<_GetRefFromCollidable> GetRefFromCollidable;
 
 
@@ -357,10 +360,6 @@ typedef void(*_RefreshActivateButtonArt)(void *wsActivateRollover);
 extern RelocAddr<_RefreshActivateButtonArt> RefreshActivateButtonArt;
 
 
-extern RelocPtr<AIProcessManager *> g_aiProcessManager;
-extern RelocPtr<float> g_bAlwaysDriveRagdoll;
-
-
 typedef bool(*_bhkRefObject_ctor)(bhkRefObject *_this);
 extern RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor;
 
@@ -394,8 +393,8 @@ extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMall
 typedef void(*_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints;
 
-typedef hkaRagdollInstance * (*_hkbRagdollDriver_getRagdollInterface)(hkbRagdollDriver *_this);
-extern RelocAddr<_hkbRagdollDriver_getRagdollInterface> hkbRagdollDriver_getRagdollInterface;
+typedef hkaRagdollInstance * (*_hkbRagdollDriver_getRagdoll)(hkbRagdollDriver *_this);
+extern RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll;
 
 typedef bhkConstraint * (*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
 extern RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint;
@@ -507,6 +506,12 @@ extern RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild;
 
 typedef void(*_hkpListShape_enableChild)(hkpListShape *_this, hkpShapeKey index);
 extern RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild;
+
+typedef void(*_hkpCharacterProxy_addCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener* listener);
+extern RelocAddr<_hkpCharacterProxy_addCharacterProxyListener> hkpCharacterProxy_addCharacterProxyListener;
+
+typedef void(*_hkpCharacterProxy_removeCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener* listener);
+extern RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_removeCharacterProxyListener;
 
 typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
 extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;

@@ -20,6 +20,8 @@ namespace Config {
 
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;
+		double contactCooldownTimeStoppedColliding = 0.1;
+		double contactCooldownTimeFallback = 0.5;
 		double physicsHitRecoveryTime = 0.01;
 
 		double thrownObjectLingerTime = 5.0;
@@ -31,8 +33,8 @@ namespace Config {
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
-		float activeRagdollStartDistance = 10.f;
-		float activeRagdollEndDistance = 10.f;
+		float activeRagdollStartDistance = 15.f;
+		float activeRagdollEndDistance = 15.f;
 
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;

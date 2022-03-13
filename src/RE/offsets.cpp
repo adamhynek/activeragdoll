@@ -68,6 +68,9 @@ RelocPtr<FOCollisionListener *> g_foCollisionListener(0x1F850F0);
 
 RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 
+RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
+RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
+
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
 RelocPtr<UInt64> unk_141E703B8(0x1E703B8);
@@ -177,9 +180,6 @@ RelocAddr<_CleanupCloneList> CleanupCloneList2(0x1C8BE0);
 // 1st arg: ptr to BipedAnim. 2nd arg: ptr to NiNode
 //CreateArmorNode(0x1DB680);
 
-RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
-RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
-
 RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor(0xE306A0);
 RelocAddr<_hkMalleableConstraintCinfo_Func4> hkMalleableConstraintCinfo_Func4(0xE3DD20);
 RelocAddr<_hkRagdollConstraintCinfo_Func4> hkRagdollConstraintCinfo_Func4(0xE64960);
@@ -191,7 +191,7 @@ RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphManager_Ad
 RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGraphManager_RemoveRagdollFromWorld(0x61A1E0);
 RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableConstraints(0xE09CA0);
 RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(0x61A4E0);
-RelocAddr<_hkbRagdollDriver_getRagdollInterface> hkbRagdollDriver_getRagdollInterface(0xA25860);
+RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll(0xA25860);
 RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint(0xE63A20);
 RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0xAC06A0);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
@@ -228,6 +228,8 @@ RelocAddr<_hkpConvexVerticesShape_getOriginalVertices> hkpConvexVerticesShape_ge
 RelocAddr<_hkpConvexVerticesShape_ctor> hkpConvexVerticesShape_ctor(0xE9F890);
 RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild(0xA9C3F0);
 RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild(0xA9C420);
+RelocAddr<_hkpCharacterProxy_addCharacterProxyListener> hkpCharacterProxy_addCharacterProxyListener(0xAFA820);
+RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_removeCharacterProxyListener(0xAFA880);
 RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_IsGhost> Actor_IsGhost(0x5DAAE0);
 RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);
