@@ -20,8 +20,6 @@ namespace Config {
 
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;
-		double contactCooldownTimeStoppedColliding = 0.1;
-		double contactCooldownTimeFallback = 0.5;
 		double physicsHitRecoveryTime = 0.01;
 
 		double thrownObjectLingerTime = 5.0;

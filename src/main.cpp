@@ -514,7 +514,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		double stoppedCollidingTime = 0.0;
 	};
 	std::unordered_map<TESObjectREFR *, CooldownData> hitCooldownTargets[2]{}; // each hand has its own cooldown
-	std::unordered_map<TESObjectREFR *, CooldownData> contactCooldownTargets{};
 	std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
 	std::vector<CollisionEvent> events{};
 
@@ -826,10 +825,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
 		}
-
-		if (contactCooldownTargets.count(hitRefr)) {
-			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-		}
 	}
 	
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
@@ -921,10 +916,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					// refr is still collided with, so refresh its hit cooldown
 					hitCooldownTargets[isLeft][hitRefr].stoppedCollidingTime = now;
 				}
-				if (contactCooldownTargets.count(hitRefr)) {
-					// refr is still collided with, so refresh its cooldown
-					contactCooldownTargets[hitRefr].stoppedCollidingTime = now;
-				}
 			}
 		}
 
@@ -938,16 +929,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				else
 					++it;
 			}
-		}
-
-		// Clear out old contact cooldown targets
-		for (auto it = contactCooldownTargets.begin(); it != contactCooldownTargets.end();) {
-			auto[target, cooldown] = *it;
-			if ((now - cooldown.stoppedCollidingTime) * *g_globalTimeMultiplier > Config::options.contactCooldownTimeStoppedColliding ||
-				(now - cooldown.startTime) * *g_globalTimeMultiplier > Config::options.contactCooldownTimeFallback)
-				it = contactCooldownTargets.erase(it);
-			else
-				++it;
 		}
 
 		// Clear out old physics hit cooldown targets
@@ -964,32 +945,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 };
 ContactListener g_contactListener{};
 
-struct PlayerCharacterProxyListener : hkpCharacterProxyListener
-{
-	// Called when the character interacts with another (non fixed or keyframed) rigid body.
-	virtual void objectInteractionCallback(hkpCharacterProxy* proxy, const hkpCharacterObjectInteractionEvent& input, hkpCharacterObjectInteractionResult& output)
-	{
-		if (hkpRigidBody *hitBody = input.m_body) {
-			if (TESObjectREFR *refr = GetRefFromCollidable(hitBody->getCollidable())) {
-				// If the weapon is currently colliding with this refr, disable weapon collision with this refr until it stops colliding with it
-				if (g_contactListener.collidedRigidbodies.count(hitBody)) {
-					double now = GetTime();
-					//g_contactListener.contactCooldownTargets[refr] = { now, now };
-				}
-			}
-		}
-
-		_MESSAGE("Proxy %p interaction", proxy);
-	}
-
-	virtual void characterInteractionCallback(hkpCharacterProxy* proxy, hkpCharacterProxy* otherProxy, const hkContactPoint& contact)
-	{
-		_MESSAGE("Proxy %p character interaction", proxy);
-	}
-
-	NiPointer<bhkCharacterProxy> proxy = nullptr;
-};
-PlayerCharacterProxyListener g_characterProxyListener{};
+bhkCharacterProxy *g_playerCharacterProxy = nullptr;
 
 
 using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
@@ -1351,18 +1307,7 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		if (&controller->proxy != g_characterProxyListener.proxy) {
-			if (g_characterProxyListener.proxy) {
-				// the playercharacter's proxy doesn't seem to ever actually change, but just in case...
-				if (hkpCharacterProxy *proxy = g_characterProxyListener.proxy->characterProxy) {
-					hkpCharacterProxy_removeCharacterProxyListener(proxy, &g_characterProxyListener);
-				}
-			}
-
-			if (hkpCharacterProxy *proxy = controller->proxy.characterProxy) {
-				hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
-			}
-
+		if (&controller->proxy != g_playerCharacterProxy) {
 			hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
 			if (Config::options.resizePlayerCharController) {
@@ -1437,7 +1382,7 @@ void ProcessHavokHitJobsHook()
 			}
 
 			if (Config::options.resizePlayerCapsule) {
-				// TODO: Am I accidentally modifying every npc's capsule too?
+				// TODO: Am I accidentally modifying every npc's capsule too? I don't think so.
 				// Shrink capsule shape too. It's active when weapons are unsheathed.
 				float radius = Config::options.playerCapsuleRadius;
 				hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
@@ -1460,7 +1405,7 @@ void ProcessHavokHitJobsHook()
 				capsule->setVertex(1, NiPointToHkVector(vert1));
 			}
 
-			g_characterProxyListener.proxy = &controller->proxy;
+			g_playerCharacterProxy = &controller->proxy;
 		}
 	}
 
