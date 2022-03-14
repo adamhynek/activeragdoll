@@ -435,17 +435,19 @@ ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<UInt16> g_hittableCharControllerGroups{};
 
-std::unordered_set<hkbRagdollDriver *> g_higgsDrivers{};
 std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
-bhkRigidBody * g_rightHand{};
-bhkRigidBody * g_leftHand{};
-bhkRigidBody * g_rightWeapon{};
-bhkRigidBody * g_leftWeapon{};
-bhkRigidBody * g_rightHeldObject{};
-bhkRigidBody * g_leftHeldObject{};
+bhkRigidBody * g_rightHand = nullptr;
+bhkRigidBody * g_leftHand = nullptr;
+bhkRigidBody * g_rightWeapon = nullptr;
+bhkRigidBody * g_leftWeapon = nullptr;
+bhkRigidBody * g_rightHeldObject = nullptr;
+bhkRigidBody * g_leftHeldObject = nullptr;
+TESObjectREFR * g_rightHeldRefr = nullptr;
+TESObjectREFR * g_leftHeldRefr = nullptr;
+UInt16 g_rightHeldCollisionGroup;
+UInt16 g_leftHeldCollisionGroup;
 UInt32 g_higgsCollisionLayer = 56;
 
-bool g_collidePlayerWithBiped = true;
 UInt16 g_playerCollisionGroup = 0;
 
 inline bool IsLeftRigidBody(hkpRigidBody *rigidBody)
@@ -885,18 +887,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
-		if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-			// TODO: We can actually do this per-npc now with the collision filter compare callback
-			if (!Config::options.enablePlayerBipedCollision || g_higgsDrivers.size() > 0) {
-				// When something is grabbed, disable collision with bipeds (since we're holding one)
-				g_collidePlayerWithBiped = false;
-			}
-			else if (Config::options.enablePlayerBipedCollision) {
-				// Nothing grabbed, make sure we're colliding with bipeds again
-				g_collidePlayerWithBiped = true;
-			}
-		}
-
 		double now = GetTime();
 
 		// Now fill in the currently collided-with actors based on active collisions
@@ -1003,11 +993,14 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 
 	if (otherGroup != g_playerCollisionGroup) {
 		if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
-			if (g_collidePlayerWithBiped) {
-				return CollisionFilterComparisonResult::Collide;
+			// Collide with the biped unless we want to explicitly ignore them
+			if (!Config::options.enablePlayerBipedCollision ||
+				(g_rightHeldObject && otherGroup == g_rightHeldCollisionGroup) ||
+				(g_leftHeldObject && otherGroup == g_leftHeldCollisionGroup)) {
+				return CollisionFilterComparisonResult::Ignore;
 			}
 			else {
-				return CollisionFilterComparisonResult::Ignore;
+				return CollisionFilterComparisonResult::Collide;
 			}
 		}
 	}
@@ -1272,7 +1265,6 @@ void ProcessHavokHitJobsHook()
 			g_activeActors.clear();
 			g_activeRagdolls.clear();
 			g_hittableCharControllerGroups.clear();
-			g_higgsDrivers.clear();
 			g_higgsLingeringRigidBodies.clear();
 			g_contactListener = ContactListener{};
 		}
@@ -1435,9 +1427,9 @@ void ProcessHavokHitJobsHook()
 
 		g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
 		g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
-		if (!g_rightHeldObject && !g_leftHeldObject) {
-			g_higgsDrivers.clear();
-		}
+
+		g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
+		g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
 
 		double now = GetTime();
 		if (g_rightHeldObject) {
@@ -1484,6 +1476,15 @@ void ProcessHavokHitJobsHook()
 
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
+
+			// When an npc is grabbed, disable collision with them
+			if (actor == g_rightHeldRefr) {
+				g_rightHeldCollisionGroup = collisionGroup;
+			}
+			else if (actor == g_leftHeldRefr) {
+				g_leftHeldCollisionGroup = collisionGroup;
+			}
+
 			bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
 
 			bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
@@ -1731,7 +1732,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 						const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 
 						hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this _is_ the 'root' collision node...
+						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this is the root collision node so there shouldn't be much of a hierarchy here
 						hkQsTransform poseT;
 						poseT.setMul(worldFromModel, poseData[boneIndex]);
 							
@@ -2127,16 +2128,6 @@ bool TryHook()
 	return true;
 }
 
-void HiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
-{
-	Actor *actor = DYNAMIC_CAST(grabbedRefr, TESObjectREFR, Actor);
-	if (actor) {
-		ForEachRagdollDriver(actor, [](hkbRagdollDriver *driver) {
-			g_higgsDrivers.insert(driver);
-		});
-	}
-}
-
 bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRenderPoseArrayCount, vr_src::TrackedDevicePose_t* pGamePoseArray, uint32_t unGamePoseArrayCount)
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -2244,7 +2235,6 @@ extern "C" {
 				HiggsPluginAPI::GetHiggsInterface001(g_pluginHandle, g_messaging);
 				if (g_higgsInterface) {
 					_MESSAGE("Got higgs interface!");
-					g_higgsInterface->AddGrabbedCallback(HiggsGrab);
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
 					g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
 
