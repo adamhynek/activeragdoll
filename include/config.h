@@ -32,7 +32,7 @@ namespace Config {
 		float rootMotionVelocityMultiplier = 0.03f;
 
 		float activeRagdollStartDistance = 15.f;
-		float activeRagdollEndDistance = 15.f;
+		float activeRagdollEndDistance = 20.f;
 
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;
@@ -98,8 +98,9 @@ namespace Config {
 		bool resizePlayerCharController = true;
 		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;
 		bool resizePlayerCapsule = true;
+		bool centerPlayerCapsule = true;
 		float playerCharControllerRadius = 0.15f;
-		float playerCapsuleRadius = 0.1f;
+		float playerCapsuleRadius = 0.15f;
 	};
 	extern Options options; // global object containing options
 

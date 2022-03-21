@@ -453,29 +453,36 @@ UInt16 g_playerCollisionGroup = 0;
 inline bool IsLeftRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
+	if (!wrapper) return false;
 	return wrapper == g_leftHand || wrapper == g_leftWeapon || wrapper == g_leftHeldObject;
 }
 
 inline bool IsWeaponRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
+	if (!wrapper) return false;
 	return wrapper == g_leftWeapon || wrapper == g_rightWeapon;
 }
 
 inline bool IsHandRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
+	if (!wrapper) return false;
 	return wrapper == g_leftHand || wrapper == g_rightHand;
 }
 
 inline bool IsHeldRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
+	if (!wrapper) return false;
 	return wrapper == g_leftHeldObject || wrapper == g_rightHeldObject;
 }
 
 inline bool IsHiggsRigidBody(hkpRigidBody *rigidBody)
 {
+	if ((rigidBody->getCollidable()->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f) != g_higgsCollisionLayer) {
+		return false;
+	}
 	return IsHandRigidBody(rigidBody) || IsWeaponRigidBody(rigidBody) || IsHeldRigidBody(rigidBody);
 }
 
@@ -666,7 +673,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	}
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
-		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED) return;
+		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED ||
+			!evnt.m_contactPointProperties->isPotential()) {
+			return;
+		}
 
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
@@ -724,10 +734,22 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
 		bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
-		if (!hittingRigidBodyWrapper) return;
+		if (!hittingRigidBodyWrapper) {
+			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
+				// It's not a hit, so disable contact for keyframed/fixed objects in this case
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			}
+			return;
+		}
 
 		NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-		if (!hitRefr) return;
+		if (!hitRefr) {
+			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
+				// It's not a hit, so disable contact for keyframed/fixed objects in this case
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			}
+			return;
+		}
 
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 
@@ -1248,8 +1270,7 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (world != g_contactListener.world) {
-		bhkWorld *oldWorld = g_contactListener.world;
-		if (oldWorld) {
+		if (NiPointer<bhkWorld> oldWorld = g_contactListener.world) {
 			_MESSAGE("Removing listener from old havok world");
 			{
 				BSWriteLocker lock(&oldWorld->worldLock);
@@ -1383,6 +1404,13 @@ void ProcessHavokHitJobsHook()
 
 				NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
 				NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
+
+				if (Config::options.centerPlayerCapsule) {
+					vert0.x = 0.f;
+					vert0.y = 0.f;
+					vert1.x = 0.f;
+					vert1.y = 0.f;
+				}
 
 				if (vert0.z < vert1.z) {
 					// vert0 is the lower vertex
@@ -1696,7 +1724,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				hkQsTransform &transform = poseWorld[i];
 
 				savedTransforms.push_back(rb->getTransform());
-				rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
+				rb->m_motion.getMotionState()->m_transform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation) * *g_havokWorldScale);
 				hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
 			}
 
