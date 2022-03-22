@@ -71,6 +71,8 @@ RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
 RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
 
+RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
+
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
 RelocPtr<UInt64> unk_141E703B8(0x1E703B8);

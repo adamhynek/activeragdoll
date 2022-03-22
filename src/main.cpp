@@ -957,7 +957,41 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 };
 ContactListener g_contactListener{};
 
-bhkCharacterProxy *g_playerCharacterProxy = nullptr;
+struct PlayerCharacterProxyListener : hkpCharacterProxyListener
+{
+	// Called when the character interacts with another (non fixed or keyframed) rigid body.
+	virtual void objectInteractionCallback(hkpCharacterProxy* proxy, const hkpCharacterObjectInteractionEvent& input, hkpCharacterObjectInteractionResult& output)
+	{
+		hkpRigidBody *hitBody = input.m_body;
+		if (!hitBody) return;
+
+		const hkpCollidable *collidable = hitBody->getCollidable();
+		UInt32 layer = collidable->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f;
+		if (layer != BGSCollisionLayer::kCollisionLayer_Biped) return;
+
+		NiPointer<TESObjectREFR> refr = GetRefFromCollidable(collidable);
+		if (!refr) return;
+
+		if (refr->formType != kFormType_Character) return;
+
+		Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+		if (!actor) return;
+
+		bhkCharacterController *controller = GetCharacterController(actor);
+		if (!controller) return;
+
+		CharacterCollisionHandler *collisionHandler = *g_characterCollisionHandler;
+		if (!collisionHandler) return;
+
+		bhkCharacterController *playerController = GetCharacterController(*g_thePlayer);
+		if (!playerController) return;
+
+		collisionHandler->HandleCharacterCollision(playerController, controller);
+	}
+
+	NiPointer<bhkCharacterProxy> proxy = nullptr;
+};
+PlayerCharacterProxyListener g_characterProxyListener{};
 
 
 using CollisionFilterComparisonResult = HiggsPluginAPI::IHiggsInterface001::CollisionFilterComparisonResult;
@@ -1224,6 +1258,8 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	}
 
 	if (hasRagdollInterface) {
+		// TODO: We should not remove the ragdoll from the world if it had the ragdoll added already when we added it (e.g. race allowragdollcollision flag).
+		//       In that case we should also revert the motion type to keyframed since that's what it usually is in this scenario.
 		bool x = false;
 		BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
 
@@ -1320,7 +1356,18 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		if (&controller->proxy != g_playerCharacterProxy) {
+		if (&controller->proxy != g_characterProxyListener.proxy) {
+			if (g_characterProxyListener.proxy) {
+				// the playercharacter's proxy doesn't seem to ever actually change, but just in case...
+				if (hkpCharacterProxy *proxy = g_characterProxyListener.proxy->characterProxy) {
+					hkpCharacterProxy_removeCharacterProxyListener(proxy, &g_characterProxyListener);
+				}
+			}
+
+			if (hkpCharacterProxy *proxy = controller->proxy.characterProxy) {
+				hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
+			}
+
 			hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
 			if (Config::options.resizePlayerCharController) {
@@ -1425,7 +1472,7 @@ void ProcessHavokHitJobsHook()
 				capsule->setVertex(1, NiPointToHkVector(vert1));
 			}
 
-			g_playerCharacterProxy = &controller->proxy;
+			g_characterProxyListener.proxy = &controller->proxy;
 		}
 	}
 

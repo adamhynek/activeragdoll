@@ -328,6 +328,12 @@ struct FOCollisionListener : hkpContactListener
 	tArray<CollisionDamageEvent> collisionEvents; // 10
 };
 
+struct CharacterCollisionHandler
+{
+	virtual ~CharacterCollisionHandler(); // 00
+	virtual void HandleCharacterCollision(struct bhkCharacterController *controllerA, struct bhkCharacterController *controllerB); // 01
+};
+
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);

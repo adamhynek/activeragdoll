@@ -528,6 +528,7 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
 }
 
 
+NiPointer<bhkCharacterController> GetCharacterController(Actor *actor);
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
 BShkbAnimationGraph * GetAnimationGraph(hkbCharacter *character);

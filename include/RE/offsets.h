@@ -88,6 +88,8 @@ extern RelocPtr<FOCollisionListener *> g_foCollisionListener;
 extern RelocPtr<AIProcessManager *> g_aiProcessManager;
 extern RelocPtr<float> g_bAlwaysDriveRagdoll;
 
+extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
+
 
 // Havok / Bethesda havok wrappers
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);

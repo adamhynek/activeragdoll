@@ -149,7 +149,7 @@ bhkRagdollConstraint * ConvertToRagdollConstraint(bhkConstraint *constraint)
 }
 
 
-NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor)
+NiPointer<bhkCharacterController> GetCharacterController(Actor *actor)
 {
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return nullptr;
@@ -157,7 +157,12 @@ NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor)
 	MiddleProcess *middleProcess = process->middleProcess;
 	if (!middleProcess) return nullptr;
 
-	NiPointer<bhkCharacterController> controller = *((NiPointer<bhkCharacterController> *)&middleProcess->unk250);
+	return *((NiPointer<bhkCharacterController> *)&middleProcess->unk250);
+}
+
+NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor)
+{
+	NiPointer<bhkCharacterController> controller = GetCharacterController(actor);
 	if (!controller) return nullptr;
 
 	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharRigidBodyController);
@@ -165,13 +170,7 @@ NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor)
 
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor)
 {
-	ActorProcessManager *process = actor->processManager;
-	if (!process) return nullptr;
-
-	MiddleProcess *middleProcess = process->middleProcess;
-	if (!middleProcess) return nullptr;
-
-	NiPointer<bhkCharacterController> controller = *((NiPointer<bhkCharacterController> *)&middleProcess->unk250);
+	NiPointer<bhkCharacterController> controller = GetCharacterController(actor);
 	if (!controller) return nullptr;
 
 	return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharProxyController);

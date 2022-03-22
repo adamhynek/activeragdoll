@@ -18,6 +18,16 @@
 #include "havok_ref_ptr.h"
 
 
+enum class HavokProperty : hkUint32
+{
+	Node = 1, // NiAVObject
+	CollisionObject = 2, // bhkCollisionObject
+	Character = 1000, // Character
+	CharacterController = 1002, // bhkCharacterController
+	TelekinesisDamageMult = 314159,
+	TelekinesisMass = 314160,
+};
+
 struct bhkCollisionFilter : hkpCollisionFilter
 {
 	UInt32 unk48;
