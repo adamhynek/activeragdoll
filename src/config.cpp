@@ -211,7 +211,7 @@ namespace Config {
 		if (s_configPath.empty()) {
 			std::string	runtimePath = GetRuntimeDirectory();
 			if (!runtimePath.empty()) {
-				s_configPath = runtimePath + "Data\\SKSE\\Plugins\\melee_vr.ini";
+				s_configPath = runtimePath + "Data\\SKSE\\Plugins\\activeragdoll.ini";
 
 				_MESSAGE("config path = %s", s_configPath.c_str());
 			}

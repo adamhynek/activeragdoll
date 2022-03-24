@@ -1,4 +1,4 @@
-LIBRARY	"MeleeVR"
+LIBRARY	"activeragdoll"
 EXPORTS
 SKSEPlugin_Query
 SKSEPlugin_Load

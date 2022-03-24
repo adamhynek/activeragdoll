@@ -2336,15 +2336,15 @@ extern "C" {
 
 	bool SKSEPlugin_Query(const SKSEInterface* skse, PluginInfo* info)
 	{
-		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\Skyrim VR\\SKSE\\MeleeVR.log");
+		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\Skyrim VR\\SKSE\\activeragdoll.log");
 		gLog.SetPrintLevel(IDebugLog::kLevel_DebugMessage);
 		gLog.SetLogLevel(IDebugLog::kLevel_DebugMessage);
 
-		_MESSAGE("MeleeVR v%s", DWBVR_VERSION_VERSTRING);
+		_MESSAGE("activeragdoll v%s", ACTIVERAGDOLL_VERSION_VERSTRING);
 
 		info->infoVersion = PluginInfo::kInfoVersion;
-		info->name = "MeleeVR";
-		info->version = DWBVR_VERSION_MAJOR;
+		info->name = "activeragdoll";
+		info->version = ACTIVERAGDOLL_VERSION_MAJOR;
 
 		g_pluginHandle = skse->GetPluginHandle();
 
@@ -2362,7 +2362,7 @@ extern "C" {
 
 	bool SKSEPlugin_Load(const SKSEInterface * skse)
 	{	// Called by SKSE to load this plugin
-		_MESSAGE("MeleeVR loaded");
+		_MESSAGE("activeragdoll loaded");
 
 		if (Config::ReadConfigOptions()) {
 			_MESSAGE("Successfully read config parameters");
