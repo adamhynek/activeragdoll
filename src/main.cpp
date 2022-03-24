@@ -2286,6 +2286,28 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 	return true;
 }
 
+void ShowErrorBox(const char *errorString)
+{
+	int msgboxID = MessageBox(
+		NULL,
+		(LPCTSTR)errorString,
+		(LPCTSTR)"ActiveRagdoll Fatal Error",
+		MB_ICONERROR | MB_OK | MB_TASKMODAL
+	);
+}
+
+void ShowErrorBoxAndLog(const char *errorString)
+{
+	_ERROR(errorString);
+	ShowErrorBox(errorString);
+}
+
+void ShowErrorBoxAndTerminate(const char *errorString)
+{
+	ShowErrorBoxAndLog(errorString);
+	*((int *)0) = 0xDEADBEEF; // crash
+}
+
 extern "C" {
 	void OnDataLoaded()
 	{
@@ -2316,6 +2338,12 @@ extern "C" {
 				HiggsPluginAPI::GetHiggsInterface001(g_pluginHandle, g_messaging);
 				if (g_higgsInterface) {
 					_MESSAGE("Got higgs interface!");
+
+					unsigned int higgsVersion = g_higgsInterface->GetBuildNumber();
+					if (higgsVersion < 1040601) {
+						ShowErrorBoxAndTerminate("[CRITICAL] HIGGS is present but is a lower version than is required by this mod. Get the latest version of HIGGS and try again.");
+					}
+
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
 					g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
 
@@ -2328,7 +2356,7 @@ extern "C" {
 					g_higgsInterface->ForceWeaponCollisionEnabled(true);
 				}
 				else {
-					_MESSAGE("Did NOT get higgs interface.");
+					ShowErrorBoxAndTerminate("[CRITICAL] Did NOT get higgs interface. HIGGS is required for this mod.");
 				}
 			}
 		}
