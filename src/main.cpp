@@ -1317,6 +1317,17 @@ void ProcessHavokHitJobsHook()
 				}
 				hkpWorld_removeContactListener(oldWorld->world, &g_contactListener);
 				hkpWorld_removeWorldPostSimulationListener(world->world, &g_contactListener);
+
+				if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+					if (&controller->proxy != g_characterProxyListener.proxy) {
+						if (g_characterProxyListener.proxy) {
+							if (hkpCharacterProxy *proxy = g_characterProxyListener.proxy->characterProxy) {
+								hkpCharacterProxy_removeCharacterProxyListener(proxy, &g_characterProxyListener);
+							}
+							g_characterProxyListener.proxy = nullptr;
+						}
+					}
+				}
 			}
 
 			g_activeActors.clear();
@@ -1352,128 +1363,123 @@ void ProcessHavokHitJobsHook()
 			ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_Biped);
 		}
 
-		g_contactListener.world = world;
-	}
+		if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+			if (&controller->proxy != g_characterProxyListener.proxy) {
+				BSWriteLocker lock(&world->worldLock);
 
-	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-		if (&controller->proxy != g_characterProxyListener.proxy) {
-			if (g_characterProxyListener.proxy) {
-				// the playercharacter's proxy doesn't seem to ever actually change, but just in case...
-				if (hkpCharacterProxy *proxy = g_characterProxyListener.proxy->characterProxy) {
-					hkpCharacterProxy_removeCharacterProxyListener(proxy, &g_characterProxyListener);
+				if (hkpCharacterProxy *proxy = controller->proxy.characterProxy) {
+					hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
 				}
-			}
 
-			if (hkpCharacterProxy *proxy = controller->proxy.characterProxy) {
-				hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
-			}
+				hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
 
-			hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
+				if (Config::options.resizePlayerCharController) {
+					// Shrink convex charcontroller shape
+					g_scratchHkArray.clear();
+					hkArray<hkVector4> &verts = g_scratchHkArray;
 
-			if (Config::options.resizePlayerCharController) {
-				// Shrink convex charcontroller shape
-				g_scratchHkArray.clear();
-				hkArray<hkVector4> &verts = g_scratchHkArray;
+					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
+					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
-				hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
-				hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
+					// The charcontroller shape is composed of two vertically concentric "rings" with a single point above and below the top/bottom ring.
+					// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
 
-				// The charcontroller shape is composed of two vertically concentric "rings" with a single point above and below the top/bottom ring.
-				// verts 0,2,6,10,12,14,15,17 are bottom ring, 8-9 are bottom/top points, 1,3,4,5,7,11,13,16 are top ring
+					if (Config::options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope) {
+						// Move the bottom ring downwards so that the the slope between the bottom ring and the bottom point remains the same with the new ring radius.
+						// This is to try and maintain the same stair-climbing behavior, though it could be an issue for very high steps since we move the bottom ring down.
 
-				if (Config::options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope) {
-					// Move the bottom ring downwards so that the the slope between the bottom ring and the bottom point remains the same with the new ring radius.
-					// This is to try and maintain the same stair-climbing behavior, though it could be an issue for very high steps since we move the bottom ring down.
+						NiPoint3 bottomVert = HkVectorToNiPoint(verts[8]); // the single bottom point of the shape
+						NiPoint3 bottomRingVert = HkVectorToNiPoint(verts[2]); // one of the points on the bottom ring of the shape
 
-					NiPoint3 bottomVert = HkVectorToNiPoint(verts[8]); // the single bottom point of the shape
-					NiPoint3 bottomRingVert = HkVectorToNiPoint(verts[2]); // one of the points on the bottom ring of the shape
+						float zOld = bottomRingVert.z - bottomVert.z;
+						float rOld = VectorLength({ bottomRingVert.x, bottomRingVert.y });
 
-					float zOld = bottomRingVert.z - bottomVert.z;
-					float rOld = VectorLength({ bottomRingVert.x, bottomRingVert.y });
+						float rNew = Config::options.playerCharControllerRadius;
+						float zNew = rNew * (zOld / rOld);
+						float newBottomRingHeight = bottomVert.z + zNew;
 
-					float rNew = Config::options.playerCharControllerRadius;
-					float zNew = rNew * (zOld / rOld);
-					float newBottomRingHeight = bottomVert.z + zNew;
+						for (int i : {
+							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+						}) {
+							NiPoint3 vert = HkVectorToNiPoint(verts[i]);
+							vert.z = newBottomRingHeight;
+							verts[i] = NiPointToHkVector(vert);
+						}
+					}
 
+					// Shrink the two rings of the charcontroller shape by moving the rings' vertices inwards
 					for (int i : {
-						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+						1, 3, 4, 5, 7, 11, 13, 16, // top ring
+							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
 					}) {
 						NiPoint3 vert = HkVectorToNiPoint(verts[i]);
-						vert.z = newBottomRingHeight;
-						verts[i] = NiPointToHkVector(vert);
+						NiPoint3 newVert = vert;
+						newVert.z = 0;
+						newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
+						newVert.z = vert.z;
+
+						verts[i] = NiPointToHkVector(newVert);
 					}
+
+					hkStridedVertices newVerts(verts);
+
+					//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
+					//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
+					hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
+
+					hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
+					hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
+
+					// it's actually a hkCharControllerShape not just a hkpConvexVerticesShape
+					set_vtbl(newShape, hkCharControllerShape_vtbl);
+
+					bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
+					wrapper->SetHavokObject(newShape);
+
+					// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
+					listShape->m_childInfo[0].m_shape = newShape;
+					hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
+
+					// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
+					// hkReferencedObject_removeReference(newShape);
 				}
 
-				// Shrink the two rings of the charcontroller shape by moving the rings' vertices inwards
-				for (int i : {
-					1, 3, 4, 5, 7, 11, 13, 16, // top ring
-						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
-				}) {
-					NiPoint3 vert = HkVectorToNiPoint(verts[i]);
-					NiPoint3 newVert = vert;
-					newVert.z = 0;
-					newVert = VectorNormalized(newVert) * Config::options.playerCharControllerRadius;
-					newVert.z = vert.z;
+				if (Config::options.resizePlayerCapsule) {
+					// TODO: Am I accidentally modifying every npc's capsule too? I don't think so.
+					// Shrink capsule shape too. It's active when weapons are unsheathed.
+					float radius = Config::options.playerCapsuleRadius;
+					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
+					float originalRadius = capsule->m_radius;
+					capsule->m_radius = radius;
 
-					verts[i] = NiPointToHkVector(newVert);
+					NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
+					NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
+
+					if (Config::options.centerPlayerCapsule) {
+						vert0.x = 0.f;
+						vert0.y = 0.f;
+						vert1.x = 0.f;
+						vert1.y = 0.f;
+					}
+
+					if (vert0.z < vert1.z) {
+						// vert0 is the lower vertex
+						vert1.z += originalRadius - radius;;
+						vert0.z -= originalRadius - radius;
+					}
+					else {
+						vert0.z += originalRadius - radius;;
+						vert1.z -= originalRadius - radius;
+					}
+					capsule->setVertex(0, NiPointToHkVector(vert0));
+					capsule->setVertex(1, NiPointToHkVector(vert1));
 				}
 
-				hkStridedVertices newVerts(verts);
-
-				//hkpConvexVerticesShape::BuildConfig buildConfig{false, false, true, 0.05f, 0, 0.05f, 0.07f, -0.1f}; // defaults
-				//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
-				hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
-
-				hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
-				hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
-
-				// it's actually a hkCharControllerShape not just a hkpConvexVerticesShape
-				set_vtbl(newShape, hkCharControllerShape_vtbl);
-
-				bhkShape *wrapper = (bhkShape*)convexVerticesShape->m_userData;
-				wrapper->SetHavokObject(newShape);
-
-				// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
-				listShape->m_childInfo[0].m_shape = newShape;
-				hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
-
-				// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
-				// hkReferencedObject_removeReference(newShape);
+				g_characterProxyListener.proxy = &controller->proxy;
 			}
-
-			if (Config::options.resizePlayerCapsule) {
-				// TODO: Am I accidentally modifying every npc's capsule too? I don't think so.
-				// Shrink capsule shape too. It's active when weapons are unsheathed.
-				float radius = Config::options.playerCapsuleRadius;
-				hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
-				float originalRadius = capsule->m_radius;
-				capsule->m_radius = radius;
-
-				NiPoint3 vert0 = HkVectorToNiPoint(capsule->getVertex(0));
-				NiPoint3 vert1 = HkVectorToNiPoint(capsule->getVertex(1));
-
-				if (Config::options.centerPlayerCapsule) {
-					vert0.x = 0.f;
-					vert0.y = 0.f;
-					vert1.x = 0.f;
-					vert1.y = 0.f;
-				}
-
-				if (vert0.z < vert1.z) {
-					// vert0 is the lower vertex
-					vert1.z += originalRadius - radius;;
-					vert0.z -= originalRadius - radius;
-				}
-				else {
-					vert0.z += originalRadius - radius;;
-					vert1.z -= originalRadius - radius;
-				}
-				capsule->setVertex(0, NiPointToHkVector(vert0));
-				capsule->setVertex(1, NiPointToHkVector(vert1));
-			}
-
-			g_characterProxyListener.proxy = &controller->proxy;
 		}
+
+		g_contactListener.world = world;
 	}
 
 	{ // Update higgs info

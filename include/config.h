@@ -8,11 +8,9 @@
 
 namespace Config {
 	struct Options {
-		double blendOutDurationMin = 1.0;
-		double blendOutDurationMax = 1.0;
-		double blendOutDurationStressMin = 5.0;
-		double blendOutDurationStressMax = 40.0;
-		double blendOutBlendPower = 2.5;
+		float activeRagdollStartDistance = 50.f;
+		float activeRagdollEndDistance = 60.f;
+
 		double blendInTime = 0.2;
 
 		bool enableKeyframes = true;
@@ -31,16 +29,13 @@ namespace Config {
 		float rootMotionMinOffset = 0.02f;
 		float rootMotionVelocityMultiplier = 0.03f;
 
-		float activeRagdollStartDistance = 15.f;
-		float activeRagdollEndDistance = 20.f;
-
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;
 		float positionGain = 0.05f;
 
 		float poweredControllerOnFraction = 0.05f;
 
-		float poweredMaxForce = 1000.f;
+		float poweredMaxForce = 500.f;
 		float poweredTau = 0.8f;
 		float poweredDaming = 1.0f;
 		float poweredProportionalRecoveryVelocity = 5.f;
@@ -63,7 +58,7 @@ namespace Config {
 		bool doBlending = true;
 		bool applyImpulseOnHit = true;
 		bool useHandVelocityForStabHitDirection = true;
-		bool disableHitIfSheathed = true;
+		bool disableHitIfSheathed = false;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;

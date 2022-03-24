@@ -84,25 +84,96 @@ namespace Config {
 
 	bool ReadConfigOptions()
 	{
-		/*
-		if (!ReadDouble("BlendInTime", options.blendInTime)) return false;
+		if (!ReadFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) return false;
+		if (!ReadFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) return false;
 
-		if (!ReadFloat("CollideHierarchyGain", options.collideHierarchyGain)) return false;
-		if (!ReadFloat("CollideVelocityGain", options.collideVelocityGain)) return false;
-		if (!ReadFloat("CollidePositionGain", options.collidePositionGain)) return false;
+		if (!ReadDouble("blendInTime", options.blendInTime)) return false;
 
-		if (!ReadFloat("BlendOutHierarchyGain", options.blendOutHierarchyGain)) return false;
-		if (!ReadFloat("BlendOutVelocityGain", options.blendOutVelocityGain)) return false;
-		if (!ReadFloat("BlendOutPositionGain", options.blendOutPositionGain)) return false;
+		if (!ReadBool("enableKeyframes", options.enableKeyframes)) return false;
+		if (!ReadDouble("blendInKeyframeTime", options.blendInKeyframeTime)) return false;
 
-		if (!ReadBool("DoRootMotion", options.doRootMotion)) return false;
-		if (!ReadFloat("RootMotionMinOffset", options.rootMotionMinOffset)) return false;
-		if (!ReadFloat("RootMotionVelocityMultiplier", options.rootMotionVelocityMultiplier)) return false;
+		if (!ReadDouble("hitCooldownTimeStoppedColliding", options.hitCooldownTimeStoppedColliding)) return false;
+		if (!ReadDouble("hitCooldownTimeFallback", options.hitCooldownTimeFallback)) return false;
+		if (!ReadDouble("physicsHitRecoveryTime", options.physicsHitRecoveryTime)) return false;
 
-		if (!ReadFloat("ActiveRagdollDistance", options.activeRagdollDistance)) return false;
+		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
 
-		if (!ReadBool("EnableBipedCollision", options.enableBipedCollision)) return false;
-		*/
+		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
+		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;
+
+		if (!ReadBool("doRootMotion", options.doRootMotion)) return false;
+		if (!ReadFloat("rootMotionMinOffset", options.rootMotionMinOffset)) return false;
+		if (!ReadFloat("rootMotionVelocityMultiplier", options.rootMotionVelocityMultiplier)) return false;
+
+		if (!ReadFloat("hierarchyGain", options.hierarchyGain)) return false;
+		if (!ReadFloat("velocityGain", options.velocityGain)) return false;
+		if (!ReadFloat("positionGain", options.positionGain)) return false;
+
+		if (!ReadFloat("poweredControllerOnFraction", options.poweredControllerOnFraction)) return false;
+
+		if (!ReadFloat("poweredMaxForce", options.poweredMaxForce)) return false;
+		if (!ReadFloat("poweredTau", options.poweredTau)) return false;
+		if (!ReadFloat("poweredDaming", options.poweredDaming)) return false;
+		if (!ReadFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) return false;
+		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
+
+
+		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
+		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
+		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
+		if (!ReadBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) return false;
+		if (!ReadBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) return false;
+		if (!ReadBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) return false;
+		if (!ReadBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) return false;
+		if (!ReadBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) return false;
+		if (!ReadBool("disableCullingForActiveRagdolls", options.disableCullingForActiveRagdolls)) return false;
+		if (!ReadBool("forceGenerateForActiveRagdolls", options.forceGenerateForActiveRagdolls)) return false;
+		if (!ReadBool("disableClutterVsCharacterControllerCollisionForActiveActors", options.disableClutterVsCharacterControllerCollisionForActiveActors)) return false;
+		if (!ReadBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) return false;
+		if (!ReadBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) return false;
+		if (!ReadBool("forceRagdollPose", options.forceRagdollPose)) return false;
+		if (!ReadBool("doBlending", options.doBlending)) return false;
+		if (!ReadBool("applyImpulseOnHit", options.applyImpulseOnHit)) return false;
+		if (!ReadBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) return false;
+		if (!ReadBool("disableHitIfSheathed", options.disableHitIfSheathed)) return false;
+
+
+		if (!ReadFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) return false;
+		if (!ReadFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) return false;
+		if (!ReadFloat("hitImpulseMassExponent", options.hitImpulseMassExponent)) return false;
+
+		if (!ReadFloat("hitImpulseMinStrength", options.hitImpulseMinStrength)) return false;
+		if (!ReadFloat("hitImpulseMaxStrength", options.hitImpulseMaxStrength)) return false;
+		if (!ReadFloat("hitImpulseMaxVelocity", options.hitImpulseMaxVelocity)) return false;
+
+		if (!ReadFloat("hitImpulseDownwardsMultiplier", options.hitImpulseDownwardsMultiplier)) return false;
+
+		if (!ReadFloat("hitSwingSpeedThreshold", options.hitSwingSpeedThreshold)) return false;
+		if (!ReadFloat("hitSwingImpulseMult", options.hitSwingImpulseMult)) return false;
+
+		if (!ReadFloat("hitStabDirectionThreshold", options.hitStabDirectionThreshold)) return false;
+		if (!ReadFloat("hitStabSpeedThreshold", options.hitStabSpeedThreshold)) return false;
+		if (!ReadFloat("hitStabImpulseMult", options.hitStabImpulseMult)) return false;
+
+		if (!ReadFloat("hitPunchDirectionThreshold", options.hitPunchDirectionThreshold)) return false;
+		if (!ReadFloat("hitPunchSpeedThreshold", options.hitPunchSpeedThreshold)) return false;
+		if (!ReadFloat("hitPunchImpulseMult", options.hitPunchImpulseMult)) return false;
+
+		if (!ReadFloat("hitRequiredHandSpeedRoomspace", options.hitRequiredHandSpeedRoomspace)) return false;
+
+		if (!ReadFloat("hitImpulseDecayMult1", options.hitImpulseDecayMult1)) return false;
+		if (!ReadFloat("hitImpulseDecayMult2", options.hitImpulseDecayMult2)) return false;
+		if (!ReadFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) return false;
+
+		if (!ReadFloat("meleeSwingLinearVelocityThreshold", options.meleeSwingLinearVelocityThreshold)) return false;
+		if (!ReadFloat("shieldSwingLinearVelocityThreshold", options.shieldSwingLinearVelocityThreshold)) return false;
+
+		if (!ReadBool("resizePlayerCharController", options.resizePlayerCharController)) return false;
+		if (!ReadBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) return false;
+		if (!ReadBool("resizePlayerCapsule", options.resizePlayerCapsule)) return false;
+		if (!ReadBool("centerPlayerCapsule", options.centerPlayerCapsule)) return false;
+		if (!ReadFloat("playerCharControllerRadius", options.playerCharControllerRadius)) return false;
+		if (!ReadFloat("playerCapsuleRadius", options.playerCapsuleRadius)) return false;
 
 		return true;
 	}
