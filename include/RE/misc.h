@@ -303,16 +303,36 @@ struct BSFadeNodeCuller
 	struct BSMultiBoundSphere *boundSphere; // 138
 };
 
+struct MovementMessageActorCollision
+{
+	void *vtbl; // 00
+	UInt32 refCount = 0; // 08
+	UInt32 pad0C;
+	UInt32 handle; // 10
+	UInt32 pad14;
+};
+static_assert(sizeof(MovementMessageActorCollision) == 0x18);
+
 struct MovementControllerNPC
 {
-	struct Entry
+	struct InterfaceEntry
 	{
 		BSFixedString name; // 00
-		void *unk08; // 08
+		void *interfacePtr; // 08
 	};
 
-	BSTSmallArray<Entry> unk48; // 48
+	void *vtbl; // 00
+	UInt8 unk08[0x48 - 0x08]; // 08
+	BSTSmallArray<InterfaceEntry, 11> interfaces; // 48
+	BSReadWriteLock interfacesLock; // 108
+	UInt8 unk110[0x150 - 0x110]; // 110
+	UInt64 movementMessageLock; // 150
+	tArray<MovementMessageActorCollision *> movementMessages; // 158
 };
+static_assert(offsetof(MovementControllerNPC, interfaces) == 0x48);
+static_assert(offsetof(MovementControllerNPC, interfacesLock) == 0x108);
+static_assert(offsetof(MovementControllerNPC, movementMessageLock) == 0x150);
+static_assert(offsetof(MovementControllerNPC, movementMessages) == 0x158);
 
 struct FOCollisionListener : hkpContactListener
 {
@@ -331,9 +351,10 @@ struct FOCollisionListener : hkpContactListener
 struct CharacterCollisionHandler
 {
 	virtual ~CharacterCollisionHandler(); // 00
-	virtual void HandleCharacterCollision(struct bhkCharacterController *controllerA, struct bhkCharacterController *controllerB); // 01
+	virtual void HandleCharacterCollision(struct bhkCharacterController *collider, struct bhkCharacterController *collidee); // 01
 };
 
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
+typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);

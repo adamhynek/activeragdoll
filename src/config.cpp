@@ -98,6 +98,9 @@ namespace Config {
 
 		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
 
+		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
+		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;
+
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
 		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;
 
@@ -117,7 +120,6 @@ namespace Config {
 		if (!ReadFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) return false;
 		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
 
-
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
@@ -136,7 +138,6 @@ namespace Config {
 		if (!ReadBool("applyImpulseOnHit", options.applyImpulseOnHit)) return false;
 		if (!ReadBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) return false;
 		if (!ReadBool("disableHitIfSheathed", options.disableHitIfSheathed)) return false;
-
 
 		if (!ReadFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) return false;
 		if (!ReadFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) return false;

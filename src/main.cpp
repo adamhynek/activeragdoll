@@ -338,12 +338,12 @@ float GetPhysicsDamage(float mass, float speed)
 	return damageMult * damage;
 }
 
-struct PrePhysicsStepJob
+struct GenericJob
 {
 	virtual void Run() = 0;
 };
 
-struct PointImpulseJob : PrePhysicsStepJob
+struct PointImpulseJob : GenericJob
 {
 	hkpRigidBody *rigidBody{};
 	NiPoint3 point{};
@@ -369,7 +369,7 @@ struct PointImpulseJob : PrePhysicsStepJob
 	}
 };
 
-struct LinearImpulseJob : PrePhysicsStepJob
+struct LinearImpulseJob : GenericJob
 {
 	hkpRigidBody *rigidBody{};
 	NiPoint3 impulse{};
@@ -394,12 +394,12 @@ struct LinearImpulseJob : PrePhysicsStepJob
 	}
 };
 
-std::vector<std::unique_ptr<PrePhysicsStepJob>> g_prePhysicsStepJobs{};
+std::vector<std::unique_ptr<GenericJob>> g_prePhysicsStepJobs{};
 
 template<class T, typename... Args>
 void QueuePrePhysicsJob(Args&&... args)
 {
-	static_assert(std::is_base_of<PrePhysicsStepJob, T>::value);
+	static_assert(std::is_base_of<GenericJob, T>::value);
 	g_prePhysicsStepJobs.push_back(std::make_unique<T>(std::forward<Args>(args)...));
 }
 
@@ -497,6 +497,48 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 		}
 	}
 	return false;
+}
+
+bool ShouldBumpActor(Actor *actor)
+{
+	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
+	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
+	return true;
+}
+
+void TryBumpActor(Actor *actor, bool isLargeBump = false)
+{
+	if (!ShouldBumpActor(actor)) return;
+
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return;
+
+	PlayerCharacter *player = *g_thePlayer;
+	NiPoint3 actorToPlayer = player->pos - actor->pos;
+	float heading = GetHeadingFromVector(actorToPlayer);
+	float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+
+	ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
+	ActorProcess_SetBumpDirection(process, bumpDirection);
+	Actor_GetBumped(actor, player, isLargeBump, false);
+	ActorProcess_SetBumpDirection(process, 0.f);
+}
+
+struct BumpRequest
+{
+	double bumpTime = 0.0;
+	bool consumed = false;
+};
+std::mutex g_bumpActorsLock;
+std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
+
+void TryQueueBumpActor(Actor *actor)
+{
+	double now = GetTime();
+	std::unique_lock lock(g_bumpActorsLock);
+	if (auto it = g_bumpActors.find(actor); it == g_bumpActors.end() || now - it->second.bumpTime > Config::options.actorBumpCooldownTime) {
+		g_bumpActors[actor] = { now, false };
+	}
 }
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -844,13 +886,21 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 		}
 		else {
+			// It's not a hit, so disable contact for keyframed/fixed objects in this case
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
-				// It's not a hit, so disable contact for keyframed/fixed objects in this case
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			}
+
+			if (Config::options.bumpActorsWhenTouched) {
+				if (hitRefr->formType == kFormType_Character) {
+					if (Actor *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
+						TryQueueBumpActor(actor);
+					}
+				}
 			}
 		}
 	}
-	
+
 	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
@@ -950,6 +1000,17 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				it = physicsHitCooldownTargets.erase(it);
 			else
 				++it;
+		}
+
+		{
+			std::unique_lock lock(g_bumpActorsLock);
+			for (auto it = g_bumpActors.begin(); it != g_bumpActors.end();) {
+				double bumpTime = it->second.bumpTime;
+				if (now - bumpTime > Config::options.actorBumpCooldownTime)
+					it = g_bumpActors.erase(it);
+				else
+					++it;
+			}
 		}
 	}
 
@@ -2010,6 +2071,21 @@ void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
 	Actor_GetHit(_this, hitData);
 }
 
+void MovementControllerUpdateHook(MovementControllerNPC *movementController, Actor *actor)
+{
+
+	// Do movement jobs here
+	{
+		std::unique_lock lock(g_bumpActorsLock);
+		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end() && !it->second.consumed && GetTime() - it->second.bumpTime < Config::options.actorBumpCooldownTime) {
+			TryBumpActor(actor, false);
+			it->second.consumed = true;
+		}
+	}
+
+	MovementControllerNPC_Update(movementController);
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -2029,6 +2105,8 @@ auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 auto BShkbAnimationGraph_UpdateAnimation_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
 
 auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
+
+auto Character_MovementControllerUpdate_HookLoc = RelocAddr<uintptr_t>(0x5E086F);
 
 
 void PerformHooks(void)
@@ -2094,6 +2172,35 @@ void PerformHooks(void)
 	if (Config::options.doClutterVsBipedCollisionDamage) {
 		g_branchTrampoline.Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
 		_MESSAGE("Actor take physics damage hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				mov(rdx, rsi); // the actor being updated is in rsi
+
+				// Call our hook
+				mov(rax, (uintptr_t)MovementControllerUpdateHook);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(Character_MovementControllerUpdate_HookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(Character_MovementControllerUpdate_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("MovementControllerNPC::Update hook complete");
 	}
 
 	{

@@ -22,6 +22,9 @@ namespace Config {
 
 		double thrownObjectLingerTime = 5.0;
 
+		bool bumpActorsWhenTouched = true;
+		double actorBumpCooldownTime = 3.0;
+
 		float collisionDamageMinSpeed = 400.f; // skyrim units
 		float collisionDamageMinMass = 6.f;
 

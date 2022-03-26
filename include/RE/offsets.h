@@ -518,8 +518,26 @@ extern RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterPr
 typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
 extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 
+typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool a4);
+extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
+
+typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);
+extern RelocAddr<_GetHeadingFromVector> GetHeadingFromVector;
+
+typedef void(*_ActorProcess_SetBumpState)(ActorProcessManager *_this, UInt32 bumpState);
+extern RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState;
+
+typedef void(*_ActorProcess_SetBumpDirection)(ActorProcessManager *_this, float direction);
+extern RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection;
+
+typedef void(*_MovementControllerNPC_Update)(MovementControllerNPC *_this);
+extern RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update;
+
 typedef bool(*_Actor_IsGhost)(Actor *_this);
 extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
+
+typedef bool(*_Actor_IsRunning)(Actor *_this);
+extern RelocAddr<_Actor_IsRunning> Actor_IsRunning;
 
 typedef bool(*_Character_CanHit)(Character *_this, Actor *target);
 extern RelocAddr<_Character_CanHit> Character_CanHit;
