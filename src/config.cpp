@@ -82,6 +82,18 @@ namespace Config {
 		return true;
 	}
 
+	bool ReadStringSet(const std::string &name, std::set<std::string, std::less<>> &val)
+	{
+		std::string	data = GetConfigOption("Settings", name.c_str());
+		if (data.empty()) {
+			_WARNING("Failed to read StringSet config option: %s", name.c_str());
+			return false;
+		}
+
+		val = SplitStringToSet(data, ',');
+		return true;
+	}
+
 	bool ReadConfigOptions()
 	{
 		if (!ReadFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) return false;
@@ -99,7 +111,16 @@ namespace Config {
 		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
 
 		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
+
+		if (!ReadBool("dontBumpAnimals", options.dontBumpAnimals)) return false;
+		if (!ReadInt("bumpMinRelationshipRank", options.bumpMinRelationshipRank)) return false;
+
 		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;
+
+		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;
+		if (!ReadFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) return false;
+
+		if (!ReadBool("doKeepOffset", options.doKeepOffset)) return false;
 
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
 		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;
@@ -121,6 +142,8 @@ namespace Config {
 		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
 
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
+		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
+		if (!ReadBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) return false;
 		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
 		if (!ReadBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) return false;
@@ -133,6 +156,7 @@ namespace Config {
 		if (!ReadBool("disableClutterVsCharacterControllerCollisionForActiveActors", options.disableClutterVsCharacterControllerCollisionForActiveActors)) return false;
 		if (!ReadBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) return false;
 		if (!ReadBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) return false;
+		if (!ReadBool("forceAnimPose", options.forceAnimPose)) return false;
 		if (!ReadBool("forceRagdollPose", options.forceRagdollPose)) return false;
 		if (!ReadBool("doBlending", options.doBlending)) return false;
 		if (!ReadBool("applyImpulseOnHit", options.applyImpulseOnHit)) return false;

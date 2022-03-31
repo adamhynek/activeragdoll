@@ -313,26 +313,59 @@ struct MovementMessageActorCollision
 };
 static_assert(sizeof(MovementMessageActorCollision) == 0x18);
 
-struct MovementControllerNPC
+struct MovementControllerAI
 {
+	virtual ~MovementControllerAI(); // 00
+	virtual void SetInterfaceByName(BSFixedString interfaceName, IMovementInterface *interfacePtr); // 01
+	virtual IMovementInterface * GetInterfaceByName_1(BSFixedString interfaceName); // 02
+	virtual IMovementInterface * GetInterfaceByName_2(BSFixedString interfaceName); // 03
+	virtual void ClearInterfaceByName(BSFixedString interfaceName); // 04
+	virtual IMovementState * GetCurrentMovementState(); // 05 - returns GetInterfaceByName_1("CurrentMovementState")
+	virtual void InitializeInterfaces(); // 06
+	// ...
+
 	struct InterfaceEntry
 	{
 		BSFixedString name; // 00
-		void *interfacePtr; // 08
+		IMovementInterface *interfacePtr; // 08
 	};
 
-	void *vtbl; // 00
 	UInt8 unk08[0x48 - 0x08]; // 08
 	BSTSmallArray<InterfaceEntry, 11> interfaces; // 48
 	BSReadWriteLock interfacesLock; // 108
-	UInt8 unk110[0x150 - 0x110]; // 110
+	UInt64 unk110;
+	UInt64 unk118;
+};
+static_assert(offsetof(MovementControllerAI, interfaces) == 0x48);
+static_assert(offsetof(MovementControllerAI, interfacesLock) == 0x108);
+static_assert(sizeof(MovementControllerAI) == 0x120);
+
+struct MovementControllerNPC : MovementControllerAI
+{
+	IMovementInterface movementMessageInterface; // 120
+	IMovementInterface movementMotionDrivenControl; // 128
+	IMovementInterface movementSelectIdle; // 130
+	IMovementInterface movementDirectControl; // 138
+	IMovementInterface movementPlannerDirectControl; // 140
+	IMovementInterface animationSetCallbackFunctor; // 148
 	UInt64 movementMessageLock; // 150
 	tArray<MovementMessageActorCollision *> movementMessages; // 158
+	UInt8 unk170[0x1B8 - 0x170];
+	Actor *actor; // 1B8
+	UInt64 unk1C0;
+	UInt8 unk1C8;
+	UInt8 unk1C9;
+	UInt8 unk1CA;
+	UInt8 keepOffsetFromActor;
+	UInt8 unk1CC;
+	UInt8 unk1CD;
+	UInt8 unk1CE;
+	UInt8 unk1CF;
 };
-static_assert(offsetof(MovementControllerNPC, interfaces) == 0x48);
-static_assert(offsetof(MovementControllerNPC, interfacesLock) == 0x108);
 static_assert(offsetof(MovementControllerNPC, movementMessageLock) == 0x150);
 static_assert(offsetof(MovementControllerNPC, movementMessages) == 0x158);
+static_assert(offsetof(MovementControllerNPC, actor) == 0x1B8);
+static_assert(sizeof(MovementControllerNPC) == 0x1D0);
 
 struct FOCollisionListener : hkpContactListener
 {

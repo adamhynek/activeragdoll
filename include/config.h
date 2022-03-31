@@ -23,7 +23,14 @@ namespace Config {
 		double thrownObjectLingerTime = 5.0;
 
 		bool bumpActorsWhenTouched = true;
+		bool dontBumpAnimals = true;
+		int bumpMinRelationshipRank = 4; // kRelationshipAcquaintance
 		double actorBumpCooldownTime = 3.0;
+
+		bool ragdollSmallRacesOnGrab = true;
+		float smallRaceHealthThreshold = 6.f;
+
+		bool doKeepOffset = false;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units
 		float collisionDamageMinMass = 6.f;
@@ -45,6 +52,8 @@ namespace Config {
 		float poweredConstantRecoveryVelocity = 0.2f;
 
 		bool enableBipedBipedCollision = false;
+		bool enableBipedBipedCollisionNoCC = false;
+		bool enableBipedDeadBipCollision = false;
 		bool enablePlayerBipedCollision = true;
 		bool disableBipedCollisionWithWorld = true;
 		bool enableBipedClutterCollision = true;
@@ -57,6 +66,7 @@ namespace Config {
 		bool disableClutterVsCharacterControllerCollisionForActiveActors = true;
 		bool doClutterVsBipedCollisionDamage = true;
 		bool showCollisionDamageHitFx = false;
+		bool forceAnimPose = false;
 		bool forceRagdollPose = false;
 		bool doBlending = true;
 		bool applyImpulseOnHit = true;

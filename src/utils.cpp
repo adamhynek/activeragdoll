@@ -193,6 +193,20 @@ void PrintVector(const NiPoint3 &p)
 	_MESSAGE("%.2f, %.2f, %.2f", p.x, p.y, p.z);
 }
 
+std::set<std::string, std::less<>> SplitStringToSet(const std::string &s, char delim)
+{
+	std::set<std::string, std::less<>> result;
+	std::stringstream ss(s);
+	std::string item;
+
+	while (getline(ss, item, delim)) {
+		trim(item);
+		result.insert(item);
+	}
+
+	return result;
+}
+
 bool VisitNodes(NiAVObject  *parent, std::function<bool(NiAVObject*, int)> functor, int depth = 0)
 {
 	if (!parent) return false;
@@ -700,4 +714,19 @@ void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause)
 {
 	UInt64 *vtbl = *((UInt64 **)refr);
 	((_TESObjectREFR_SetActorCause)(vtbl[0x50]))(refr, cause);
+}
+
+UInt8 GetActorKnockState(Actor *actor)
+{
+	return (actor->actorState.flags04 >> 25) & 7;
+}
+
+bool IsActorGettingUp(Actor *actor)
+{
+	return GetActorKnockState(actor) == 6;
+}
+
+bool IsActorUsingFurniture(Actor *actor)
+{
+	return actor->actorState.flags04 & 0x3C000;
 }

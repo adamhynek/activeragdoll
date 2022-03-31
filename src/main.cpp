@@ -27,6 +27,7 @@
 #include "skse64/GameData.h"
 #include "skse64/GameForms.h"
 #include "skse64/PapyrusActor.h"
+#include "skse64/PapyrusKeyword.h"
 #include "skse64/GameVR.h"
 #include "skse64_common/SafeWrite.h"
 #include "skse64_common/BranchTrampoline.h"
@@ -52,6 +53,9 @@ static SKSEMessagingInterface *g_messaging = nullptr;
 
 SKSEVRInterface *g_vrInterface = nullptr;
 SKSETrampolineInterface *g_trampoline = nullptr;
+
+BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
+BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
 
 // Potentially, could hook TESObjectREFR::InitHavok to set the collision layer for the weapon when we drop it so it doesn't collide with the bumper
@@ -503,6 +507,11 @@ bool ShouldBumpActor(Actor *actor)
 {
 	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
+
+	if (Config::options.dontBumpAnimals && actor->race->keyword.HasKeyword(g_keyword_actorTypeAnimal)) return false;
+
+	if (actor->baseForm && RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) < Config::options.bumpMinRelationshipRank) return false;
+
 	return true;
 }
 
@@ -539,6 +548,34 @@ void TryQueueBumpActor(Actor *actor)
 	if (auto it = g_bumpActors.find(actor); it == g_bumpActors.end() || now - it->second.bumpTime > Config::options.actorBumpCooldownTime) {
 		g_bumpActors[actor] = { now, false };
 	}
+}
+
+bool ShouldKeepOffset(Actor *actor)
+{
+	if (!Config::options.doKeepOffset) return false;
+	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
+	if (IsActorUsingFurniture(actor)) return false;
+
+	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
+
+	//if (!actor->race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return false;
+
+	return true;
+}
+
+std::unordered_set<Actor *> g_keepOffsetActors{};
+
+bool ShouldRagdollOnGrab(Actor *actor)
+{
+	TESRace *race = actor->race;
+	if (!race) return false;
+
+	if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return true; // small race
+
+	float health = actor->actorValueOwner.GetMaximum(24);
+	if (health < Config::options.smallRaceHealthThreshold) return true;
+
+	return false;
 }
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -1251,7 +1288,6 @@ void ModifyConstraints(Actor *actor)
 
 bool AddRagdollToWorld(Actor *actor)
 {
-	bool isSittingOrSleepingOrMounted = actor->actorState.flags04 & 0x3C000; // true when e.g. using furniture (leaning against a wall, etc.)
 	if (Actor_IsInRagdollState(actor)) return false;
 
 	bool hasRagdollInterface = false;
@@ -1309,7 +1345,6 @@ bool AddRagdollToWorld(Actor *actor)
 
 bool RemoveRagdollFromWorld(Actor *actor)
 {
-	bool isSittingOrSleepingOrMounted = actor->actorState.flags04 & 0x3C000;
 	if (Actor_IsInRagdollState(actor)) return false;
 
 	bool hasRagdollInterface = false;
@@ -1347,6 +1382,22 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	return true;
 }
 
+void DisableSyncOnUpdate(Actor *actor)
+{
+	if (Actor_IsInRagdollState(actor)) return;
+
+	bool hasRagdollInterface = false;
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+	}
+
+	if (hasRagdollInterface) {
+		bool x[2] = { false, true };
+		BSAnimationGraphManager_DisableOrEnableSyncOnUpdate(animGraphManager.ptr, x);
+	}
+}
+
 void ProcessHavokHitJobsHook()
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -1368,16 +1419,16 @@ void ProcessHavokHitJobsHook()
 
 	if (world != g_contactListener.world) {
 		if (NiPointer<bhkWorld> oldWorld = g_contactListener.world) {
-			_MESSAGE("Removing listener from old havok world");
+			_MESSAGE("Removing listeners from old havok world");
 			{
 				BSWriteLocker lock(&oldWorld->worldLock);
-				hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(world->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK);
+				hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(oldWorld->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK);
 				if (collisionCallbackExtension) {
 					// There are times when the collision callback extension is gone even if we required it earlier...
-					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(world->world);
+					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(oldWorld->world);
 				}
 				hkpWorld_removeContactListener(oldWorld->world, &g_contactListener);
-				hkpWorld_removeWorldPostSimulationListener(world->world, &g_contactListener);
+				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_contactListener);
 
 				if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
 					if (&controller->proxy != g_characterProxyListener.proxy) {
@@ -1395,6 +1446,7 @@ void ProcessHavokHitJobsHook()
 			g_activeRagdolls.clear();
 			g_hittableCharControllerGroups.clear();
 			g_higgsLingeringRigidBodies.clear();
+			g_keepOffsetActors.clear();
 			g_contactListener = ContactListener{};
 		}
 
@@ -1421,7 +1473,14 @@ void ProcessHavokHitJobsHook()
 			if (Config::options.enableBipedWeaponCollision) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Weapon);
 			}
+			if (Config::options.enableBipedDeadBipCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_DeadBip);
+			}
 			ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_Biped);
+
+			if (Config::options.enableBipedBipedCollisionNoCC) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
+			}
 		}
 
 		if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
@@ -1619,12 +1678,40 @@ void ProcessHavokHitJobsHook()
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
 
-			// When an npc is grabbed, disable collision with them
-			if (actor == g_rightHeldRefr) {
-				g_rightHeldCollisionGroup = collisionGroup;
+			if (actor == g_rightHeldRefr || actor == g_leftHeldRefr) {
+
+				// TODO: For large/xlarge races (giants, etc.), do nothing. For small races (chickens, etc.), ragdoll them instead?
+
+				if (!Actor_IsInRagdollState(actor)) {
+					if (ShouldRagdollOnGrab(actor)) {
+						if (ActorProcessManager *process = actor->processManager) {
+							ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
+						}
+					}
+					else if (ShouldKeepOffset(actor) && !g_keepOffsetActors.count(actor)) {
+						UInt32 handle = GetOrCreateRefrHandle(player);
+						Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 0.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 50.f);
+
+						//UInt32 handle = actorHandle;
+						//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
+
+						g_keepOffsetActors.insert(actor);
+					}
+				}
+
+				// When an npc is grabbed, disable collision with them
+				if (actor == g_rightHeldRefr) {
+					g_rightHeldCollisionGroup = collisionGroup;
+				}
+				if (actor == g_leftHeldRefr) {
+					g_leftHeldCollisionGroup = collisionGroup;
+				}
 			}
-			else if (actor == g_leftHeldRefr) {
-				g_leftHeldCollisionGroup = collisionGroup;
+			else {
+				if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
+					Actor_ClearKeepOffsetFromActor(actor);
+					g_keepOffsetActors.erase(actor);
+				}
 			}
 
 			bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
@@ -1659,6 +1746,10 @@ void ProcessHavokHitJobsHook()
 						}
 					}
 				}
+			}
+
+			if (g_activeActors.size() > 0 && g_activeActors.count(actor)) {
+				DisableSyncOnUpdate(actor);
 			}
 		}
 	}
@@ -1724,10 +1815,22 @@ int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
 	return -1;
 }
 
+int GetRagdollBoneIndex(hkbCharacter *character, const std::string &boneName)
+{
+	const hkaSkeleton *skeleton = character->ragdollDriver->ragdoll->m_skeleton;
+	for (int i = 0; i < skeleton->m_bones.getSize(); i++) {
+		const hkaBone &bone = skeleton->m_bones[i];
+		if (boneName == bone.m_name.cString()) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor)) return;
+	if (!actor || Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
 
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
@@ -1918,7 +2021,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor)) return;
+	if (!actor || Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
 
 	if (!g_activeRagdolls.count(driver)) return;
 
@@ -1927,7 +2030,6 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 
 	int numBones = driver->ragdoll->getNumBones();
 	if (numBones <= 0) return;
-
 	ragdoll.stress.clear();
 
 	float totalStress = 0.f;
@@ -1947,7 +2049,11 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	// This hook is called right before hkbRagdollDriver::postPhysics()
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor)) return;
+	if (!actor) return;
+
+	UInt8 knockState = GetActorKnockState(actor);
+
+	// All we're doing here is storing the anim pose, so it's fine to run this even if the actor is fully ragdolled or getting up.
 
 	if (!g_activeRagdolls.count(driver)) return;
 
@@ -1968,7 +2074,9 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor)) return;
+	if (!actor) return;
+
+	// All we're doing here is storing the ragdoll pose and blending, and we do want to have the option to blend even while getting up.
 
 	if (!g_activeRagdolls.count(driver)) return;
 
@@ -2014,7 +2122,14 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		}
 	}
 
-	if (Config::options.forceRagdollPose) {
+	if (Config::options.forceAnimPose) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+			int numPoses = poseHeader->m_numData;
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
+		}
+	}
+	else if (Config::options.forceRagdollPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
@@ -2422,6 +2537,14 @@ extern "C" {
 		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
 		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;
 
+		g_keyword_actorTypeAnimal = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeAnimal"));
+		g_keyword_actorTypeNPC = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeNPC"));
+
+		if (!g_keyword_actorTypeAnimal || !g_keyword_actorTypeNPC) {
+			_ERROR("Failed to get keywords");
+			return;
+		}
+
 		_MESSAGE("Successfully loaded all forms");
 	}
 
@@ -2515,13 +2638,13 @@ extern "C" {
 			_WARNING("Couldn't get trampoline interface");
 		}
 		if (!TryHook()) {
-			_ERROR("[CRITICAL] Failed to perform hooks");
+			ShowErrorBoxAndLog("[CRITICAL] Failed to perform hooks");
 			return false;
 		}
 
 		g_vrInterface = (SKSEVRInterface *)skse->QueryInterface(kInterface_VR);
 		if (!g_vrInterface) {
-			_ERROR("[CRITICAL] Couldn't get SKSE VR interface. You probably have an outdated SKSE version.");
+			ShowErrorBoxAndLog("[CRITICAL] Couldn't get SKSE VR interface. You probably have an outdated SKSE version.");
 			return false;
 		}
 		g_vrInterface->RegisterForPoses(g_pluginHandle, 11, WaitPosesCB);

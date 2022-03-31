@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_set>
+#include <set>
 
 #include "RE/havok.h"
 #include "RE/havok_behavior.h"
@@ -54,6 +55,11 @@ void PrintVector(const NiPoint3 &p);
 void PrintSceneGraph(NiAVObject *node);
 void PrintToFile(std::string entry, std::string filename);
 
+inline void ltrim(std::string &s) { s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !::isspace(ch); })); }
+inline void rtrim(std::string &s) { s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !::isspace(ch); }).base(), s.end()); }
+inline void trim(std::string &s) { ltrim(s); rtrim(s); }
+std::set<std::string, std::less<>> SplitStringToSet(const std::string &s, char delim);
+
 //float hkHalfToFloat(hkHalf half);
 //hkHalf floatToHkHalf(float half);
 
@@ -84,3 +90,6 @@ UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const Ni
 void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool loud);
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
+UInt8 GetActorKnockState(Actor *actor);
+bool IsActorGettingUp(Actor *actor);
+bool IsActorUsingFurniture(Actor *actor);

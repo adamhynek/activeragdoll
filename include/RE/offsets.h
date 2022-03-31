@@ -389,6 +389,9 @@ extern RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphMan
 typedef void(*_BSAnimationGraphManager_RemoveRagdollFromWorld)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGraphManager_RemoveRagdollFromWorld;
 
+typedef void(*_BSAnimationGraphManager_DisableOrEnableSyncOnUpdate)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_DisableOrEnableSyncOnUpdate> BSAnimationGraphManager_DisableOrEnableSyncOnUpdate;
+
 typedef void(*_NiNode_AddOrRemoveMalleableConstraints)(NiNode *_this, bool a1, bool a2, bool a3);
 extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableConstraints;
 
@@ -530,8 +533,17 @@ extern RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState;
 typedef void(*_ActorProcess_SetBumpDirection)(ActorProcessManager *_this, float direction);
 extern RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection;
 
+typedef void(*_ActorProcess_PushActorAway)(ActorProcessManager *_this, Actor *actor, NiPoint3 &from, float force);
+extern RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway;
+
 typedef void(*_MovementControllerNPC_Update)(MovementControllerNPC *_this);
 extern RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update;
+
+typedef void(*_Actor_KeepOffsetFromActor)(Actor *_this, UInt32 &targetHandle, NiPoint3 &offset, NiPoint3 &offsetAngleEulerRadians, float catchUpRadius, float followRadius);
+extern RelocAddr<_Actor_KeepOffsetFromActor> Actor_KeepOffsetFromActor;
+
+typedef void(*_Actor_ClearKeepOffsetFromActor)(Actor *_this);
+extern RelocAddr<_Actor_ClearKeepOffsetFromActor> Actor_ClearKeepOffsetFromActor;
 
 typedef bool(*_Actor_IsGhost)(Actor *_this);
 extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
