@@ -215,6 +215,32 @@ void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt8 layer)
 	}
 }
 
+void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener* worldListener)
+{
+	hkArray<hkpContactListener *> &listeners = _this->m_contactListeners;
+
+	for (int i = 0; i < listeners.getSize(); i++) {
+		hkpContactListener *listener = listeners[i];
+		if (listener == worldListener) {
+			listeners[i] = nullptr;
+			return;
+		}
+	}
+}
+
+int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener* proxyListener)
+{
+	hkArray<hkpCharacterProxyListener *> &listeners = _this->m_listeners;
+
+	for (int i = 0; i < listeners.getSize(); i++) {
+		hkpCharacterProxyListener *listener = listeners[i];
+		if (listener == proxyListener) {
+			return i;
+		}
+	}
+	return -1;
+}
+
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this)
 {
 	if (_this.m_separatingVelocity)

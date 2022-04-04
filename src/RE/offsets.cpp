@@ -89,7 +89,6 @@ RelocAddr<_hkpWorld_RemoveEntity> hkpWorld_RemoveEntity(0xAB0E50);
 RelocAddr<_hkpWorld_addContactListener> hkpWorld_addContactListener(0xAB5580);
 RelocAddr<_bhkWorld_addContactListener> bhkWorld_addContactListener(0xDA5C50);
 RelocAddr<_hkpEntity_addContactListener> hkpEntity_addContactListener(0xAA6FE0);
-RelocAddr<_hkpWorld_removeContactListener> hkpWorld_removeContactListener(0xC9F180);
 RelocAddr<_hkpWorld_addIslandActivationListener> hkpWorld_addIslandActivationListener(0xAB5100);
 RelocAddr<_hkpWorld_removeIslandActivationListener> hkpWorld_removeIslandActivationListener(0xAB5160);
 RelocAddr<_hkpWorld_UpdateCollisionFilterOnEntity> hkpWorld_UpdateCollisionFilterOnEntity(0xAB3110);

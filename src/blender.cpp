@@ -55,10 +55,12 @@ bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &drive
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 
 		// Save initial pose if necessary
-		if ((type == BlendType::AnimToRagdoll || type == BlendType::RagdollToAnim) && isFirstBlendFrame) {
+		if ((type == BlendType::AnimToRagdoll || type == BlendType::RagdollToAnim || type == BlendType::RagdollToCurrentRagdoll) && isFirstBlendFrame) {
 			if (type == BlendType::AnimToRagdoll)
 				initialPose = ragdoll.animPose;
 			else if (type == BlendType::RagdollToAnim)
+				initialPose = ragdoll.ragdollPose;
+			else if (type == BlendType::RagdollToCurrentRagdoll)
 				initialPose = ragdoll.ragdollPose;
 		}
 		isFirstBlendFrame = false;
@@ -75,6 +77,9 @@ bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &drive
 		}
 		else if (type == BlendType::CurrentRagdollToAnim) {
 			hkbBlendPoses(numPoses, ragdoll.ragdollPose.data(), ragdoll.animPose.data(), lerpAmount, poseOut);
+		}
+		else if (type == BlendType::RagdollToCurrentRagdoll) {
+			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.ragdollPose.data(), lerpAmount, poseOut);
 		}
 
 		currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here

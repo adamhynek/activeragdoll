@@ -510,7 +510,7 @@ bool ShouldBumpActor(Actor *actor)
 
 	if (Config::options.dontBumpAnimals && actor->race->keyword.HasKeyword(g_keyword_actorTypeAnimal)) return false;
 
-	if (actor->baseForm && RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) < Config::options.bumpMinRelationshipRank) return false;
+	if (RelationshipRanks::GetRelationshipRank(actor, *g_thePlayer) > Config::options.bumpMaxRelationshipRank) return false;
 
 	return true;
 }
@@ -1087,7 +1087,7 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 		collisionHandler->HandleCharacterCollision(playerController, controller);
 	}
 
-	NiPointer<bhkCharacterProxy> proxy = nullptr;
+	bhkCharProxyController *proxy = nullptr; // for reference purposes only, do not dereference
 };
 PlayerCharacterProxyListener g_characterProxyListener{};
 
@@ -1429,17 +1429,6 @@ void ProcessHavokHitJobsHook()
 				}
 				hkpWorld_removeContactListener(oldWorld->world, &g_contactListener);
 				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_contactListener);
-
-				if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-					if (&controller->proxy != g_characterProxyListener.proxy) {
-						if (g_characterProxyListener.proxy) {
-							if (hkpCharacterProxy *proxy = g_characterProxyListener.proxy->characterProxy) {
-								hkpCharacterProxy_removeCharacterProxyListener(proxy, &g_characterProxyListener);
-							}
-							g_characterProxyListener.proxy = nullptr;
-						}
-					}
-				}
 			}
 
 			g_activeActors.clear();
@@ -1483,15 +1472,21 @@ void ProcessHavokHitJobsHook()
 			}
 		}
 
-		if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-			if (&controller->proxy != g_characterProxyListener.proxy) {
+		g_contactListener.world = world;
+	}
+
+	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
+		if (controller != g_characterProxyListener.proxy) {
+			if (RE::hkRefPtr<hkpCharacterProxy> proxy = controller->proxy.characterProxy) {
+				_MESSAGE("Player Character Proxy changed");
+
 				BSWriteLocker lock(&world->worldLock);
 
-				if (hkpCharacterProxy *proxy = controller->proxy.characterProxy) {
+				if (hkpCharacterProxy_findCharacterProxyListener(proxy, &g_characterProxyListener) == -1) {
 					hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
 				}
 
-				hkpListShape *listShape = ((hkpListShape*)controller->proxy.characterProxy->m_shapePhantom->m_collidable.m_shape);
+				hkpListShape *listShape = ((hkpListShape*)proxy->m_shapePhantom->m_collidable.m_shape);
 
 				if (Config::options.resizePlayerCharController) {
 					// Shrink convex charcontroller shape
@@ -1595,11 +1590,9 @@ void ProcessHavokHitJobsHook()
 					capsule->setVertex(1, NiPointToHkVector(vert1));
 				}
 
-				g_characterProxyListener.proxy = &controller->proxy;
+				g_characterProxyListener.proxy = controller;
 			}
 		}
-
-		g_contactListener.world = world;
 	}
 
 	{ // Update higgs info
@@ -1679,9 +1672,6 @@ void ProcessHavokHitJobsHook()
 			UInt16 collisionGroup = filterInfo >> 16;
 
 			if (actor == g_rightHeldRefr || actor == g_leftHeldRefr) {
-
-				// TODO: For large/xlarge races (giants, etc.), do nothing. For small races (chickens, etc.), ragdoll them instead?
-
 				if (!Actor_IsInRagdollState(actor)) {
 					if (ShouldRagdollOnGrab(actor)) {
 						if (ActorProcessManager *process = actor->processManager) {
@@ -1734,6 +1724,11 @@ void ProcessHavokHitJobsHook()
 						g_hittableCharControllerGroups.insert(collisionGroup);
 					}
 				}
+
+				if (g_activeActors.size() > 0 && g_activeActors.count(actor)) {
+					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
+					DisableSyncOnUpdate(actor);
+				}
 			}
 			else if (shouldRemoveFromWorld) {
 				if (isAddedToWorld) {
@@ -1746,10 +1741,6 @@ void ProcessHavokHitJobsHook()
 						}
 					}
 				}
-			}
-
-			if (g_activeActors.size() > 0 && g_activeActors.count(actor)) {
-				DisableSyncOnUpdate(actor);
 			}
 		}
 	}
@@ -1830,7 +1821,7 @@ int GetRagdollBoneIndex(hkbCharacter *character, const std::string &boneName)
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
+	if (!actor) return;
 
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
@@ -1845,6 +1836,23 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	double frameTime = GetTime();
 	ragdoll.frameTime = frameTime;
+
+	KnockState knockState = GetActorKnockState(actor);
+	if (Config::options.blendWhenGettingUp) {
+		if (ragdoll.knockState == KnockState::BeginGetUp && knockState == KnockState::GetUp) {
+			// Went from starting to get up to actually getting up
+			ragdoll.blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, frameTime, Config::options.getUpBlendTime);
+		}
+	}
+	ragdoll.knockState = knockState;
+
+	/*TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+	if (std::string(name->name) == "Faendal") {
+		hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+		PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation))), "worldfrommodel");
+	}*/
+
+	if (Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
 
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
@@ -2021,7 +2029,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	// This hook is called right after hkbRagdollDriver::driveToPose()
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
-	if (!actor || Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
+	if (!actor) return;
 
 	if (!g_activeRagdolls.count(driver)) return;
 
@@ -2050,8 +2058,6 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (!actor) return;
-
-	UInt8 knockState = GetActorKnockState(actor);
 
 	// All we're doing here is storing the anim pose, so it's fine to run this even if the actor is fully ragdolled or getting up.
 

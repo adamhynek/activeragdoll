@@ -12,6 +12,7 @@ namespace Config {
 		float activeRagdollEndDistance = 60.f;
 
 		double blendInTime = 0.2;
+		double getUpBlendTime = 0.2;
 
 		bool enableKeyframes = true;
 		double blendInKeyframeTime = 0.05;
@@ -24,7 +25,7 @@ namespace Config {
 
 		bool bumpActorsWhenTouched = true;
 		bool dontBumpAnimals = true;
-		int bumpMinRelationshipRank = 4; // kRelationshipAcquaintance
+		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 
 		bool ragdollSmallRacesOnGrab = true;
@@ -72,6 +73,7 @@ namespace Config {
 		bool applyImpulseOnHit = true;
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = false;
+		bool blendWhenGettingUp = false;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;

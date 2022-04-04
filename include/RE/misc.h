@@ -367,6 +367,14 @@ static_assert(offsetof(MovementControllerNPC, movementMessages) == 0x158);
 static_assert(offsetof(MovementControllerNPC, actor) == 0x1B8);
 static_assert(sizeof(MovementControllerNPC) == 0x1D0);
 
+enum class KnockState : UInt8
+{
+	Normal = 0,
+	Ragdolled = 1,
+	BeginGetUp = 5,
+	GetUp = 6,
+};
+
 struct FOCollisionListener : hkpContactListener
 {
 	struct CollisionDamageEvent

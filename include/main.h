@@ -26,6 +26,7 @@ struct ActiveRagdoll
 	double frameTime = 0.0;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
+	KnockState knockState = KnockState::Normal;
 	bool isOn = false;
 	bool hasHipBoneTransform = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;

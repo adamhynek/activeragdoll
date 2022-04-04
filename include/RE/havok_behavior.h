@@ -215,7 +215,7 @@ struct bhkCharacterController : NiRefObject
 	std::uint64_t                                    pad198;                     // 198
 	hkpSurfaceInfo                                   surfaceInfo;                // 1A0
 	hkpCharacterContext                              context;                    // 1E0
-	UInt32 flags;                                                                // 218
+	UInt32                                           flags;                      // 218
 	hkpCharacterStateType                            wantState;                  // 21C
 	float                                            velocityTime;               // 220
 	float                                            rotMod;                     // 224
@@ -244,11 +244,11 @@ struct bhkCharacterController : NiRefObject
 	std::uint64_t                                    unk298;                     // 298
 	std::uint64_t                                    unk2A0;                     // 2A0
 	std::uint64_t                                    unk2A8;                     // 2A8
-	hkRefPtr<hkpRigidBody>                           supportBody;                // 2B0
+	RE::hkRefPtr<hkpRigidBody>                       supportBody;                // 2B0
 	float                                            bumpedForce;                // 2B8
 	std::uint32_t                                    pad2BC;                     // 2BC
-	hkRefPtr<hkpRigidBody>                           bumpedBody;                 // 2C0
-	hkRefPtr<hkpRigidBody>                           bumpedCharCollisionObject;  // 2C8
+	RE::hkRefPtr<hkpRigidBody>                       bumpedBody;                 // 2C0
+	RE::hkRefPtr<hkpRigidBody>                       bumpedCharCollisionObject;  // 2C8
 	UInt8                                            unk2D0[0x300 - 0x2D0];      // 2D0 - BSTHashMap<bhkRigidBody, CollisionEvent>
 	std::uint64_t                                    unk300;                     // 300
 	std::uint64_t                                    unk308;                     // 308
@@ -271,14 +271,14 @@ static_assert(sizeof(bhkCharacterPointCollector) == 0x240);
 
 struct bhkCharacterProxy : bhkSerializable
 {
-	hkpCharacterProxy *characterProxy; // 10
+	RE::hkRefPtr<hkpCharacterProxy> characterProxy; // 10
 	UInt64 unk18;
 	bhkCharacterPointCollector ignoredCollisionStartCollector; // 020
 };
 
 struct bhkCharacterRigidBody : bhkSerializable
 {
-	hkpCharacterRigidBody *characterRigidBody; // 10
+	RE::hkRefPtr < hkpCharacterRigidBody> characterRigidBody; // 10
 	UInt64 unk18;
 	bhkRigidBody *rigidBody; // 20
 	NiAVObject *unk28; // 28 - MarkerX ??

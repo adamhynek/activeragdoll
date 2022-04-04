@@ -10,6 +10,7 @@
 #include <Physics/Collide/Shape/Query/hkpShapeRayCastCollectorOutput.h>
 #include <Physics/Collide/Shape/Compound/Tree/Mopp/hkpMoppBvTreeShape.h>
 #include <Physics/Dynamics/Collide/ContactListener/hkpContactPointEvent.h>
+#include <Physics/Utilities/CharacterControl/CharacterProxy/hkpCharacterProxy.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -119,7 +120,7 @@ static_assert(sizeof(bhkBoxShape) == 0x28);
 
 struct bhkConstraint : bhkSerializable
 {
-	hkpConstraintInstance *constraint; // 10
+	RE::hkRefPtr <hkpConstraintInstance> constraint; // 10
 };
 
 struct bhkWorldObject : bhkSerializable
@@ -198,7 +199,7 @@ struct bhkBlendCollisionObject : bhkCollisionObject
 	float blendStrength; // 28 - this affects how intensely to go from rigidBody position to node position. 0 means strictly follow rigidbody, 1 means strictly follow node.
 	float unk2C;
 	UInt32 motionType; // 30
-	UInt64 unk38;
+	bhkWorld *world; // 38
 	UInt32 unk40;
 };
 static_assert(sizeof(bhkBlendCollisionObject) == 0x48);
@@ -277,6 +278,8 @@ inline bool IsMoveableEntity(hkpEntity *entity) { return IsMotionTypeMoveable(en
 hkMemoryRouter &hkGetMemoryRouter();
 inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().blockAlloc(numBytes); }
 
+void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener* worldListener);
+int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener* proxyListener);
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this);
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);

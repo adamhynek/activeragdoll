@@ -14,7 +14,8 @@ struct Blender
 		AnimToRagdoll,
 		CurrentAnimToRagdoll,
 		RagdollToAnim,
-		CurrentRagdollToAnim
+		CurrentRagdollToAnim,
+		RagdollToCurrentRagdoll,
 	};
 
 	struct Curve

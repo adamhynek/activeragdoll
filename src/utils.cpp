@@ -716,14 +716,14 @@ void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause)
 	((_TESObjectREFR_SetActorCause)(vtbl[0x50]))(refr, cause);
 }
 
-UInt8 GetActorKnockState(Actor *actor)
+KnockState GetActorKnockState(Actor *actor)
 {
-	return (actor->actorState.flags04 >> 25) & 7;
+	return KnockState((actor->actorState.flags04 >> 25) & 7);
 }
 
 bool IsActorGettingUp(Actor *actor)
 {
-	return GetActorKnockState(actor) == 6;
+	return GetActorKnockState(actor) == KnockState::GetUp;
 }
 
 bool IsActorUsingFurniture(Actor *actor)

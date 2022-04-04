@@ -90,6 +90,6 @@ UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const Ni
 void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool loud);
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
-UInt8 GetActorKnockState(Actor *actor);
+KnockState GetActorKnockState(Actor *actor);
 bool IsActorGettingUp(Actor *actor);
 bool IsActorUsingFurniture(Actor *actor);

@@ -113,7 +113,7 @@ namespace Config {
 		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
 
 		if (!ReadBool("dontBumpAnimals", options.dontBumpAnimals)) return false;
-		if (!ReadInt("bumpMinRelationshipRank", options.bumpMinRelationshipRank)) return false;
+		if (!ReadInt("bumpMaxRelationshipRank", options.bumpMaxRelationshipRank)) return false;
 
 		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;
 
@@ -162,6 +162,7 @@ namespace Config {
 		if (!ReadBool("applyImpulseOnHit", options.applyImpulseOnHit)) return false;
 		if (!ReadBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) return false;
 		if (!ReadBool("disableHitIfSheathed", options.disableHitIfSheathed)) return false;
+		if (!ReadBool("blendWhenGettingUp", options.blendWhenGettingUp)) return false;
 
 		if (!ReadFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) return false;
 		if (!ReadFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) return false;
