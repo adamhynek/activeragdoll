@@ -567,6 +567,8 @@ std::unordered_set<Actor *> g_keepOffsetActors{};
 
 bool ShouldRagdollOnGrab(Actor *actor)
 {
+	if (!Config::options.ragdollOnGrab) return false;
+
 	TESRace *race = actor->race;
 	if (!race) return false;
 

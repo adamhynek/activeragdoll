@@ -117,6 +117,7 @@ namespace Config {
 
 		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;
 
+		if (!ReadBool("ragdollOnGrab", options.ragdollOnGrab)) return false;
 		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;
 		if (!ReadFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) return false;
 

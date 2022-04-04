@@ -28,6 +28,7 @@ namespace Config {
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 
+		bool ragdollOnGrab = false;
 		bool ragdollSmallRacesOnGrab = true;
 		float smallRaceHealthThreshold = 6.f;
 

@@ -313,13 +313,13 @@ struct MovementMessageActorCollision
 };
 static_assert(sizeof(MovementMessageActorCollision) == 0x18);
 
-struct MovementControllerAI
+struct MovementControllerAI : BSIntrusiveRefCounted
 {
 	virtual ~MovementControllerAI(); // 00
-	virtual void SetInterfaceByName(BSFixedString interfaceName, IMovementInterface *interfacePtr); // 01
-	virtual IMovementInterface * GetInterfaceByName_1(BSFixedString interfaceName); // 02
-	virtual IMovementInterface * GetInterfaceByName_2(BSFixedString interfaceName); // 03
-	virtual void ClearInterfaceByName(BSFixedString interfaceName); // 04
+	virtual void SetInterfaceByName(BSFixedString &interfaceName, IMovementInterface *interfacePtr); // 01
+	virtual IMovementInterface * GetInterfaceByName_1(BSFixedString &interfaceName); // 02
+	virtual IMovementInterface * GetInterfaceByName_2(BSFixedString &interfaceName); // 03
+	virtual void ClearInterfaceByName(BSFixedString &interfaceName); // 04
 	virtual IMovementState * GetCurrentMovementState(); // 05 - returns GetInterfaceByName_1("CurrentMovementState")
 	virtual void InitializeInterfaces(); // 06
 	// ...
@@ -330,7 +330,7 @@ struct MovementControllerAI
 		IMovementInterface *interfacePtr; // 08
 	};
 
-	UInt8 unk08[0x48 - 0x08]; // 08
+	UInt8 unk10[0x48 - 0x10]; // 10
 	BSTSmallArray<InterfaceEntry, 11> interfaces; // 48
 	BSReadWriteLock interfacesLock; // 108
 	UInt64 unk110;
