@@ -704,6 +704,12 @@ void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool 
 	}
 }
 
+MovementControllerNPC * GetMovementController(Actor *actor)
+{
+	// TODO: This is actually refcounted
+	return (MovementControllerNPC *)actor->unk148;
+}
+
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr)
 {
 	UInt64 *vtbl = *((UInt64 **)refr);

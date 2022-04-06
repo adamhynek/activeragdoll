@@ -241,6 +241,7 @@ RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway(0x686920);
 RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update(0x716120);
 RelocAddr<_Actor_KeepOffsetFromActor> Actor_KeepOffsetFromActor(0x60C1A0);
 RelocAddr<_Actor_ClearKeepOffsetFromActor> Actor_ClearKeepOffsetFromActor(0x60C2D0);
+RelocAddr<_MovementControllerNPC_SetKeepOffsetFromActor> MovementControllerNPC_SetKeepOffsetFromActor(0x716F40);
 RelocAddr<_Actor_IsGhost> Actor_IsGhost(0x5DAAE0);
 RelocAddr<_Actor_IsRunning> Actor_IsRunning(0x5D9770);
 RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);

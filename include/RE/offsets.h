@@ -542,6 +542,9 @@ extern RelocAddr<_Actor_KeepOffsetFromActor> Actor_KeepOffsetFromActor;
 typedef void(*_Actor_ClearKeepOffsetFromActor)(Actor *_this);
 extern RelocAddr<_Actor_ClearKeepOffsetFromActor> Actor_ClearKeepOffsetFromActor;
 
+typedef void(*_MovementControllerNPC_SetKeepOffsetFromActor)(MovementControllerNPC *_this, bool keepOffset);
+extern RelocAddr<_MovementControllerNPC_SetKeepOffsetFromActor> MovementControllerNPC_SetKeepOffsetFromActor;
+
 typedef bool(*_Actor_IsGhost)(Actor *_this);
 extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
 

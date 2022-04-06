@@ -1730,6 +1730,9 @@ void ProcessHavokHitJobsHook()
 				if (g_activeActors.size() > 0 && g_activeActors.count(actor)) {
 					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
 					DisableSyncOnUpdate(actor);
+
+					// Force the game to run the animation graph update (and hence driveToPose, etc.)
+					actor->flags2 |= (1 << 8);
 				}
 			}
 			else if (shouldRemoveFromWorld) {
