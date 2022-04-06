@@ -144,6 +144,7 @@ namespace Config {
 
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
+		if (!ReadBool("doBipedSelfCollisionForNPCs", options.doBipedSelfCollisionForNPCs)) return false;
 		if (!ReadBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) return false;
 		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;

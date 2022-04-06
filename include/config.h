@@ -53,8 +53,9 @@ namespace Config {
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
 
-		bool enableBipedBipedCollision = false;
-		bool enableBipedBipedCollisionNoCC = false;
+		bool enableBipedBipedCollision = true;
+		bool enableBipedBipedCollisionNoCC = true;
+		bool doBipedSelfCollisionForNPCs = true;
 		bool enableBipedDeadBipCollision = false;
 		bool enablePlayerBipedCollision = true;
 		bool disableBipedCollisionWithWorld = true;

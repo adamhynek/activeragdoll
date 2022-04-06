@@ -438,6 +438,7 @@ ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 
 std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<UInt16> g_hittableCharControllerGroups{};
+std::unordered_set<UInt16> g_selfCollidableBipedGroups{};
 
 std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
 bhkRigidBody * g_rightHand = nullptr;
@@ -597,6 +598,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody *>, int> activeCollisions{};
 	std::unordered_set<hkpRigidBody *> collidedRigidbodies{};
+	std::unordered_set<TESObjectREFR *> collidedRefs{};
 
 	struct CooldownData
 	{
@@ -985,6 +987,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Clear out any collisions that are no longer active (or that were only removed, since we do events for any removes but only some adds)
 		collidedRigidbodies.clear();
+		collidedRefs.clear();
 		for (auto it = activeCollisions.begin(); it != activeCollisions.end();) {
 			auto[pair, count] = *it;
 			if (count <= 0) {
@@ -994,6 +997,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				auto[bodyA, bodyB] = pair;
 				hkpRigidBody *collidedBody = IsHiggsRigidBody(bodyA) ? bodyB : bodyA;
 				collidedRigidbodies.insert(collidedBody);
+
+				if (TESObjectREFR *ref = GetRefFromCollidable(collidedBody->getCollidable())) {
+					collidedRefs.insert(ref);
+				}
+
 				++it;
 			}
 		}
@@ -1099,6 +1107,21 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 {
 	UInt32 layerA = filterInfoA & 0x7f;
 	UInt32 layerB = filterInfoB & 0x7f;
+
+	if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
+		// Biped vs. biped
+		UInt16 groupA = filterInfoA >> 16;
+		UInt16 groupB = filterInfoB >> 16;
+		if (groupA == groupB) {
+			// biped self-collision
+			if (g_selfCollidableBipedGroups.count(groupA)) {
+				return CollisionFilterComparisonResult::Continue; // will collide with all non-adjacent bones
+			}
+			else {
+				return CollisionFilterComparisonResult::Ignore;
+			}
+		}
+	}
 
 	if (layerA != BGSCollisionLayer::kCollisionLayer_CharController && layerB != BGSCollisionLayer::kCollisionLayer_CharController) {
 		// Neither collidee is a character controller
@@ -1400,6 +1423,43 @@ void DisableSyncOnUpdate(Actor *actor)
 	}
 }
 
+void UpdateCollisionFilterOnAllBones(Actor *actor)
+{
+	if (Actor_IsInRagdollState(actor)) return;
+
+	bool hasRagdollInterface = false;
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+	}
+
+	if (hasRagdollInterface) {
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+								bhkWorld *worldWrapper = world->m_userData;
+								{
+									BSWriteLocker lock(&worldWrapper->worldLock);
+
+									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
+										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 void ProcessHavokHitJobsHook()
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -1436,6 +1496,7 @@ void ProcessHavokHitJobsHook()
 			g_activeActors.clear();
 			g_activeRagdolls.clear();
 			g_hittableCharControllerGroups.clear();
+			g_selfCollidableBipedGroups.clear();
 			g_higgsLingeringRigidBodies.clear();
 			g_keepOffsetActors.clear();
 			g_contactListener = ContactListener{};
@@ -1673,7 +1734,8 @@ void ProcessHavokHitJobsHook()
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
 
-			if (actor == g_rightHeldRefr || actor == g_leftHeldRefr) {
+			bool isHeld = actor == g_rightHeldRefr || actor == g_leftHeldRefr;
+			if (isHeld) {
 				if (!Actor_IsInRagdollState(actor)) {
 					if (ShouldRagdollOnGrab(actor)) {
 						if (ActorProcessManager *process = actor->processManager) {
@@ -1733,6 +1795,26 @@ void ProcessHavokHitJobsHook()
 
 					// Force the game to run the animation graph update (and hence driveToPose, etc.)
 					actor->flags2 |= (1 << 8);
+
+					// Set whether we want biped self-collision for this actor
+					if (Config::options.doBipedSelfCollisionForNPCs) {
+						if (TESRace *race = actor->race) {
+							if (race->keyword.HasKeyword(g_keyword_actorTypeNPC) && collisionGroup != 0) {
+								if (g_contactListener.collidedRefs.count(actor) || isHeld) {
+									if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
+										g_selfCollidableBipedGroups.insert(collisionGroup);
+										UpdateCollisionFilterOnAllBones(actor);
+									}
+								}
+								else {
+									if (g_selfCollidableBipedGroups.count(collisionGroup)) {
+										g_selfCollidableBipedGroups.erase(collisionGroup);
+										UpdateCollisionFilterOnAllBones(actor);
+									}
+								}
+							}
+						}
+					}
 				}
 			}
 			else if (shouldRemoveFromWorld) {
