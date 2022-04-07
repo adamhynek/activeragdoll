@@ -575,6 +575,21 @@ extern RelocAddr<_CombatController_sub_14050DEC0> CombatController_sub_14050DEC0
 typedef void(*_Actor_RemoveMagicEffectsDueToAction)(Actor *_this, int action);
 extern RelocAddr<_Actor_RemoveMagicEffectsDueToAction> Actor_RemoveMagicEffectsDueToAction;
 
+typedef float(*_ActorValueOwner_GetStaminaCostForAttackData)(ActorValueOwner *_this, BGSAttackData *attackData);
+extern RelocAddr<_ActorValueOwner_GetStaminaCostForAttackData> ActorValueOwner_GetStaminaCostForAttackData;
+
+typedef float(*_Actor_GetActorValueRegenRate)(Actor *_this, UInt32 actorValue);
+extern RelocAddr<_Actor_GetActorValueRegenRate> Actor_GetActorValueRegenRate;
+
+typedef void(*_ActorProcess_UpdateRegenDelay)(ActorProcessManager *_this, UInt32 actorValue, float delay);
+extern RelocAddr<_ActorProcess_UpdateRegenDelay> ActorProcess_UpdateRegenDelay;
+
+typedef void(*_FlashHudMenuMeter)(UInt32 actorValue);
+extern RelocAddr<_FlashHudMenuMeter> FlashHudMenuMeter;
+
+typedef float(*_PlayerControls_sub_140705530)(PlayerControls *_this, UInt64 defaultActionObject, UInt64 a3);
+extern RelocAddr<_PlayerControls_sub_140705530> PlayerControls_sub_140705530;
+
 typedef void(*_Character_HitTarget)(Character *_this, Actor *target, Projectile *projectile, bool isOffhand);
 extern RelocAddr<_Character_HitTarget> Character_HitTarget;
 

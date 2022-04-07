@@ -167,7 +167,7 @@ struct BGSAttackData : NiRefObject
 		float                                       damageMult;     // 00
 		float                                       attackChance;   // 04
 		SpellItem*                                  attackSpell;    // 08
-		AttackFlag									flags;          // 10
+		UInt32										flags;          // 10
 		float                                       attackAngle;    // 14
 		float                                       strikeAngle;    // 18
 		float                                       staggerOffset;  // 1C
@@ -395,7 +395,29 @@ struct CharacterCollisionHandler
 	virtual void HandleCharacterCollision(struct bhkCharacterController *collider, struct bhkCharacterController *collidee); // 01
 };
 
+struct ActionInput
+{
+	void *vtbl; // 00
+	NiPointer<Actor> source; // 08
+	NiPointer<Actor> target; // 10
+	BGSAction *action; // 18
+	UInt32 unk20;
+};
+
+struct TESActionData : ActionInput
+{
+	BSFixedString unk28;
+	BSFixedString unk30;
+	UInt64 unk38;
+	UInt64 unk40;
+	UInt64 unk48;
+	UInt64 unk50;
+	UInt64 unk58;
+};
+
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);
+typedef bool(*_MagicTarget_IsInvulnerable)(MagicTarget *_this);
+typedef bool(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);

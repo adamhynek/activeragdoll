@@ -57,6 +57,9 @@ SKSETrampolineInterface *g_trampoline = nullptr;
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
+bool g_isRightTriggerHeld = false;
+bool g_isLeftTriggerHeld = false;
+
 
 // Potentially, could hook TESObjectREFR::InitHavok to set the collision layer for the weapon when we drop it so it doesn't collide with the bumper
 
@@ -238,7 +241,7 @@ void Hit()
 }
 */
 
-void HitActor(Character *source, Character *target, TESForm *weapon, bool isOffhand)
+void HitActor(Character *source, Character *target, TESForm *weapon, BGSAttackData *attackData, bool isOffhand, bool isPowerAttack)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -261,8 +264,34 @@ void HitActor(Character *source, Character *target, TESForm *weapon, bool isOffh
 		source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
-	int dialogueSubtype = isBash ? 28 : 26; // 26 is attack, 27 powerattack, 28 bash
+	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
 	UpdateDialogue(nullptr, source, target, 3, dialogueSubtype, false, nullptr);
+
+	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack)) {
+		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), isOffhand ? 45 : 49, 2);
+		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&source->magicTarget, 4)(&source->magicTarget)) {
+			float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&source->actorValueOwner, attackData);
+			if (staminaCost > 0.f) {
+				float staminaBeforeHit = source->actorValueOwner.GetCurrent(26);
+
+				// source->RestoreActorValue(kDamage, kStamina, -staminaCost)
+				get_vfunc<_ActorValueOwner_RestoreActorValue>(&source->actorValueOwner, 6)(&source->actorValueOwner, 2, 26, -staminaCost);
+
+				if (source->actorValueOwner.GetCurrent(26) <= 0.f) {
+					// Out of stamina after the hit
+					if (ActorProcessManager *process = source->processManager) {
+						float regenRate = Actor_GetActorValueRegenRate(source, 26);
+						ActorProcess_UpdateRegenDelay(process, 26, (staminaBeforeHit - staminaCost) / regenRate);
+						FlashHudMenuMeter(26);
+					}
+				}
+			}
+		}
+	}
+
+	// Make noise
+	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weap) : TESNPC_GetSoundAmount((TESNPC *)source->baseForm);
+	Actor_SetActionValue(source, soundAmount);
 
 	Character_HitTarget(source, target, nullptr, isOffhand);
 
@@ -677,10 +706,22 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
 
+		bool isPowerAttack = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
+
 		// Set attack data
 		BGSAttackData *attackData = nullptr;
-		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, false, &attackData);
+		PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, isPowerAttack, &attackData);
 		if (!attackData) return;
+
+		if (isPowerAttack) {
+			float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
+			float currentStamina = player->actorValueOwner.GetCurrent(26);
+			if (staminaCost > 0.f && currentStamina <= 0.f) {
+				// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
+				PlayerCharacter_UpdateAndGetAttackData(player, *g_isUsingMotionControllers, isOffhand, false, &attackData);
+				isPowerAttack = false;
+			}
+		}
 
 		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
 		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
@@ -693,7 +734,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
-			HitActor(player, hitChar, weapon, isOffhand);
+			HitActor(player, hitChar, weapon, attackData, isOffhand, isPowerAttack);
 
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
@@ -2601,6 +2642,28 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 	return true;
 }
 
+void ControllerStateCB(uint32_t unControllerDeviceIndex, vr_src::VRControllerState001_t *pControllerState, uint32_t unControllerStateSize, bool& state)
+{
+	PlayerCharacter *player = *g_thePlayer;
+	if (!player || !player->GetNiNode()) return;
+
+	constexpr vr_src::ETrackedControllerRole rightControllerRole = vr_src::ETrackedControllerRole::TrackedControllerRole_RightHand;
+	vr_src::TrackedDeviceIndex_t rightController = (*g_openVR)->vrSystem->GetTrackedDeviceIndexForControllerRole(rightControllerRole);
+
+	constexpr vr_src::ETrackedControllerRole leftControllerRole = vr_src::ETrackedControllerRole::TrackedControllerRole_LeftHand;
+	vr_src::TrackedDeviceIndex_t leftController = (*g_openVR)->vrSystem->GetTrackedDeviceIndexForControllerRole(leftControllerRole);
+
+	if (unControllerDeviceIndex == rightController) {
+		// Check if the trigger is pressed
+		const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
+		g_isRightTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
+	}
+	else if (unControllerDeviceIndex == leftController) {
+		const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
+		g_isLeftTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
+	}
+}
+
 void ShowErrorBox(const char *errorString)
 {
 	int msgboxID = MessageBox(
@@ -2741,6 +2804,7 @@ extern "C" {
 			return false;
 		}
 		g_vrInterface->RegisterForPoses(g_pluginHandle, 11, WaitPosesCB);
+		g_vrInterface->RegisterForControllerState(g_pluginHandle, 11, ControllerStateCB);
 
 		g_timer.Start();
 
