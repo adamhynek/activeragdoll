@@ -144,6 +144,7 @@ namespace Config {
 
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
+		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
 		if (!ReadBool("doBipedSelfCollisionForNPCs", options.doBipedSelfCollisionForNPCs)) return false;
 		if (!ReadBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) return false;
 		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
@@ -203,6 +204,8 @@ namespace Config {
 		if (!ReadFloat("playerCharControllerRadius", options.playerCharControllerRadius)) return false;
 		if (!ReadFloat("playerCapsuleRadius", options.playerCapsuleRadius)) return false;
 
+		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) return false;
+
 		return true;
 	}
 
@@ -254,7 +257,7 @@ namespace Config {
 
 		const std::string & configPath = GetConfigPath();
 		if (!configPath.empty()) {
-			char	resultBuf[256];
+			static char resultBuf[4096];
 			resultBuf[0] = 0;
 
 			UInt32	resultLen = GetPrivateProfileString(section, key, NULL, resultBuf, sizeof(resultBuf), configPath.c_str());

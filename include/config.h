@@ -55,6 +55,7 @@ namespace Config {
 
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;
+		bool doBipedSelfCollision = true;
 		bool doBipedSelfCollisionForNPCs = true;
 		bool enableBipedDeadBipCollision = false;
 		bool enablePlayerBipedCollision = true;
@@ -113,6 +114,8 @@ namespace Config {
 		bool centerPlayerCapsule = true;
 		float playerCharControllerRadius = 0.15f;
 		float playerCapsuleRadius = 0.15f;
+
+		std::set<std::string, std::less<>> additionalSelfCollisionRaces;
 	};
 	extern Options options; // global object containing options
 

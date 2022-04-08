@@ -1838,9 +1838,12 @@ void ProcessHavokHitJobsHook()
 					actor->flags2 |= (1 << 8);
 
 					// Set whether we want biped self-collision for this actor
-					if (Config::options.doBipedSelfCollisionForNPCs) {
+					if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
 						if (TESRace *race = actor->race) {
-							if (race->keyword.HasKeyword(g_keyword_actorTypeNPC) && collisionGroup != 0) {
+							const char *name = race->editorId;
+							if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
+								(name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
+
 								if (g_contactListener.collidedRefs.count(actor) || isHeld) {
 									if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
 										g_selfCollidableBipedGroups.insert(collisionGroup);
