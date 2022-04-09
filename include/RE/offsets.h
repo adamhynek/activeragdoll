@@ -515,6 +515,9 @@ extern RelocAddr<_hkpCharacterProxy_addCharacterProxyListener> hkpCharacterProxy
 typedef void(*_hkpCharacterProxy_removeCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener* listener);
 extern RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_removeCharacterProxyListener;
 
+typedef void(*_hkpEntity_updateMovedBodyInfo)(hkpEntity *_this);
+extern RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo;
+
 typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
 extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 

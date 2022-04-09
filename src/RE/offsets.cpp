@@ -232,6 +232,7 @@ RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild(0xA9C3F0);
 RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild(0xA9C420);
 RelocAddr<_hkpCharacterProxy_addCharacterProxyListener> hkpCharacterProxy_addCharacterProxyListener(0xAFA820);
 RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_removeCharacterProxyListener(0xAFA880);
+RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo(0xAA9E10);
 RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_GetBumped> Actor_GetBumped(0x5E4B70);
 RelocAddr<_GetHeadingFromVector> GetHeadingFromVector(0xC97030);

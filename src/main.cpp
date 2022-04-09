@@ -2180,7 +2180,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	// Root motion
 	if (NiPointer<NiNode> root = actor->GetNiNode()) {
-		if (bhkCharRigidBodyController *controller = GetCharRigidBodyController(actor)) {
+		if (bhkCharacterController *controller = GetCharacterController(actor)) {
 			if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 				if (NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root)) {
 					NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
@@ -2194,8 +2194,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this is the root collision node so there shouldn't be much of a hierarchy here
 						hkQsTransform poseT;
 						poseT.setMul(worldFromModel, poseData[boneIndex]);
-							
-						if (Config::options.doRootMotion && ragdoll.hasHipBoneTransform) {
+
+						if (Config::options.doWarp && ragdoll.hasHipBoneTransform) {
 							hkTransform actualT;
 							rb->getTransform(actualT);
 
@@ -2203,20 +2203,29 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
 							NiPoint3 posDiff = actualPos - posePos;
 
-							PrintVector(posDiff);
-							hkpSurfaceInfo &surface = controller->surfaceInfo;
-							if (surface.m_supportedState == hkpSurfaceInfo::SupportedState::SUPPORTED) {
-								NiPoint3 supportNorm = HkVectorToNiPoint(surface.m_surfaceNormal);
-								NiPoint3 posDiffInSupportPlane = ProjectVectorOntoPlane(posDiff, supportNorm);
+							if (VectorLength(posDiff) > Config::options.maxAllowedDistBeforeWarp) {
+								if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
+									SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
+								}
 
-								//PrintToFile(std::to_string(VectorLength(posDiffInSupportPlane)), "posdiff.txt");
+								hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-								if (VectorLength(posDiffInSupportPlane) > Config::options.rootMotionMinOffset) {
-									float deltaTime = *g_deltaTime;
-									NiPoint3 vel = posDiffInSupportPlane / deltaTime;
-									vel *= Config::options.rootMotionVelocityMultiplier;
-									vel += HkVectorToNiPoint(ahkpCharacterRigidBody_getLinearVelocity(controller->characterRigidBody.characterRigidBody));
-									ahkpCharacterRigidBody_setLinearVelocity(controller->characterRigidBody.characterRigidBody, NiPointToHkVector(vel), deltaTime);
+								int numPosesLow = driver->ragdoll->getNumBones();
+								static std::vector<hkQsTransform> poseWorld{};
+								poseWorld.resize(numPosesLow);
+								hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+
+								// Set rigidbody transforms to the anim pose ones
+								for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+									hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+									hkQsTransform &transform = poseWorld[i];
+
+									hkTransform newTransform;
+									newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation) * *g_havokWorldScale);
+									hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
+
+									rb->getRigidMotion()->setTransform(newTransform);
+									hkpEntity_updateMovedBodyInfo(rb);
 								}
 							}
 						}

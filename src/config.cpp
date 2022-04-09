@@ -128,9 +128,8 @@ namespace Config {
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
 		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;
 
-		if (!ReadBool("doRootMotion", options.doRootMotion)) return false;
-		if (!ReadFloat("rootMotionMinOffset", options.rootMotionMinOffset)) return false;
-		if (!ReadFloat("rootMotionVelocityMultiplier", options.rootMotionVelocityMultiplier)) return false;
+		if (!ReadBool("doWarp", options.doWarp)) return false;
+		if (!ReadFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) return false;
 
 		if (!ReadFloat("hierarchyGain", options.hierarchyGain)) return false;
 		if (!ReadFloat("velocityGain", options.velocityGain)) return false;

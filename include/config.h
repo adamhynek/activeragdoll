@@ -39,9 +39,8 @@ namespace Config {
 		float collisionDamageMinSpeed = 400.f; // skyrim units
 		float collisionDamageMinMass = 6.f;
 
-		bool doRootMotion = false;
-		float rootMotionMinOffset = 0.02f;
-		float rootMotionVelocityMultiplier = 0.03f;
+		bool doWarp = true;
+		float maxAllowedDistBeforeWarp = 15.f;
 
 		float hierarchyGain = 0.6f;
 		float velocityGain = 0.6f;
