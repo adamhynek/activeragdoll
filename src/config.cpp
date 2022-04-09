@@ -123,7 +123,6 @@ namespace Config {
 
 		if (!ReadBool("doKeepOffset", options.doKeepOffset)) return false;
 		if (!ReadDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) return false;
-		if (!ReadDouble("keepOffsetTimeout", options.keepOffsetTimeout)) return false;
 
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
 		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;

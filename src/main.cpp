@@ -596,7 +596,6 @@ bool ShouldKeepOffset(Actor *actor)
 
 struct KeepOffsetData
 {
-	double firstAttemptTime = 0.0;
 	double lastAttemptTime = 0.0;
 	bool success = false;
 };
@@ -1832,7 +1831,7 @@ void ProcessHavokHitJobsHook()
 							//UInt32 handle = actorHandle;
 							//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
 
-							g_keepOffsetActors[actor] = { now, now, false };
+							g_keepOffsetActors[actor] = { now, false };
 						}
 						else {
 							// Already in the set, so check if it actually succeeded at first
@@ -1843,12 +1842,7 @@ void ProcessHavokHitJobsHook()
 
 								static BSFixedString keepOffsetFromActorStr("Keep Offset From Actor");
 								if (!controller->GetInterfaceByName_2(keepOffsetFromActorStr)) {
-									if (now - data.firstAttemptTime > Config::options.keepOffsetTimeout) {
-										// Taking too long without working, so just bail
-										Actor_ClearKeepOffsetFromActor(actor);
-										g_keepOffsetActors.erase(it);
-									}
-									else if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+									if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
 										// Retry
 										g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
 										data.lastAttemptTime = now;

@@ -34,7 +34,6 @@ namespace Config {
 
 		bool doKeepOffset = true;
 		double keepOffsetRetryInterval = 1.0;
-		double keepOffsetTimeout = 10.0;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units
 		float collisionDamageMinMass = 6.f;
