@@ -59,7 +59,7 @@ namespace Config {
 		bool enableBipedBipedCollisionNoCC = true;
 		bool doBipedSelfCollision = true;
 		bool doBipedSelfCollisionForNPCs = true;
-		bool enableBipedDeadBipCollision = false;
+		bool enableBipedDeadBipCollision = true;
 		bool enablePlayerBipedCollision = true;
 		bool disableBipedCollisionWithWorld = true;
 		bool enableBipedClutterCollision = true;

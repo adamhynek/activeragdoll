@@ -1609,6 +1609,10 @@ void ProcessHavokHitJobsHook()
 			if (Config::options.enableBipedBipedCollisionNoCC) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_BipedNoCC);
 			}
+			if (Config::options.enableBipedDeadBipCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_DeadBip);
+			}
+			ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_BipedNoCC);
 		}
 
 		g_contactListener.world = world;
