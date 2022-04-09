@@ -467,6 +467,7 @@ struct ControllerVelocityData
 ControllerVelocityData g_controllerVelocities[2]; // one for each hand
 
 std::unordered_set<Actor *> g_activeActors{};
+std::unordered_set<UInt16> g_activeBipedGroups{};
 std::unordered_set<UInt16> g_hittableCharControllerGroups{};
 std::unordered_set<UInt16> g_selfCollidableBipedGroups{};
 
@@ -834,13 +835,19 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		if (((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
 			((layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon))) {
-			if (Config::options.doClutterVsBipedCollisionDamage) {
-				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
-					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
-						bool isATarget = refrA->formType == kFormType_Character;
-						Actor *actor = DYNAMIC_CAST(isATarget ? refrA : refrB, TESObjectREFR, Actor);
+			if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
+				if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
+					bool isATarget = refrA->formType == kFormType_Character;
+					Actor *actor = DYNAMIC_CAST(isATarget ? refrA : refrB, TESObjectREFR, Actor);
+					if (!actor) {
+						// Disable collision with biped objects that are not actors
+						evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+						return;
+					}
+
+					if (Config::options.doClutterVsBipedCollisionDamage) {
 						hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
-						if (actor && !physicsHitCooldownTargets.count({ actor, hittingBody })) {
+						if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {
 							bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
 							Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
 							ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()));
@@ -1225,9 +1232,13 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 				(g_leftHeldObject && otherGroup == g_leftHeldCollisionGroup)) {
 				return CollisionFilterComparisonResult::Ignore;
 			}
-			else {
-				return CollisionFilterComparisonResult::Collide;
+
+			if (!g_activeBipedGroups.count(otherGroup)) {
+				// Disable collision with biped objects that are not actors
+				return CollisionFilterComparisonResult::Ignore;
 			}
+
+			return CollisionFilterComparisonResult::Collide;
 		}
 	}
 
@@ -1570,6 +1581,7 @@ void ProcessHavokHitJobsHook()
 
 			g_activeActors.clear();
 			g_activeRagdolls.clear();
+			g_activeBipedGroups.clear();
 			g_hittableCharControllerGroups.clear();
 			g_selfCollidableBipedGroups.clear();
 			g_higgsLingeringRigidBodies.clear();
@@ -1891,6 +1903,9 @@ void ProcessHavokHitJobsHook()
 				if (!isAddedToWorld || !isActiveActor) {
 					if (canAddToWorld) {
 						AddRagdollToWorld(actor);
+						if (collisionGroup != 0) {
+							g_activeBipedGroups.insert(collisionGroup);
+						}
 					}
 					else {
 						// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
@@ -1934,6 +1949,7 @@ void ProcessHavokHitJobsHook()
 				if (isAddedToWorld) {
 					if (canAddToWorld) {
 						RemoveRagdollFromWorld(actor);
+						g_activeBipedGroups.erase(collisionGroup);
 					}
 					else {
 						if (isHittableCharController) {
