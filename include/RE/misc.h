@@ -352,11 +352,12 @@ struct MovementControllerNPC : MovementControllerAI
 	tArray<MovementMessageActorCollision *> movementMessages; // 158
 	UInt8 unk170[0x1B8 - 0x170];
 	Actor *actor; // 1B8
-	UInt64 unk1C0;
+	UInt32 flags; // 1C0
+	UInt32 unk1C4;
 	UInt8 unk1C8;
 	UInt8 unk1C9;
 	UInt8 unk1CA;
-	UInt8 keepOffsetFromActor;
+	UInt8 keepOffsetFromActor; // 1CB
 	UInt8 unk1CC;
 	UInt8 unk1CD;
 	UInt8 unk1CE;
@@ -421,3 +422,4 @@ typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);
 typedef bool(*_MagicTarget_IsInvulnerable)(MagicTarget *_this);
 typedef bool(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);
+typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UInt32 unk);

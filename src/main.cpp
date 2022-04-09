@@ -53,6 +53,7 @@ static SKSEMessagingInterface *g_messaging = nullptr;
 
 SKSEVRInterface *g_vrInterface = nullptr;
 SKSETrampolineInterface *g_trampoline = nullptr;
+SKSETaskInterface *g_taskInterface = nullptr;
 
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
@@ -583,7 +584,7 @@ void TryQueueBumpActor(Actor *actor)
 bool ShouldKeepOffset(Actor *actor)
 {
 	if (!Config::options.doKeepOffset) return false;
-	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
+	if (Actor_IsGhost(actor)) return false;
 	if (IsActorUsingFurniture(actor)) return false;
 
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
@@ -593,7 +594,13 @@ bool ShouldKeepOffset(Actor *actor)
 	return true;
 }
 
-std::unordered_set<Actor *> g_keepOffsetActors{};
+struct KeepOffsetData
+{
+	double firstAttemptTime = 0.0;
+	double lastAttemptTime = 0.0;
+	bool success = false;
+};
+std::unordered_map<Actor *, KeepOffsetData> g_keepOffsetActors{};
 
 bool ShouldRagdollOnGrab(Actor *actor)
 {
@@ -1501,6 +1508,34 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
 	}
 }
 
+struct KeepOffsetTask : TaskDelegate
+{
+	static KeepOffsetTask * Create(UInt32 source, UInt32 target) {
+		KeepOffsetTask * cmd = new KeepOffsetTask;
+		if (cmd) {
+			cmd->source = source;
+			cmd->target = target;
+		}
+		return cmd;
+	}
+
+	virtual void Run() {
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(source, refr)) {
+			if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+				Actor_KeepOffsetFromActor(actor, target, NiPoint3(0.f, 0.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 50.f);
+			}
+		}
+	}
+
+	virtual void Dispose() {
+		delete this;
+	}
+
+	UInt32 source;
+	UInt32 target;
+};
+
 void ProcessHavokHitJobsHook()
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -1699,6 +1734,8 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
+	double now = GetTime();
+
 	{ // Update higgs info
 		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
 		g_rightHand = rightHand;
@@ -1729,7 +1766,6 @@ void ProcessHavokHitJobsHook()
 		g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
 		g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
 
-		double now = GetTime();
 		if (g_rightHeldObject) {
 			g_higgsLingeringRigidBodies[g_rightHeldObject] = now;
 		}
@@ -1783,14 +1819,49 @@ void ProcessHavokHitJobsHook()
 							ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
 						}
 					}
-					else if (ShouldKeepOffset(actor) && !g_keepOffsetActors.count(actor)) {
-						UInt32 handle = GetOrCreateRefrHandle(player);
-						Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 0.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 50.f);
+					else if (ShouldKeepOffset(actor)) {
+						if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
+							// Wasn't grabbed before
+							g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
 
-						//UInt32 handle = actorHandle;
-						//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
+							// At some point we probably want to do a better job of this and use offsets from the actor itself rather than the player
+							//UInt32 handle = actorHandle;
+							//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
 
-						g_keepOffsetActors.insert(actor);
+							g_keepOffsetActors[actor] = { now, now, false };
+						}
+						else {
+							// Already in the set, so check if it actually succeeded at first
+							KeepOffsetData &data = it->second;
+
+							if (MovementControllerNPC *controller = GetMovementController(actor)) {
+								InterlockedIncrement(&controller->m_refCount); // incref
+
+								static BSFixedString keepOffsetFromActorStr("Keep Offset From Actor");
+								if (!controller->GetInterfaceByName_2(keepOffsetFromActorStr)) {
+									if (now - data.firstAttemptTime > Config::options.keepOffsetTimeout) {
+										// Taking too long without working, so just bail
+										Actor_ClearKeepOffsetFromActor(actor);
+										g_keepOffsetActors.erase(it);
+									}
+									else if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+										// Retry
+										g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+										data.lastAttemptTime = now;
+									}
+								}
+								else if (!data.success) {
+									// To be sure, do a single additional attempt once we know the interface exists
+									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+									data.success = true;
+								}
+
+								// decref
+								if (InterlockedExchangeSubtract(&controller->m_refCount, (UInt32)1) == 1) {
+									get_vfunc< _BSIntrusiveRefCounted_Destruct>(controller, 0x0)(controller, 1);
+								}
+							}
+						}
 					}
 				}
 
@@ -2791,6 +2862,12 @@ extern "C" {
 		_MESSAGE("Registering for SKSE messages");
 		g_messaging = (SKSEMessagingInterface*)skse->QueryInterface(kInterface_Messaging);
 		g_messaging->RegisterListener(g_pluginHandle, "SKSE", OnSKSEMessage);
+
+		g_taskInterface = (SKSETaskInterface *)skse->QueryInterface(kInterface_Task);
+		if (!g_taskInterface) {
+			ShowErrorBoxAndLog("[CRITICAL] Could not get SKSE task interface");
+			return false;
+		}
 
 		g_trampoline = (SKSETrampolineInterface *)skse->QueryInterface(kInterface_Trampoline);
 		if (!g_trampoline) {

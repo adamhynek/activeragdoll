@@ -32,7 +32,9 @@ namespace Config {
 		bool ragdollSmallRacesOnGrab = true;
 		float smallRaceHealthThreshold = 6.f;
 
-		bool doKeepOffset = false;
+		bool doKeepOffset = true;
+		double keepOffsetRetryInterval = 1.0;
+		double keepOffsetTimeout = 10.0;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units
 		float collisionDamageMinMass = 6.f;
