@@ -242,7 +242,7 @@ void Hit()
 }
 */
 
-void HitActor(Character *source, Character *target, TESForm *weapon, BGSAttackData *attackData, bool isOffhand, bool isPowerAttack)
+void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, bool isOffhand, bool isPowerAttack)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -252,8 +252,8 @@ void HitActor(Character *source, Character *target, TESForm *weapon, BGSAttackDa
 	TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
 	bool isTorch = isOffhand && equippedLight;
 
-	TESObjectWEAP *weap = DYNAMIC_CAST(weapon, TESForm, TESObjectWEAP);
-	bool isBowOrCrossbow = weap && (weap->type() == TESObjectWEAP::GameData::kType_Bow || weap->type() == TESObjectWEAP::GameData::kType_CrossBow);
+	TESObjectWEAP *weapon = DYNAMIC_CAST(weaponForm, TESForm, TESObjectWEAP);
+	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
 
 	bool isBash = isBowOrCrossbow || isShield || isTorch;
 
@@ -291,7 +291,7 @@ void HitActor(Character *source, Character *target, TESForm *weapon, BGSAttackDa
 	}
 
 	// Make noise
-	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weap) : TESNPC_GetSoundAmount((TESNPC *)source->baseForm);
+	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)source->baseForm);
 	Actor_SetActionValue(source, soundAmount);
 
 	Character_HitTarget(source, target, nullptr, isOffhand);
