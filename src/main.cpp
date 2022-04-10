@@ -1725,7 +1725,6 @@ void ProcessHavokHitJobsHook()
 					// TODO: Am I accidentally modifying every npc's capsule too? I don't think so.
 					// Shrink capsule shape too. It's active when weapons are unsheathed.
 					float radius = Config::options.playerCapsuleRadius;
-					hkpCapsuleShape *capsule = ((hkpCapsuleShape *)listShape->m_childInfo[1].m_shape);
 					float originalRadius = capsule->m_radius;
 					capsule->m_radius = radius;
 
