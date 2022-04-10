@@ -1640,14 +1640,16 @@ void ProcessHavokHitJobsHook()
 					hkpCharacterProxy_addCharacterProxyListener(proxy, &g_characterProxyListener);
 				}
 
-				hkpListShape *listShape = ((hkpListShape*)proxy->m_shapePhantom->m_collidable.m_shape);
+				// Normally, the player has a list shape that has both a hkCharControllerShape and a capsule shape, but in werewolf / vampire lord, they have only the charcontroller shape.
+				hkpListShape *listShape = DYNAMIC_CAST(proxy->m_shapePhantom->m_collidable.m_shape, hkpShape, hkpListShape);
+				hkpConvexVerticesShape *convexVerticesShape = DYNAMIC_CAST(listShape ? listShape->m_childInfo[0].m_shape : proxy->m_shapePhantom->m_collidable.m_shape, hkpShape, hkpConvexVerticesShape);
+				hkpCapsuleShape *capsule = DYNAMIC_CAST(listShape ? listShape->m_childInfo[1].m_shape : proxy->m_shapePhantom->m_collidable.m_shape, hkpShape, hkpCapsuleShape);
 
-				if (Config::options.resizePlayerCharController) {
+				if (Config::options.resizePlayerCharController && convexVerticesShape) {
 					// Shrink convex charcontroller shape
 					g_scratchHkArray.clear();
 					hkArray<hkVector4> &verts = g_scratchHkArray;
 
-					hkpConvexVerticesShape *convexVerticesShape = ((hkpConvexVerticesShape *)listShape->m_childInfo[0].m_shape);
 					hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
 					// The charcontroller shape is composed of two vertically concentric "rings" with a single point above and below the top/bottom ring.
@@ -1706,14 +1708,20 @@ void ProcessHavokHitJobsHook()
 					wrapper->SetHavokObject(newShape);
 
 					// The listshape does not use a hkRefPtr but it's still setup to add a reference upon construction and remove one on destruction
-					listShape->m_childInfo[0].m_shape = newShape;
-					hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
+					if (listShape) {
+						listShape->m_childInfo[0].m_shape = newShape;
+						hkReferencedObject_removeReference(convexVerticesShape); // this will usually call the dtor on the old shape
 
-					// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
-					// hkReferencedObject_removeReference(newShape);
+						// We don't need to remove a ref here, the ctor gave it a refcount of 1 and we assigned it to the listShape which isn't technically a hkRefPtr but still owns it (and the listShape's dtor will decref anyways)
+						// hkReferencedObject_removeReference(newShape);
+					}
+					else {
+						proxy->m_shapePhantom->setShape(newShape);
+						hkReferencedObject_removeReference(newShape);
+					}
 				}
 
-				if (Config::options.resizePlayerCapsule) {
+				if (Config::options.resizePlayerCapsule && capsule) {
 					// TODO: Am I accidentally modifying every npc's capsule too? I don't think so.
 					// Shrink capsule shape too. It's active when weapons are unsheathed.
 					float radius = Config::options.playerCapsuleRadius;
