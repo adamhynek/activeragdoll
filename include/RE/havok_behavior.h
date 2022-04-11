@@ -278,7 +278,7 @@ struct bhkCharacterProxy : bhkSerializable
 
 struct bhkCharacterRigidBody : bhkSerializable
 {
-	RE::hkRefPtr < hkpCharacterRigidBody> characterRigidBody; // 10
+	RE::hkRefPtr <hkpCharacterRigidBody> characterRigidBody; // 10
 	UInt64 unk18;
 	bhkRigidBody *rigidBody; // 20
 	NiAVObject *unk28; // 28 - MarkerX ??

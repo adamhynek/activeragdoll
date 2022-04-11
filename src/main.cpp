@@ -191,7 +191,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 			if (!weapon) weapon = *g_unarmedWeapon;
 
 			// Now dispatch the hit event
-			TESHitEvent hitEvent{ source, target, weapon->formID, 0, 0 };
+			TESHitEvent hitEvent{ target, source, weapon->formID, 0, 0 };
 
 			void *scriptEventSourceHolder = GetScriptEventSourceHolder();
 			DispatchHitEvent((void *)((UInt64)scriptEventSourceHolder + 0x5D8), &hitEvent);
