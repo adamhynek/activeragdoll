@@ -158,6 +158,7 @@ namespace Config {
 		if (!ReadBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) return false;
 		if (!ReadBool("disableCullingForActiveRagdolls", options.disableCullingForActiveRagdolls)) return false;
 		if (!ReadBool("forceGenerateForActiveRagdolls", options.forceGenerateForActiveRagdolls)) return false;
+		if (!ReadBool("forceAnimationUpdateForActiveActors", options.forceAnimationUpdateForActiveActors)) return false;
 		if (!ReadBool("disableClutterVsCharacterControllerCollisionForActiveActors", options.disableClutterVsCharacterControllerCollisionForActiveActors)) return false;
 		if (!ReadBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) return false;
 		if (!ReadBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) return false;

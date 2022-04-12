@@ -69,6 +69,7 @@ namespace Config {
 		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;
 		bool forceGenerateForActiveRagdolls = true;
+		bool forceAnimationUpdateForActiveActors = true;
 		bool disableClutterVsCharacterControllerCollisionForActiveActors = true;
 		bool doClutterVsBipedCollisionDamage = true;
 		bool showCollisionDamageHitFx = false;

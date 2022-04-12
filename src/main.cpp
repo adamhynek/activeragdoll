@@ -1923,8 +1923,10 @@ void ProcessHavokHitJobsHook()
 					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
 					DisableSyncOnUpdate(actor);
 
-					// Force the game to run the animation graph update (and hence driveToPose, etc.)
-					actor->flags2 |= (1 << 8);
+					if (Config::options.forceAnimationUpdateForActiveActors) {
+						// Force the game to run the animation graph update (and hence driveToPose, etc.)
+						actor->flags2 |= (1 << 8);
+					}
 
 					// Set whether we want biped self-collision for this actor
 					if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
