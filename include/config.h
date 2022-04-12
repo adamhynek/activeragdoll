@@ -24,6 +24,7 @@ namespace Config {
 		double thrownObjectLingerTime = 5.0;
 
 		bool bumpActorsWhenTouched = true;
+		float bumpSpeedThreshold = 1.f;
 		bool dontBumpAnimals = true;
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
@@ -62,6 +63,7 @@ namespace Config {
 		bool disableBipedCollisionWithWorld = true;
 		bool enableBipedClutterCollision = true;
 		bool enableBipedWeaponCollision = true;
+		bool disableGravityForActiveRagdolls = true;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
 		bool copyFootIkToPoseTrack = true;

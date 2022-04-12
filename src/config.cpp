@@ -111,6 +111,7 @@ namespace Config {
 		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
 
 		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
+		if (!ReadFloat("bumpSpeedThreshold", options.bumpSpeedThreshold)) return false;
 
 		if (!ReadBool("dontBumpAnimals", options.dontBumpAnimals)) return false;
 		if (!ReadInt("bumpMaxRelationshipRank", options.bumpMaxRelationshipRank)) return false;
@@ -151,6 +152,7 @@ namespace Config {
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
 		if (!ReadBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) return false;
 		if (!ReadBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) return false;
+		if (!ReadBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) return false;
 		if (!ReadBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) return false;
 		if (!ReadBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) return false;
 		if (!ReadBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) return false;

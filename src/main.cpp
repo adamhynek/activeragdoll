@@ -986,7 +986,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			}
 
-			if (Config::options.bumpActorsWhenTouched) {
+			if (Config::options.bumpActorsWhenTouched && hitSpeed > Config::options.bumpSpeedThreshold) {
 				if (hitRefr->formType == kFormType_Character) {
 					if (Actor *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
 						TryQueueBumpActor(actor);
@@ -1333,10 +1333,8 @@ void ModifyConstraints(Actor *actor)
 		if (!ragdoll) return;
 
 		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-			NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-			if (node) {
-				NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-				if (wrapper) {
+			if (NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable)) {
+				if (NiPointer<bhkRigidBody> wrapper = GetRigidBody(node)) {
 					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
 				}
 			}
@@ -2195,6 +2193,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
+	if (Config::options.disableGravityForActiveRagdolls) {
+		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+			hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
+			rigidBody->setGravityFactor(0.f);
+		}
+	}
+
 	// Root motion
 	if (NiPointer<NiNode> root = actor->GetNiNode()) {
 		if (bhkCharacterController *controller = GetCharacterController(actor)) {
@@ -2304,6 +2309,15 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
 		ragdoll.animPose.assign(animPose, animPose + numPoses);
+	}
+
+	if (!Actor_IsInRagdollState(actor) && !IsActorGettingUp(actor)) {
+		if (Config::options.disableGravityForActiveRagdolls) {
+			for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+				hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
+				rigidBody->setGravityFactor(1.f);
+			}
+		}
 	}
 }
 
