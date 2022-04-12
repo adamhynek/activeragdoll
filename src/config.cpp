@@ -110,6 +110,8 @@ namespace Config {
 
 		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
 
+		if (!ReadDouble("worldChangedWaitTime", options.worldChangedWaitTime)) return false;
+
 		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
 		if (!ReadFloat("bumpSpeedThreshold", options.bumpSpeedThreshold)) return false;
 

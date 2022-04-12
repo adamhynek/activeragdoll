@@ -23,6 +23,8 @@ namespace Config {
 
 		double thrownObjectLingerTime = 5.0;
 
+		double worldChangedWaitTime = 0.4;
+
 		bool bumpActorsWhenTouched = true;
 		float bumpSpeedThreshold = 1.f;
 		bool dontBumpAnimals = true;

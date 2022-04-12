@@ -1544,6 +1544,8 @@ struct KeepOffsetTask : TaskDelegate
 	UInt32 target;
 };
 
+double g_worldChangedTime = 0.0;
+
 void ProcessHavokHitJobsHook()
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -1557,6 +1559,8 @@ void ProcessHavokHitJobsHook()
 
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
+
+	double now = GetTime();
 
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
@@ -1625,6 +1629,7 @@ void ProcessHavokHitJobsHook()
 		}
 
 		g_contactListener.world = world;
+		g_worldChangedTime = now;
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
@@ -1754,8 +1759,6 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
-	double now = GetTime();
-
 	{ // Update higgs info
 		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
 		g_rightHand = rightHand;
@@ -1818,6 +1821,8 @@ void ProcessHavokHitJobsHook()
 			}
 		}
 	}
+
+	if (now - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
 
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
