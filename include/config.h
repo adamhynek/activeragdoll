@@ -56,10 +56,14 @@ namespace Config {
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
 
+		bool overrideSoundVelForRagdollCollisions = true;
+		float ragdollSoundVel = 1000.f;
+
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;
 		bool doBipedSelfCollision = true;
 		bool doBipedSelfCollisionForNPCs = true;
+		bool doBipedNonSelfCollision = true;
 		bool enableBipedDeadBipCollision = true;
 		bool enablePlayerBipedCollision = true;
 		bool disableBipedCollisionWithWorld = true;
@@ -82,6 +86,7 @@ namespace Config {
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = false;
 		bool blendWhenGettingUp = false;
+		bool disableConstraints = false;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;

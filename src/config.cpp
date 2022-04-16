@@ -145,10 +145,14 @@ namespace Config {
 		if (!ReadFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) return false;
 		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
 
+		if (!ReadBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) return false;
+		if (!ReadFloat("ragdollSoundVel", options.ragdollSoundVel)) return false;
+
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
 		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
 		if (!ReadBool("doBipedSelfCollisionForNPCs", options.doBipedSelfCollisionForNPCs)) return false;
+		if (!ReadBool("doBipedNonSelfCollision", options.doBipedNonSelfCollision)) return false;
 		if (!ReadBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) return false;
 		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;

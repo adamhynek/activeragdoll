@@ -143,7 +143,7 @@ struct hkbContext
 	UInt64 unk18;
 	UInt64 unk20;
 	UInt64 unk28;
-	bool unk30;
+	bool success; // 30
 	ahkpWorld *world; // 38
 	UInt64 unk40;
 	UInt64 unk48;
@@ -301,6 +301,17 @@ struct bhkCharRigidBodyController :
 	bhkCharacterRigidBody characterRigidBody; // 340
 };
 static_assert(offsetof(bhkCharRigidBodyController, characterRigidBody) == 0x340);
+
+struct ProjectDBData
+{
+	void *vtbl; // 00
+	UInt8 unk08[0x70 - 0x08]; // 08
+	UInt8 unk70[0x30]; // 70 - BSTHashMap<char *, hkInt32> // event name -> event id
+	UInt8 unkA0[0x30]; // A0 - BSTHashMap<char *, hkInt32> // event name -> event id. This one is read from when handling anim events.
+	tArray<char *> unkD0; // D0 - all anim events (~2000 total)
+	tArray<char *> unkE8; // E8 - state names?
+};
+static_assert(offsetof(ProjectDBData, unkA0) == 0xA0);
 
 struct BShkbAnimationGraph
 {

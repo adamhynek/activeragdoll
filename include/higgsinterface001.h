@@ -101,6 +101,12 @@ namespace HiggsPluginAPI {
 
 		// Forces the weapon collision to stay enabled, unless sheathed or disabled through the API.
 		virtual void ForceWeaponCollisionEnabled(bool isLeft) = 0;
+
+		// Get whether the given hand has an object held
+		virtual bool IsHoldingObject(bool isLeft) = 0;
+
+		// Get the current amount that each finger is curled. Values range from 0 to 1, where 1 is fully open and 0 is fully curled. Order is from thumb to pinky.
+		virtual void GetFingerValues(bool isLeft, float values[5]) = 0;
 	};
 }
 

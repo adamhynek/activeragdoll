@@ -21,17 +21,20 @@ extern double g_currentFrameTime;
 inline void set_vtbl(void *object, void *vtbl) { *((void **)object) = ((void *)(vtbl)); }
 inline UInt64 * get_vtbl(void *object) { return *((UInt64 **)object); }
 
-inline void set_vfunc(void *object, UInt64 index, std::uintptr_t vfunc)
-{
+inline void set_vfunc(void *object, UInt64 index, std::uintptr_t vfunc) {
 	UInt64 *vtbl = get_vtbl(object);
 	vtbl[index] = vfunc;
 }
 
 template<class T>
-inline T get_vfunc(void *object, UInt64 index)
-{
+inline T get_vfunc(void *object, UInt64 index) {
 	UInt64 *vtbl = get_vtbl(object);
 	return (T)(vtbl[index]);
+}
+
+template<class T>
+inline EventDispatcher<T> * GetDispatcher(UInt64 offset) {
+	return (EventDispatcher<T> *)((UInt64)GetEventDispatcherList() + offset);
 }
 
 NiAVObject * GetHighestParent(NiAVObject *node);
@@ -65,8 +68,7 @@ std::set<std::string, std::less<>> SplitStringToSet(const std::string &s, char d
 
 inline VRMeleeData * GetVRMeleeData(bool isLeft) { return (VRMeleeData *)((UInt64)*g_thePlayer + 0x710 + (isLeft ? sizeof(VRMeleeData) : 0)); };
 
-inline bool CanWeaponStab(TESObjectWEAP *weapon)
-{
+inline bool CanWeaponStab(TESObjectWEAP *weapon) {
 	UInt8 type = weapon->type();
 	return (
 		type == TESObjectWEAP::GameData::kType_OneHandSword ||

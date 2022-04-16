@@ -158,12 +158,6 @@ struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
 };
 static_assert(offsetof(CheckHitEventsFunctor, data) == 0x08);
 
-typedef void * (*_GetScriptEventSourceHolder)();
-RelocAddr<_GetScriptEventSourceHolder> GetScriptEventSourceHolder(0x1964C0);
-
-typedef void * (*_DispatchHitEvent)(void *scriptEventSourceHolder, TESHitEvent *hitEvent);
-RelocAddr<_DispatchHitEvent> DispatchHitEvent(0x635AA0);
-
 typedef void(*_VMClassRegistry_Destruct)(VMClassRegistry *_this, UInt32 unk);
 bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBody *hitBody, TESForm *weapon)
 {
@@ -192,9 +186,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 
 			// Now dispatch the hit event
 			TESHitEvent hitEvent{ target, source, weapon->formID, 0, 0 };
-
-			void *scriptEventSourceHolder = GetScriptEventSourceHolder();
-			DispatchHitEvent((void *)((UInt64)scriptEventSourceHolder + 0x5D8), &hitEvent);
+			GetDispatcher<TESHitEvent>(0x5D8)->SendEvent(&hitEvent);
 		}
 
 		// vm decref
@@ -611,11 +603,13 @@ bool ShouldRagdollOnGrab(Actor *actor)
 
 	if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return true; // small race
 
-	float health = actor->actorValueOwner.GetMaximum(24);
+	float health = actor->actorValueOwner.GetCurrent(24);
 	if (health < Config::options.smallRaceHealthThreshold) return true;
 
 	return false;
 }
+
+float g_savedMinSoundVel;
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 {
@@ -857,6 +851,13 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
+		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
+			if (Config::options.overrideSoundVelForRagdollCollisions) {
+				// Disable collision sounds for this frame
+				*g_fMinSoundVel = Config::options.ragdollSoundVel;
+			}
+		}
+
 		if (layerA != g_higgsCollisionLayer && layerB != g_higgsCollisionLayer) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
 
 		if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) {
@@ -1023,6 +1024,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 	virtual void postSimulationCallback(hkpWorld* world)
 	{
+		// Restore the game's original value for fMinSoundVel after any contact callbacks would have been called.
+		*g_fMinSoundVel = g_savedMinSoundVel;
+
 		// First just accumulate adds/removes. Why? While Added always occurs before Removed for a single contact point,
 		// a single pair of rigid bodies can have multiple contact points, and adds/removes between these different contact points can be non-deterministic.
 		for (CollisionEvent &evnt : events) {
@@ -1170,6 +1174,15 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 			// biped self-collision
 			if (g_selfCollidableBipedGroups.count(groupA)) {
 				return CollisionFilterComparisonResult::Continue; // will collide with all non-adjacent bones
+			}
+			else {
+				return CollisionFilterComparisonResult::Ignore;
+			}
+		}
+		else {
+			// Biped vs. another biped
+			if (Config::options.doBipedNonSelfCollision) {
+				return CollisionFilterComparisonResult::Continue;
 			}
 			else {
 				return CollisionFilterComparisonResult::Ignore;
@@ -2294,6 +2307,12 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	ragdoll.avgStress = totalStress / numBones;
 	//_MESSAGE("stress: %.2f", avgStress);
 	//PrintToFile(std::to_string(ragdoll.avgStress), "stress.txt");
+
+	if (Config::options.disableConstraints) {
+		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
+			hkpConstraintInstance_setEnabled(constraint, false);
+		}
+	}
 }
 
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
@@ -2817,6 +2836,8 @@ extern "C" {
 		// With redone hit detection, these only affect weapon swing sounds/noise and stuff like the bloodskal blade
 		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
 		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;
+
+		g_savedMinSoundVel = *g_fMinSoundVel;
 
 		g_keyword_actorTypeAnimal = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeAnimal"));
 		g_keyword_actorTypeNPC = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeNPC"));

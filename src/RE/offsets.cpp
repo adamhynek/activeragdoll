@@ -24,6 +24,8 @@ RelocPtr<float> g_secondsSinceLastFrame_WorldTime_CheckPaused(0x2FEB794); // lik
 RelocPtr<float> g_secondsSinceLastFrame_WorldTime(0x30C3A08); // is multiplied by timeMultiplier
 RelocPtr<float> g_secondsSinceLastFrame_Unmultiplied(0x30C3A0C); // is not multiplied by timeMultiplier
 
+RelocPtr<float> g_fMinSoundVel(0x1E94F78);
+
 RelocPtr<int> g_currentFrameCounter(0x3186C5C);
 RelocPtr<int> g_sceneComplexCounter(0x2FEB76C);
 RelocPtr<int> g_iShadowUpdateFrameDelay(0x1ED4130);
@@ -263,6 +265,8 @@ RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
 RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask(0x5CB4F0);
 RelocAddr<_PlayRumble> PlayRumble(0xC59440);
 RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);
+RelocAddr<_ActorProcess_TransitionFurnitureState> ActorProcess_TransitionFurnitureState(0x6878D0);
+RelocAddr<_Actor_SetVehicle> Actor_SetVehicle(0x60E0C0);
 RelocAddr<_HitData_ctor> HitData_ctor(0x76D000);
 RelocAddr<_HitData_dtor> HitData_dtor(0x76D0F0);
 RelocAddr<_HitData_populate> HitData_populate(0x76D400);

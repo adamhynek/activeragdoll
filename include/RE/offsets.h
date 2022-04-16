@@ -41,6 +41,8 @@ extern RelocPtr<float> g_secondsSinceLastFrame_WorldTime_CheckPaused;
 extern RelocPtr<float> g_secondsSinceLastFrame_WorldTime;
 extern RelocPtr<float> g_secondsSinceLastFrame_Unmultiplied;
 
+extern RelocPtr<float> g_fMinSoundVel;
+
 extern RelocPtr<int> g_currentFrameCounter;
 extern RelocPtr<int> g_sceneComplexCounter;
 extern RelocPtr<int> g_iShadowUpdateFrameDelay;
@@ -607,6 +609,12 @@ extern RelocAddr<_PlayRumble> PlayRumble;
 
 typedef InventoryEntryData * (*_ActorProcess_GetCurrentlyEquippedWeapon)(ActorProcessManager *_this, bool isOffhand);
 extern RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon;
+
+typedef void(*_ActorProcess_TransitionFurnitureState)(ActorProcessManager *_this, Actor *actor, UInt64 newState, UInt32 &furnitureHandle, UInt32 furnitureMarkerID);
+extern RelocAddr<_ActorProcess_TransitionFurnitureState> ActorProcess_TransitionFurnitureState;
+
+typedef void(*_Actor_SetVehicle)(Actor *_this, UInt32 &handle);
+extern RelocAddr<_Actor_SetVehicle> Actor_SetVehicle;
 
 typedef void(*_HitData_ctor)(HitData *_this);
 extern RelocAddr<_HitData_ctor> HitData_ctor;
