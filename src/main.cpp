@@ -1133,7 +1133,7 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 
 		const hkpCollidable *collidable = hitBody->getCollidable();
 		UInt32 layer = collidable->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f;
-		if (layer != BGSCollisionLayer::kCollisionLayer_Biped) return;
+		if (layer != BGSCollisionLayer::kCollisionLayer_Biped && layer != BGSCollisionLayer::kCollisionLayer_BipedNoCC) return;
 
 		NiPointer<TESObjectREFR> refr = GetRefFromCollidable(collidable);
 		if (!refr) return;
@@ -1142,6 +1142,8 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 
 		Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 		if (!actor) return;
+
+		output.m_objectImpulse = NiPointToHkVector(HkVectorToNiPoint(output.m_objectImpulse) * Config::options.playerVsBipedInteractionImpulseMultiplier);
 
 		bhkCharacterController *controller = GetCharacterController(actor);
 		if (!controller) return;

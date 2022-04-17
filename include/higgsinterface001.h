@@ -107,6 +107,12 @@ namespace HiggsPluginAPI {
 
 		// Get the current amount that each finger is curled. Values range from 0 to 1, where 1 is fully open and 0 is fully curled. Order is from thumb to pinky.
 		virtual void GetFingerValues(bool isLeft, float values[5]) = 0;
+
+		typedef void(*NoArgCallback)();
+		virtual void AddPreVrikPreHiggsCallback(NoArgCallback callback) = 0;
+		virtual void AddPreVrikPostHiggsCallback(NoArgCallback callback) = 0;
+		virtual void AddPostVrikPreHiggsCallback(NoArgCallback callback) = 0;
+		virtual void AddPostVrikPostHiggsCallback(NoArgCallback callback) = 0;
 	};
 }
 

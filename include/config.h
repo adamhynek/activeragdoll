@@ -62,6 +62,8 @@ namespace Config {
 		bool overrideSoundVelForRagdollCollisions = true;
 		float ragdollSoundVel = 1000.f;
 
+		float playerVsBipedInteractionImpulseMultiplier = 0.f;
+
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;
 		bool doBipedSelfCollision = true;

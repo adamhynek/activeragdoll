@@ -151,6 +151,8 @@ namespace Config {
 		if (!ReadBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) return false;
 		if (!ReadFloat("ragdollSoundVel", options.ragdollSoundVel)) return false;
 
+		if (!ReadFloat("playerVsBipedInteractionImpulseMultiplier", options.playerVsBipedInteractionImpulseMultiplier)) return false;
+
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
 		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
