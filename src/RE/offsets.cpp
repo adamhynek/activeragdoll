@@ -183,6 +183,7 @@ RelocAddr<_CleanupCloneList> CleanupCloneList2(0x1C8BE0);
 // 1st arg: ptr to BipedAnim. 2nd arg: ptr to NiNode
 //CreateArmorNode(0x1DB680);
 
+RelocAddr<_hkRealTohkUFloat8> hkRealTohkUFloat8(0xA02B10);
 RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor(0xE306A0);
 RelocAddr<_hkMalleableConstraintCinfo_Func4> hkMalleableConstraintCinfo_Func4(0xE3DD20);
 RelocAddr<_hkRagdollConstraintCinfo_Func4> hkRagdollConstraintCinfo_Func4(0xE64960);

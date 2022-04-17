@@ -361,6 +361,9 @@ typedef void(*_RefreshActivateButtonArt)(void *wsActivateRollover);
 extern RelocAddr<_RefreshActivateButtonArt> RefreshActivateButtonArt;
 
 
+typedef bool(*_hkRealTohkUFloat8)(hkUFloat8 &out, const hkReal &value);
+extern RelocAddr<_hkRealTohkUFloat8> hkRealTohkUFloat8;
+
 typedef bool(*_bhkRefObject_ctor)(bhkRefObject *_this);
 extern RelocAddr<_bhkRefObject_ctor> bhkRefObject_ctor;
 

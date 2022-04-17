@@ -145,6 +145,9 @@ namespace Config {
 		if (!ReadFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) return false;
 		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
 
+		if (!ReadFloat("ragdollBoneMaxLinearVelocity", options.ragdollBoneMaxLinearVelocity)) return false;
+		if (!ReadFloat("ragdollBoneMaxAngularVelocity", options.ragdollBoneMaxAngularVelocity)) return false;
+
 		if (!ReadBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) return false;
 		if (!ReadFloat("ragdollSoundVel", options.ragdollSoundVel)) return false;
 

@@ -670,7 +670,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
 		);
 
-		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity); // limit the imparted velocity to some reasonable value
+		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity / *g_globalTimeMultiplier); // limit the imparted velocity to some reasonable value
 		NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * *g_havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
 		impulse *= impulseStrength; // Scale the velocity as we see fit
 		impulse *= impulseMult;
@@ -968,7 +968,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			NiPoint3 hitPosition = HkVectorToNiPoint(hkHitPos) / havokWorldScale; // skyrim units
 			NiPoint3 hitVelocity; // skyrim units
 			if (isStab && Config::options.useHandVelocityForStabHitDirection) {
-				hitVelocity = handDirection * handSpeedRoomspace / havokWorldScale;
+				hitVelocity = (handDirection * handSpeedRoomspace / *g_globalTimeMultiplier) / havokWorldScale;
 			}
 			else {
 				hitVelocity = hkHitVelocity / havokWorldScale;
@@ -1349,6 +1349,9 @@ void ModifyConstraints(Actor *actor)
 			if (NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable)) {
 				if (NiPointer<bhkRigidBody> wrapper = GetRigidBody(node)) {
 					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+
+					hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxLinearVelocity, Config::options.ragdollBoneMaxLinearVelocity);
+					hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxAngularVelocity, Config::options.ragdollBoneMaxAngularVelocity);
 				}
 			}
 		}

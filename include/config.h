@@ -56,6 +56,9 @@ namespace Config {
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
 
+		float ragdollBoneMaxLinearVelocity = 500.f;
+		float ragdollBoneMaxAngularVelocity = 500.f;
+
 		bool overrideSoundVelForRagdollCollisions = true;
 		float ragdollSoundVel = 1000.f;
 
