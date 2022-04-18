@@ -704,6 +704,17 @@ void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool 
 	}
 }
 
+void ModSpeedMult(Actor *actor, float amount)
+{
+	// actor->RestoreActorValue(kTemporary, kSpeedMult, amount)
+	get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 1, 30, amount);
+
+	// Need to cycle carry weight to make speed change take effect
+	// actor->RestoreActorValue(kTemporary, kCarryWeight, amount)
+	get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 1, 32, 0.1f);
+	get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 1, 32, -0.1f);
+}
+
 MovementControllerNPC * GetMovementController(Actor *actor)
 {
 	// TODO: This is actually refcounted

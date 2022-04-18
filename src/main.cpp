@@ -980,11 +980,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
 			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
 		}
 		else {
 			// It's not a hit, so disable contact for keyframed/fixed objects in this case
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				return;
+			}
+
+			if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController) {
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				return;
 			}
 
 			if (Config::options.bumpActorsWhenTouched && hitSpeed > Config::options.bumpSpeedThreshold) {
@@ -1202,6 +1209,11 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 		UInt16 groupA = filterInfoA >> 16;
 		UInt16 groupB = filterInfoB >> 16;
 		if (groupA == g_playerCollisionGroup || groupB == g_playerCollisionGroup) {
+			UInt16 otherGroup = groupA == g_playerCollisionGroup ? groupB : groupA;
+			if (g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(otherGroup)) {
+				// Still collide the player with hittable character controllers
+				return CollisionFilterComparisonResult::Continue;
+			}
 			return CollisionFilterComparisonResult::Ignore;
 		}
 		return CollisionFilterComparisonResult::Continue;
@@ -1320,6 +1332,13 @@ bool IsAddedToWorld(Actor *actor)
 
 bool CanAddToWorld(Actor *actor)
 {
+	if (TESRace *race = actor->race) {
+		const char *name = race->editorId;
+		if (name && Config::options.excludeRaces.count(std::string_view(name))) {
+			return false;
+		}
+	}
+
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
 	if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
 
@@ -1924,11 +1943,12 @@ void ProcessHavokHitJobsHook()
 			bool shouldRemoveFromWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
-			bool isActiveActor = (g_activeActors.size() > 0 && g_activeActors.count(actor)) || isHittableCharController;
+			bool isActiveActor = g_activeActors.size() > 0 && g_activeActors.count(actor);
+			bool isProcessedActor = isActiveActor || isHittableCharController;
 			bool canAddToWorld = CanAddToWorld(actor);
 			
 			if (shouldAddToWorld) {
-				if (!isAddedToWorld || !isActiveActor) {
+				if (!isAddedToWorld || !isProcessedActor) {
 					if (canAddToWorld) {
 						AddRagdollToWorld(actor);
 						if (collisionGroup != 0) {
@@ -1942,7 +1962,7 @@ void ProcessHavokHitJobsHook()
 					}
 				}
 
-				if (g_activeActors.size() > 0 && g_activeActors.count(actor)) {
+				if (isActiveActor) {
 					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
 					DisableSyncOnUpdate(actor);
 
@@ -1976,16 +1996,12 @@ void ProcessHavokHitJobsHook()
 				}
 			}
 			else if (shouldRemoveFromWorld) {
-				if (isAddedToWorld) {
-					if (canAddToWorld) {
-						RemoveRagdollFromWorld(actor);
-						g_activeBipedGroups.erase(collisionGroup);
-					}
-					else {
-						if (isHittableCharController) {
-							g_hittableCharControllerGroups.erase(collisionGroup);
-						}
-					}
+				if (isAddedToWorld && canAddToWorld) {
+					RemoveRagdollFromWorld(actor);
+					g_activeBipedGroups.erase(collisionGroup);
+				}
+				else if (isHittableCharController) {
+					g_hittableCharControllerGroups.erase(collisionGroup);
 				}
 			}
 		}

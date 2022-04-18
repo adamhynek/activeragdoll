@@ -90,6 +90,7 @@ bool IsSkinnedToNode(NiAVObject *skinnedRoot, NiAVObject *target);
 void GetAllSkinnedNodes(NiAVObject *root, std::unordered_set<NiAVObject *> &skinnedNodes);
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location);
 void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool loud);
+void ModSpeedMult(Actor *actor, float amount);
 MovementControllerNPC * GetMovementController(Actor *actor);
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);

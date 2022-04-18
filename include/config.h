@@ -131,6 +131,7 @@ namespace Config {
 		float playerCapsuleRadius = 0.15f;
 
 		std::set<std::string, std::less<>> additionalSelfCollisionRaces;
+		std::set<std::string, std::less<>> excludeRaces;
 	};
 	extern Options options; // global object containing options
 

@@ -219,6 +219,7 @@ namespace Config {
 		if (!ReadFloat("playerCapsuleRadius", options.playerCapsuleRadius)) return false;
 
 		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) return false;
+		if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) return false;
 
 		return true;
 	}
