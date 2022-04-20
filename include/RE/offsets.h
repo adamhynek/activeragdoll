@@ -637,6 +637,9 @@ extern RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage;
 typedef void(*_Actor_GetHit)(Actor *_this, HitData &hitData);
 extern RelocAddr<_Actor_GetHit> Actor_GetHit;
 
+typedef void(*_Actor_EndHavokHit)(HavokHitJobs *jobs, Actor *_this);
+extern RelocAddr<_Actor_EndHavokHit> Actor_EndHavokHit;
+
 typedef void(*_hkpUnaryAction_ctor)(hkpUnaryAction *_this, hkpEntity* entity, hkUlong userData);
 extern RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor;
 

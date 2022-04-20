@@ -274,6 +274,7 @@ RelocAddr<_HitData_populate> HitData_populate(0x76D400);
 RelocAddr<_HitData_PopulateFromPhysicalHit> HitData_PopulateFromPhysicalHit(0x76DAF0);
 RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage(0x3B5540);
 RelocAddr<_Actor_GetHit> Actor_GetHit(0x62F270);
+RelocAddr<_Actor_EndHavokHit> Actor_EndHavokHit(0x75B390);
 RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor(0xAAC200);
 RelocAddr<_hkpUnaryAction_setEntity> hkpUnaryAction_setEntity(0xAAC350);
 RelocAddr<_hkpWorld_addAction> hkpWorld_addAction(0xAB1D40);

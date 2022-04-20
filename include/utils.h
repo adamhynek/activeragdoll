@@ -26,11 +26,13 @@ inline void set_vfunc(void *object, UInt64 index, std::uintptr_t vfunc) {
 	vtbl[index] = vfunc;
 }
 
-template<class T>
+template<typename T>
 inline T get_vfunc(void *object, UInt64 index) {
 	UInt64 *vtbl = get_vtbl(object);
 	return (T)(vtbl[index]);
 }
+
+#define CALL_VFUNC(T, object, index, ...) get_vfunc<T>(object, index)(object, __VA_ARGS__)
 
 template<class T>
 inline EventDispatcher<T> * GetDispatcher(UInt64 offset) {
@@ -96,4 +98,9 @@ ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
 KnockState GetActorKnockState(Actor *actor);
 bool IsActorGettingUp(Actor *actor);
+float GetAVPercentage(Actor *actor, UInt32 av);
+inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 bool IsActorUsingFurniture(Actor *actor);
+inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
+inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
+bool IsInFaction(Actor *actor, TESFaction *faction);

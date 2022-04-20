@@ -58,6 +58,8 @@ SKSETaskInterface *g_taskInterface = nullptr;
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
+TESFaction *g_currentFollowerFaction = nullptr;
+
 bool g_isRightTriggerHeld = false;
 bool g_isLeftTriggerHeld = false;
 
@@ -267,8 +269,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 			if (staminaCost > 0.f) {
 				float staminaBeforeHit = source->actorValueOwner.GetCurrent(26);
 
-				// source->RestoreActorValue(kDamage, kStamina, -staminaCost)
-				get_vfunc<_ActorValueOwner_RestoreActorValue>(&source->actorValueOwner, 6)(&source->actorValueOwner, 2, 26, -staminaCost);
+				DamageAV(source, 26, -staminaCost);
 
 				if (source->actorValueOwner.GetCurrent(26) <= 0.f) {
 					// Out of stamina after the hit
@@ -1553,6 +1554,41 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
 	}
 }
 
+void EnableGravity(Actor *actor)
+{
+	bool hasRagdollInterface = false;
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+	}
+
+	if (hasRagdollInterface) {
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+								bhkWorld *worldWrapper = world->m_userData;
+								{
+									BSWriteLocker lock(&worldWrapper->worldLock);
+
+									for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
+										rigidBody->setGravityFactor(1.f);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 struct KeepOffsetTask : TaskDelegate
 {
 	static KeepOffsetTask * Create(UInt32 source, UInt32 target) {
@@ -1580,6 +1616,145 @@ struct KeepOffsetTask : TaskDelegate
 	UInt32 source;
 	UInt32 target;
 };
+
+float g_savedSpeedReduction = 0.f;
+
+float GetSpeedReduction(Actor *actor)
+{
+	if (!Config::options.doSpeedReduction) return 0.f;
+
+	if (Config::options.followersSkipSpeedReduction && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return 0.f;
+
+	PlayerCharacter *player = *g_thePlayer;
+
+	float massReduction = 0.f;
+	if (NiPointer<NiNode> root = actor->GetNiNode()) {
+		float mass = NiAVObject_GetMass(root, 0.f);
+		massReduction = powf(mass, Config::options.speedReductionMassExponent) * Config::options.speedReductionMassProportion;
+	}
+
+	float healthPercent = std::clamp(GetAVPercentage(actor, 24), 0.f, 1.f);
+	float playerStaminaPercent = std::clamp(GetAVPercentage(player, 26), 0.f, 1.f);
+
+	float reduction = massReduction * (healthPercent * Config::options.speedReductionHealthInfluence + (1.f - Config::options.speedReductionHealthInfluence));
+	reduction = lerp(reduction, Config::options.maxSpeedReduction, 1.f - playerStaminaPercent);
+
+	return std::clamp(reduction, 0.f, Config::options.maxSpeedReduction);
+}
+
+float GetGrabbedStaminaCost(Actor *actor)
+{
+	if (Config::options.followersSkipStaminaCost && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return 0.f;
+	return Config::options.grabbedActorStaminaCost;
+}
+
+bool g_rightDropAttempted = false;
+bool g_leftDropAttempted = false;
+
+void DropObject(bool isLeft)
+{
+	bool &dropAttempted = isLeft ? g_leftDropAttempted : g_rightDropAttempted;
+	if (!dropAttempted) {
+		g_higgsInterface->DisableHand(isLeft);
+		dropAttempted = true;
+	}
+}
+
+void UpdateHiggsDrop()
+{
+	if (g_rightDropAttempted && !g_rightHeldRefr) {
+		g_higgsInterface->EnableHand(false);
+		g_rightDropAttempted = false;
+	}
+	if (g_leftDropAttempted && !g_leftHeldRefr) {
+		g_higgsInterface->EnableHand(true);
+		g_leftDropAttempted = false;
+	}
+}
+
+void UpdateSpeedReduction()
+{
+	bool rightHasHeld = g_rightHeldRefr;
+	bool leftHasHeld = g_leftHeldRefr;
+	int numHeld = int(rightHasHeld) + int(leftHasHeld);
+
+	bool rightCostStamina = false;
+	bool leftCostStamina = false;
+
+	float speedReduction = 0.f;
+	float staminaCost = 0.f;
+	if (numHeld > 0) {
+		// We are holding at least 1 object
+		if (rightHasHeld && leftHasHeld && g_rightHeldRefr == g_leftHeldRefr) {
+			// Both hands are holding the same refr (ex. different limbs of the same body). We don't want to double up on the slowdown.
+			if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
+				speedReduction += GetSpeedReduction(actor);
+				float cost = GetGrabbedStaminaCost(actor);
+				if (cost > 0.f) {
+					rightCostStamina = true;
+					leftCostStamina = true;
+					staminaCost += cost;
+				}
+			}
+		}
+		else {
+			if (rightHasHeld) {
+				if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
+					speedReduction += GetSpeedReduction(actor);
+					float cost = GetGrabbedStaminaCost(actor);
+					if (cost > 0.f) {
+						rightCostStamina = true;
+						staminaCost += cost;
+					}
+				}
+			}
+			if (leftHasHeld) {
+				if (Actor *actor = DYNAMIC_CAST(g_leftHeldRefr, TESObjectREFR, Actor)) {
+					speedReduction += GetSpeedReduction(actor);
+					float cost = GetGrabbedStaminaCost(actor);
+					if (cost > 0.f) {
+						leftCostStamina = true;
+						staminaCost += cost;
+					}
+				}
+			}
+		}
+
+		speedReduction = std::clamp(speedReduction, 0.f, Config::options.maxSpeedReduction);
+	}
+
+	if (speedReduction != g_savedSpeedReduction) {
+		PlayerCharacter *player = *g_thePlayer;
+
+		// First just restore whatever our speed was before
+		ModSpeedMult(player, g_savedSpeedReduction);
+
+		// Now modify the speed based on what we have held
+		ModSpeedMult(player, -speedReduction);
+
+		g_savedSpeedReduction = speedReduction;
+	}
+
+	if (staminaCost > 0.f) {
+		PlayerCharacter *player = *g_thePlayer;
+
+		float cost = staminaCost * *g_deltaTime;
+		DamageAV(player, 26, -cost);
+
+		if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
+			// Out of stamina
+			if (rightCostStamina) {
+				// drop right object
+				DropObject(false);
+			}
+			if (leftCostStamina) {
+				// drop left object
+				DropObject(true);
+			}
+			FlashHudMenuMeter(26);
+		}
+	}
+}
 
 double g_worldChangedTime = 0.0;
 
@@ -1842,6 +2017,11 @@ void ProcessHavokHitJobsHook()
 				++it;
 		}
 	}
+
+	UpdateHiggsDrop();
+
+	// Do this after we've update higgs things
+	UpdateSpeedReduction();
 
 	{ // Ensure our listener is the last one (will be called first)
 		hkArray<hkpContactListener*> &listeners = world->world->m_contactListeners;
@@ -2357,15 +2537,6 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
 		ragdoll.animPose.assign(animPose, animPose + numPoses);
 	}
-
-	if (!Actor_IsInRagdollState(actor) && !IsActorGettingUp(actor)) {
-		if (Config::options.disableGravityForActiveRagdolls) {
-			for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-				hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
-				rigidBody->setGravityFactor(1.f);
-			}
-		}
-	}
 }
 
 void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
@@ -2394,6 +2565,13 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 			// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
 			hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
 			ragdoll.easeConstraintsAction = nullptr;
+		}
+	}
+
+	if (Config::options.disableGravityForActiveRagdolls) {
+		for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+			hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
+			rigidBody->setGravityFactor(1.f);
 		}
 	}
 
@@ -2485,6 +2663,18 @@ void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
 	Actor_GetHit(_this, hitData);
 }
 
+void Actor_KillEndHavokHit_Hook(HavokHitJobs *havokHitJobs, Actor *_this)
+{
+	// The actor is dying so undo anything we've done to it
+	if (g_activeActors.count(_this)) {
+		if (Config::options.disableGravityForActiveRagdolls) {
+			EnableGravity(_this);
+		}
+	}
+
+	Actor_EndHavokHit(havokHitJobs, _this);
+}
+
 void MovementControllerUpdateHook(MovementControllerNPC *movementController, Actor *actor)
 {
 
@@ -2521,6 +2711,8 @@ auto BShkbAnimationGraph_UpdateAnimation_HookLoc = RelocAddr<uintptr_t>(0xB1CB55
 auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
 
 auto Character_MovementControllerUpdate_HookLoc = RelocAddr<uintptr_t>(0x5E086F);
+
+auto Actor_KillEndHavokHit_HookLoc = RelocAddr<uintptr_t>(0x60C808);
 
 
 void PerformHooks(void)
@@ -2586,6 +2778,11 @@ void PerformHooks(void)
 	if (Config::options.doClutterVsBipedCollisionDamage) {
 		g_branchTrampoline.Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
 		_MESSAGE("Actor take physics damage hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
+		_MESSAGE("Actor kill end havok hit hook complete");
 	}
 
 	{
@@ -2862,9 +3059,15 @@ extern "C" {
 
 		g_keyword_actorTypeAnimal = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeAnimal"));
 		g_keyword_actorTypeNPC = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeNPC"));
-
 		if (!g_keyword_actorTypeAnimal || !g_keyword_actorTypeNPC) {
 			_ERROR("Failed to get keywords");
+			return;
+		}
+
+		TESForm *currentFollowerFaction = LookupFormByID(0x5C84E);
+		if (currentFollowerFaction) g_currentFollowerFaction = DYNAMIC_CAST(currentFollowerFaction, TESForm, TESFaction);
+		if (!g_currentFollowerFaction) {
+			_ERROR("Failed to get current follower faction");
 			return;
 		}
 

@@ -31,6 +31,16 @@ namespace Config {
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 
+		bool doSpeedReduction = true;
+		bool followersSkipSpeedReduction = true;
+		float maxSpeedReduction = 80.f;
+		float speedReductionHealthInfluence = 0.5f;
+		float speedReductionMassProportion = 0.625f;
+		float speedReductionMassExponent = 1.f;
+
+		bool followersSkipStaminaCost = true;
+		float grabbedActorStaminaCost = 10.f;
+
 		bool ragdollOnGrab = false;
 		bool ragdollSmallRacesOnGrab = true;
 		float smallRaceHealthThreshold = 6.f;

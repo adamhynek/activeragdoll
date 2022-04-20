@@ -743,7 +743,33 @@ bool IsActorGettingUp(Actor *actor)
 	return GetActorKnockState(actor) == KnockState::GetUp;
 }
 
-bool IsActorUsingFurniture(Actor *actor)
+float GetAVPercentage(Actor *actor, UInt32 av)
 {
-	return actor->actorState.flags04 & 0x3C000;
+	float current = actor->actorValueOwner.GetCurrent(av);
+	float max = actor->actorValueOwner.GetMaximum(av);
+	return max == 0.f ? current / max : 1.f;
+}
+
+class IsInFactionVisitor : public Actor::FactionVisitor
+{
+public:
+	IsInFactionVisitor::IsInFactionVisitor(TESFaction *faction) : m_faction(faction) { }
+	virtual bool Accept(TESFaction * faction, SInt8 rank)
+	{
+		if (faction == m_faction) {
+			isInFaction = true;
+			return true;
+		}
+		return false;
+	}
+
+	TESFaction *m_faction;
+	bool isInFaction = false;
+};
+
+bool IsInFaction(Actor *actor, TESFaction *faction)
+{
+	IsInFactionVisitor visitor(faction);
+	actor->VisitFactions(visitor);
+	return visitor.isInFaction;
 }

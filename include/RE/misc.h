@@ -421,5 +421,5 @@ typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);
 typedef bool(*_MagicTarget_IsInvulnerable)(MagicTarget *_this);
-typedef bool(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);
+typedef void(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);
 typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UInt32 unk);
