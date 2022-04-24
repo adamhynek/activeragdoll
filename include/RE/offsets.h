@@ -84,11 +84,14 @@ extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
 extern RelocAddr<void *> hkCharControllerShape_vtbl;
+extern RelocAddr<void *> TESActionData_vtbl;
 
 extern RelocPtr<FOCollisionListener *> g_foCollisionListener;
 
 extern RelocPtr<AIProcessManager *> g_aiProcessManager;
 extern RelocPtr<float> g_bAlwaysDriveRagdoll;
+
+extern RelocPtr<BGSDefaultObjectManager> g_defaultObjectManager;
 
 extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
 

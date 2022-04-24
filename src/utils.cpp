@@ -693,8 +693,7 @@ void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool 
 	}
 	if (!sound) {
 		// Failed to get the physics sound, just use the generic pickup sound instead
-		static RelocPtr<BGSDefaultObjectManager> defaultObjectManager(0x01F81D90); // The SKSE one is broken, it's a RelocPtr to a RelocPtr<BGSDefaultObjectManager*>
-		TESForm *defaultPickupSound = defaultObjectManager->objects[113]; // kPickupSoundGeneric
+		TESForm *defaultPickupSound = g_defaultObjectManager->objects[113]; // kPickupSoundGeneric
 		if (defaultPickupSound) {
 			sound = DYNAMIC_CAST(defaultPickupSound, TESForm, BGSSoundDescriptorForm);
 		}

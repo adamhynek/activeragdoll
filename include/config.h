@@ -26,8 +26,10 @@ namespace Config {
 		double worldChangedWaitTime = 0.4;
 
 		bool bumpActorsWhenTouched = true;
+		bool exitFurnitureWhenBumped = true;
 		float bumpSpeedThreshold = 1.f;
 		bool dontBumpAnimals = true;
+		bool dontBumpFollowers = false;
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 

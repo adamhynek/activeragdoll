@@ -65,6 +65,7 @@ RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
 RelocAddr<void *> hkCharControllerShape_vtbl(0x1838E78);
+RelocAddr<void *> TESActionData_vtbl(0x15BF5D8);
 
 RelocPtr<FOCollisionListener *> g_foCollisionListener(0x1F850F0);
 
@@ -72,6 +73,8 @@ RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
 
 RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
 RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
+
+RelocPtr<BGSDefaultObjectManager> g_defaultObjectManager(0x01F81D90);
 
 RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
 

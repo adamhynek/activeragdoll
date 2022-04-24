@@ -113,9 +113,11 @@ namespace Config {
 		if (!ReadDouble("worldChangedWaitTime", options.worldChangedWaitTime)) return false;
 
 		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
+		if (!ReadBool("exitFurnitureWhenBumped", options.exitFurnitureWhenBumped)) return false;
 		if (!ReadFloat("bumpSpeedThreshold", options.bumpSpeedThreshold)) return false;
-
+		
 		if (!ReadBool("dontBumpAnimals", options.dontBumpAnimals)) return false;
+		if (!ReadBool("dontBumpFollowers", options.dontBumpFollowers)) return false;
 		if (!ReadInt("bumpMaxRelationshipRank", options.bumpMaxRelationshipRank)) return false;
 
 		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;

@@ -528,12 +528,44 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 	return false;
 }
 
+void ExitFurniture(Actor *actor)
+{
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return;
+
+	MiddleProcess *middleProcess = process->middleProcess;
+	if (!middleProcess) return;
+
+	UInt32 furnitureHandle = middleProcess->furnitureHandle;
+	if (furnitureHandle == *g_invalidRefHandle) return;
+
+	BGSAction *activateAction = (BGSAction *)g_defaultObjectManager->objects[55];
+	if (!activateAction) return;
+
+	NiPointer<TESObjectREFR> furniture;
+	if (!LookupREFRByHandle(furnitureHandle, furniture)) return;
+
+	{
+		TESActionData input;
+		set_vtbl(&input, TESActionData_vtbl);
+
+		input.source = actor;
+		input.target = furniture;
+		input.action = activateAction;
+		input.unk20 = 2;
+
+		get_vfunc<_TESActionData_Process>(&input, 5)(&input);
+	}
+}
+
 bool ShouldBumpActor(Actor *actor)
 {
 	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
 	if (Config::options.dontBumpAnimals && actor->race->keyword.HasKeyword(g_keyword_actorTypeAnimal)) return false;
+
+	if (Config::options.dontBumpFollowers && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return false;
 
 	if (RelationshipRanks::GetRelationshipRank(actor, *g_thePlayer) > Config::options.bumpMaxRelationshipRank) return false;
 
@@ -546,6 +578,8 @@ void TryBumpActor(Actor *actor, bool isLargeBump = false)
 
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return;
+
+	ExitFurniture(actor);
 
 	PlayerCharacter *player = *g_thePlayer;
 	NiPoint3 actorToPlayer = player->pos - actor->pos;
@@ -1687,7 +1721,7 @@ void UpdateSpeedReduction()
 		// We are holding at least 1 object
 		if (rightHasHeld && leftHasHeld && g_rightHeldRefr == g_leftHeldRefr) {
 			// Both hands are holding the same refr (ex. different limbs of the same body). We don't want to double up on the slowdown.
-			if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
+			if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
 				speedReduction += GetSpeedReduction(actor);
 				float cost = GetGrabbedStaminaCost(actor);
 				if (cost > 0.f) {
@@ -1699,7 +1733,7 @@ void UpdateSpeedReduction()
 		}
 		else {
 			if (rightHasHeld) {
-				if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
+				if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
 					speedReduction += GetSpeedReduction(actor);
 					float cost = GetGrabbedStaminaCost(actor);
 					if (cost > 0.f) {
@@ -1709,7 +1743,7 @@ void UpdateSpeedReduction()
 				}
 			}
 			if (leftHasHeld) {
-				if (Actor *actor = DYNAMIC_CAST(g_leftHeldRefr, TESObjectREFR, Actor)) {
+				if (Actor *actor = DYNAMIC_CAST(g_leftHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
 					speedReduction += GetSpeedReduction(actor);
 					float cost = GetGrabbedStaminaCost(actor);
 					if (cost > 0.f) {
