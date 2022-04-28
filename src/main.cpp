@@ -249,7 +249,28 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	TESObjectWEAP *weapon = DYNAMIC_CAST(weaponForm, TESForm, TESObjectWEAP);
 	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
 
-	bool isBash = isBowOrCrossbow || isShield || isTorch;
+	bool isBash = false;
+	if (isBowOrCrossbow || isShield || isTorch) {
+		// We hit with a bow, crossbow, shield, or torch
+		isBash = true;
+	}
+	else {
+		bool isBlocking = Actor_IsBlocking(source);
+		if (IsHoldingTwoHandedWeapon(source)) {
+			if (isBlocking) {
+				// Both hands are occupied with a two-handed weapon and we're blocking, so it's a bash
+				isBash = true;
+			}
+		}
+		else {
+			if (weapon && IsOneHandedWeapon(weapon)) {
+				if (isBlocking && IsUnarmed(offhandObj)) {
+					// We hit with a bashable one-handed weapon and we're blocking, and the blocking can't be due to the other hand
+					isBash = true;
+				}
+			}
+		}
+	}
 
 	source->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
 	if (isBash) {
@@ -257,6 +278,17 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	}
 	else {
 		source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
+	}
+
+	if (isPowerAttack && isShield) {
+		// power bash
+		if (BGSAction *blockAnticipateAction = (BGSAction *)g_defaultObjectManager->objects[74]) {
+			SendAction(source, target, blockAnticipateAction);
+		}
+		PlayerCharacter *player = *g_thePlayer;
+		if (source == player) {
+			*((UInt8 *)player + 0x12D7) |= 0x1C;
+		}
 	}
 
 	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
@@ -545,17 +577,7 @@ void ExitFurniture(Actor *actor)
 	NiPointer<TESObjectREFR> furniture;
 	if (!LookupREFRByHandle(furnitureHandle, furniture)) return;
 
-	{
-		TESActionData input;
-		set_vtbl(&input, TESActionData_vtbl);
-
-		input.source = actor;
-		input.target = furniture;
-		input.action = activateAction;
-		input.unk20 = 2;
-
-		get_vfunc<_TESActionData_Process>(&input, 5)(&input);
-	}
+	SendAction(actor, furniture, activateAction);
 }
 
 bool ShouldBumpActor(Actor *actor)
@@ -1132,8 +1154,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		for (auto &targets : hitCooldownTargets) { // For each hand's cooldown targets
 			for (auto it = targets.begin(); it != targets.end();) {
 				auto[target, cooldown] = *it;
-				if ((now - cooldown.stoppedCollidingTime) * *g_globalTimeMultiplier > Config::options.hitCooldownTimeStoppedColliding ||
-					(now - cooldown.startTime) * *g_globalTimeMultiplier > Config::options.hitCooldownTimeFallback)
+				if ((now - cooldown.stoppedCollidingTime) > Config::options.hitCooldownTimeStoppedColliding ||
+					(now - cooldown.startTime) > Config::options.hitCooldownTimeFallback)
 					it = targets.erase(it);
 				else
 					++it;

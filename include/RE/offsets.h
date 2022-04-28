@@ -622,6 +622,9 @@ extern RelocAddr<_ActorProcess_TransitionFurnitureState> ActorProcess_Transition
 typedef void(*_Actor_SetVehicle)(Actor *_this, UInt32 &handle);
 extern RelocAddr<_Actor_SetVehicle> Actor_SetVehicle;
 
+typedef bool(*_Actor_IsBlocking)(Actor *_this);
+extern RelocAddr<_Actor_IsBlocking> Actor_IsBlocking;
+
 typedef void(*_HitData_ctor)(HitData *_this);
 extern RelocAddr<_HitData_ctor> HitData_ctor;
 

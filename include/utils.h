@@ -53,6 +53,9 @@ bool HasGeometryChildren(NiAVObject *obj);
 bool IsTwoHanded(const TESObjectWEAP *weap);
 bool IsBow(const TESObjectWEAP *weap);
 TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand);
+bool IsHoldingTwoHandedWeapon(Actor *actor);
+bool IsOneHandedWeapon(TESObjectWEAP *weapon);
+bool IsUnarmed(TESForm *equippedObject);
 
 double GetTime();
 
@@ -99,6 +102,7 @@ void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
 KnockState GetActorKnockState(Actor *actor);
 bool IsActorGettingUp(Actor *actor);
 float GetAVPercentage(Actor *actor, UInt32 av);
+bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 bool IsActorUsingFurniture(Actor *actor);
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }

@@ -423,4 +423,4 @@ typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_
 typedef bool(*_MagicTarget_IsInvulnerable)(MagicTarget *_this);
 typedef void(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);
 typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UInt32 unk);
-typedef void(*_TESActionData_Process)(TESActionData *_this);
+typedef bool(*_TESActionData_Process)(TESActionData *_this);

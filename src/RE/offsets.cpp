@@ -271,6 +271,7 @@ RelocAddr<_PlayRumble> PlayRumble(0xC59440);
 RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);
 RelocAddr<_ActorProcess_TransitionFurnitureState> ActorProcess_TransitionFurnitureState(0x6878D0);
 RelocAddr<_Actor_SetVehicle> Actor_SetVehicle(0x60E0C0);
+RelocAddr<_Actor_IsBlocking> Actor_IsBlocking(0x611680);
 RelocAddr<_HitData_ctor> HitData_ctor(0x76D000);
 RelocAddr<_HitData_dtor> HitData_dtor(0x76D0F0);
 RelocAddr<_HitData_populate> HitData_populate(0x76D400);

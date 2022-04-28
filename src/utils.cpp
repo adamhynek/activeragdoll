@@ -188,6 +188,31 @@ TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand)
 	return nullptr;
 }
 
+bool IsHoldingTwoHandedWeapon(Actor *actor)
+{
+	if (TESObjectWEAP *weapon = GetEquippedWeapon(actor, false)) {
+		return weapon->type() == TESObjectWEAP::GameData::kType_TwoHandAxe || weapon->type() == TESObjectWEAP::GameData::kType_TwoHandSword;
+	}
+	return false;
+}
+
+bool IsOneHandedWeapon(TESObjectWEAP *weapon)
+{
+	return weapon->type() == TESObjectWEAP::GameData::kType_OneHandSword || weapon->type() == TESObjectWEAP::GameData::kType_OneHandDagger || weapon->type() == TESObjectWEAP::GameData::kType_OneHandAxe || weapon->type() == TESObjectWEAP::GameData::kType_OneHandMace;
+}
+
+bool IsUnarmed(TESForm *equippedObject)
+{
+	if (!equippedObject) return true;
+
+	TESObjectWEAP *equippedWeapon = DYNAMIC_CAST(equippedObject, TESForm, TESObjectWEAP);
+	if (equippedWeapon && equippedWeapon->type() == TESObjectWEAP::GameData::kType_HandToHandMelee) {
+		return true;
+	}
+
+	return false;
+}
+
 void PrintVector(const NiPoint3 &p)
 {
 	_MESSAGE("%.2f, %.2f, %.2f", p.x, p.y, p.z);
@@ -747,6 +772,19 @@ float GetAVPercentage(Actor *actor, UInt32 av)
 	float current = actor->actorValueOwner.GetCurrent(av);
 	float max = actor->actorValueOwner.GetMaximum(av);
 	return max == 0.f ? current / max : 1.f;
+}
+
+bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action)
+{
+	TESActionData input;
+	set_vtbl(&input, TESActionData_vtbl);
+
+	input.source = source;
+	input.target = target;
+	input.action = action;
+	input.unk20 = 2;
+
+	return get_vfunc<_TESActionData_Process>(&input, 5)(&input);
 }
 
 class IsInFactionVisitor : public Actor::FactionVisitor
