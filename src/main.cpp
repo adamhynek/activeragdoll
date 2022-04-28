@@ -280,7 +280,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 		source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
-	if (isPowerAttack && isShield) {
+	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack) && isShield) {
 		// power bash
 		if (BGSAction *blockAnticipateAction = (BGSAction *)g_defaultObjectManager->objects[74]) {
 			SendAction(source, target, blockAnticipateAction);
@@ -307,7 +307,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 					// Out of stamina after the hit
 					if (ActorProcessManager *process = source->processManager) {
 						float regenRate = Actor_GetActorValueRegenRate(source, 26);
-						ActorProcess_UpdateRegenDelay(process, 26, (staminaBeforeHit - staminaCost) / regenRate);
+						ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
 						FlashHudMenuMeter(26);
 					}
 				}
