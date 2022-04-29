@@ -58,8 +58,6 @@ SKSETaskInterface *g_taskInterface = nullptr;
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
-TESFaction *g_currentFollowerFaction = nullptr;
-
 bool g_isRightTriggerHeld = false;
 bool g_isLeftTriggerHeld = false;
 
@@ -587,7 +585,7 @@ bool ShouldBumpActor(Actor *actor)
 
 	if (Config::options.dontBumpAnimals && actor->race->keyword.HasKeyword(g_keyword_actorTypeAnimal)) return false;
 
-	if (Config::options.dontBumpFollowers && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return false;
+	if (Config::options.dontBumpFollowers && IsTeammate(actor)) return false;
 
 	if (RelationshipRanks::GetRelationshipRank(actor, *g_thePlayer) > Config::options.bumpMaxRelationshipRank) return false;
 
@@ -1688,7 +1686,7 @@ float GetSpeedReduction(Actor *actor)
 {
 	if (!Config::options.doSpeedReduction) return 0.f;
 
-	if (Config::options.followersSkipSpeedReduction && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return 0.f;
+	if (Config::options.followersSkipSpeedReduction && IsTeammate(actor)) return 0.f;
 
 	PlayerCharacter *player = *g_thePlayer;
 
@@ -1709,7 +1707,7 @@ float GetSpeedReduction(Actor *actor)
 
 float GetGrabbedStaminaCost(Actor *actor)
 {
-	if (Config::options.followersSkipStaminaCost && (IsTeammate(actor) || IsInFaction(actor, g_currentFollowerFaction))) return 0.f;
+	if (Config::options.followersSkipStaminaCost && IsTeammate(actor)) return 0.f;
 	return Config::options.grabbedActorStaminaCost;
 }
 
@@ -3126,13 +3124,6 @@ extern "C" {
 		g_keyword_actorTypeNPC = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeNPC"));
 		if (!g_keyword_actorTypeAnimal || !g_keyword_actorTypeNPC) {
 			_ERROR("Failed to get keywords");
-			return;
-		}
-
-		TESForm *currentFollowerFaction = LookupFormByID(0x5C84E);
-		if (currentFollowerFaction) g_currentFollowerFaction = DYNAMIC_CAST(currentFollowerFaction, TESForm, TESFaction);
-		if (!g_currentFollowerFaction) {
-			_ERROR("Failed to get current follower faction");
 			return;
 		}
 
