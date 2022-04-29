@@ -1355,7 +1355,14 @@ void PrePhysicsStepCallback(void *world)
 	}
 }
 
-std::unordered_map<hkbRagdollDriver *, ActiveRagdoll> g_activeRagdolls{};
+std::unordered_map<hkbRagdollDriver *, std::shared_ptr<ActiveRagdoll>> g_activeRagdolls{};
+
+std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driver)
+{
+	auto it = g_activeRagdolls.find(driver);
+	if (it == g_activeRagdolls.end()) return nullptr;
+	return it->second;
+}
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
@@ -1483,23 +1490,23 @@ bool AddRagdollToWorld(Actor *actor)
 					if (driver) {
 						g_activeActors.insert(actor);
 
-						g_activeRagdolls[driver] = ActiveRagdoll{};
-						ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
+						std::shared_ptr<ActiveRagdoll> activeRagdoll(new ActiveRagdoll());
+						g_activeRagdolls[driver] = activeRagdoll;
 
 						double now = GetTime();
-						Blender &blender = ragdoll.blender;
+						Blender &blender = activeRagdoll->blender;
 						blender.StartBlend(Blender::BlendType::AnimToRagdoll, now, Config::options.blendInTime);
 						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
 						blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
 						blender.isFirstBlendFrame = false;
 
-						ragdoll.stateChangedTime = now;
-						ragdoll.state = RagdollState::BlendIn;
+						activeRagdoll->stateChangedTime = now;
+						activeRagdoll->state = RagdollState::BlendIn;
 
 						if (!graph.ptr->world) {
 							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
 							graph.ptr->world = GetHavokWorldFromCell(actor->parentCell);
-							ragdoll.shouldNullOutWorldWhenRemovingFromWorld = true;
+							activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
 						}
 					}
 				}
@@ -1542,8 +1549,10 @@ bool RemoveRagdollFromWorld(Actor *actor)
 					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
 					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
 					if (driver) {
-						if (g_activeRagdolls.count(driver) && g_activeRagdolls[driver].shouldNullOutWorldWhenRemovingFromWorld) {
-							graph.ptr->world = nullptr;
+						if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+							if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
+								graph.ptr->world = nullptr;
+							}
 						}
 						g_activeRagdolls.erase(driver);
 
@@ -2327,22 +2336,22 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
 	hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
 
-	if (!g_activeRagdolls.count(driver)) return;
+	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
+	if (!ragdoll) return;
 
-	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
-	ragdoll.deltaTime = deltaTime;
+	ragdoll->deltaTime = deltaTime;
 
 	double frameTime = GetTime();
-	ragdoll.frameTime = frameTime;
+	ragdoll->frameTime = frameTime;
 
 	KnockState knockState = GetActorKnockState(actor);
 	if (Config::options.blendWhenGettingUp) {
-		if (ragdoll.knockState == KnockState::BeginGetUp && knockState == KnockState::GetUp) {
+		if (ragdoll->knockState == KnockState::BeginGetUp && knockState == KnockState::GetUp) {
 			// Went from starting to get up to actually getting up
-			ragdoll.blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, frameTime, Config::options.getUpBlendTime);
+			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, frameTime, Config::options.getUpBlendTime);
 		}
 	}
-	ragdoll.knockState = knockState;
+	ragdoll->knockState = knockState;
 
 	/*TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 	if (std::string(name->name) == "Faendal") {
@@ -2374,15 +2383,15 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	ragdoll.isOn = true;
+	ragdoll->isOn = true;
 	if (!isRigidBodyOn) {
-		ragdoll.isOn = false;
-		ragdoll.state = RagdollState::Idle; // reset state
+		ragdoll->isOn = false;
+		ragdoll->state = RagdollState::Idle; // reset state
 		return;
 	}
 
 	if (Config::options.enableKeyframes) {
-		double elapsedTime = (frameTime - ragdoll.stateChangedTime) * *g_globalTimeMultiplier;
+		double elapsedTime = (frameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
 		if (elapsedTime <= Config::options.blendInKeyframeTime) {
 			if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
 				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
@@ -2452,14 +2461,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			}
 
 			{ // Loosen ragdoll constraints to allow the anim pose
-				if (!ragdoll.easeConstraintsAction) {
+				if (!ragdoll->easeConstraintsAction) {
 					hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
 					hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
-					ragdoll.easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
-					hkReferencedObject_removeReference(ragdoll.easeConstraintsAction);
+					ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
+					hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
 				}
 
-				hkpEaseConstraintsAction_loosenConstraints(ragdoll.easeConstraintsAction);
+				hkpEaseConstraintsAction_loosenConstraints(ragdoll->easeConstraintsAction);
 			}
 
 			// Restore rigidbody transforms
@@ -2494,11 +2503,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 						hkQsTransform poseT;
 						poseT.setMul(worldFromModel, poseData[boneIndex]);
 
-						if (Config::options.doWarp && ragdoll.hasHipBoneTransform) {
+						if (Config::options.doWarp && ragdoll->hasHipBoneTransform) {
 							hkTransform actualT;
 							rb->getTransform(actualT);
 
-							NiPoint3 posePos = HkVectorToNiPoint(ragdoll.hipBoneTransform.m_translation) * *g_havokWorldScale;
+							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->hipBoneTransform.m_translation) * *g_havokWorldScale;
 							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
 							NiPoint3 posDiff = actualPos - posePos;
 
@@ -2529,8 +2538,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							}
 						}
 
-						ragdoll.hipBoneTransform = poseT;
-						ragdoll.hasHipBoneTransform = true;
+						ragdoll->hipBoneTransform = poseT;
+						ragdoll->hasHipBoneTransform = true;
 					}
 				}
 			}
@@ -2545,25 +2554,25 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (!actor) return;
 
-	if (!g_activeRagdolls.count(driver)) return;
+	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
+	if (!ragdoll) return;
 
-	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
-	if (!ragdoll.isOn) return;
+	if (!ragdoll->isOn) return;
 
 	int numBones = driver->ragdoll->getNumBones();
 	if (numBones <= 0) return;
-	ragdoll.stress.clear();
+	ragdoll->stress.clear();
 
 	float totalStress = 0.f;
 	for (int i = 0; i < numBones; i++) {
 		float stress = sqrtf(g_stressOut[i].m_stressSquared);
-		ragdoll.stress.push_back(stress);
+		ragdoll->stress.push_back(stress);
 		totalStress += stress;
 	}
 
-	ragdoll.avgStress = totalStress / numBones;
+	ragdoll->avgStress = totalStress / numBones;
 	//_MESSAGE("stress: %.2f", avgStress);
-	//PrintToFile(std::to_string(ragdoll.avgStress), "stress.txt");
+	//PrintToFile(std::to_string(ragdoll->avgStress), "stress.txt");
 
 	if (Config::options.disableConstraints) {
 		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
@@ -2581,17 +2590,17 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 
 	// All we're doing here is storing the anim pose, so it's fine to run this even if the actor is fully ragdolled or getting up.
 
-	if (!g_activeRagdolls.count(driver)) return;
+	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
+	if (!ragdoll) return;
 
-	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
-	if (!ragdoll.isOn) return;
+	if (!ragdoll->isOn) return;
 
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
 		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
-		ragdoll.animPose.assign(animPose, animPose + numPoses);
+		ragdoll->animPose.assign(animPose, animPose + numPoses);
 	}
 }
 
@@ -2604,23 +2613,23 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
 	// All we're doing here is storing the ragdoll pose and blending, and we do want to have the option to blend even while getting up.
 
-	if (!g_activeRagdolls.count(driver)) return;
+	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
+	if (!ragdoll) return;
 
-	ActiveRagdoll &ragdoll = g_activeRagdolls[driver];
-	if (!ragdoll.isOn) return;
+	if (!ragdoll->isOn) return;
 
-	RagdollState state = ragdoll.state;
+	RagdollState state = ragdoll->state;
 
 	//PrintToFile(std::to_string((int)state), "state.txt");
 
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
-		if (ragdoll.easeConstraintsAction) {
+		if (ragdoll->easeConstraintsAction) {
 			// Restore constraint limits from before we loosened them
 			// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
-			hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
-			ragdoll.easeConstraintsAction = nullptr;
+			hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
+			ragdoll->easeConstraintsAction = nullptr;
 		}
 	}
 
@@ -2636,14 +2645,14 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
 
 		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
-		ragdoll.ragdollPose.assign(poseOut, poseOut + numPoses);
+		ragdoll->ragdollPose.assign(poseOut, poseOut + numPoses);
 	}
 
-	Blender &blender = ragdoll.blender;
+	Blender &blender = ragdoll->blender;
 	if (blender.isActive) {
 		bool done = !Config::options.doBlending;
 		if (!done) {
-			done = blender.Update(ragdoll, *driver, inOut, ragdoll.frameTime);
+			done = blender.Update(*ragdoll, *driver, inOut, ragdoll->frameTime);
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {
@@ -2659,18 +2668,18 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			memcpy(poseOut, ragdoll.animPose.data(), numPoses * sizeof(hkQsTransform));
+			memcpy(poseOut, ragdoll->animPose.data(), numPoses * sizeof(hkQsTransform));
 		}
 	}
 	else if (Config::options.forceRagdollPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			memcpy(poseOut, ragdoll.ragdollPose.data(), numPoses * sizeof(hkQsTransform));
+			memcpy(poseOut, ragdoll->ragdollPose.data(), numPoses * sizeof(hkQsTransform));
 		}
 	}
 
-	ragdoll.state = state;
+	ragdoll->state = state;
 }
 
 void DriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
