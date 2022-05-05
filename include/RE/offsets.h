@@ -607,6 +607,15 @@ extern RelocAddr<_Character_HitTarget> Character_HitTarget;
 typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
 extern RelocAddr<_UpdateDialogue> UpdateDialogue;
 
+typedef bool(*_Actor_IsHostileToActor)(Actor *_this, Actor *actor);
+extern RelocAddr<_Actor_IsHostileToActor> Actor_IsHostileToActor;
+
+typedef int(*_Actor_GetDetectionCalculatedValue)(Actor *_this, Actor *actor, int a3);
+extern RelocAddr<_Actor_GetDetectionCalculatedValue> Actor_GetDetectionCalculatedValue;
+
+typedef void(*_Actor_SendAssaultAlarm)(UInt64 a1, UInt64 a2, Actor *actor); // a1, a2 unused
+extern RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm;
+
 typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
 extern RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask;
 

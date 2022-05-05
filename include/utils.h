@@ -100,11 +100,26 @@ MovementControllerNPC * GetMovementController(Actor *actor);
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
 KnockState GetActorKnockState(Actor *actor);
+inline bool IsReanimating(Actor *actor) { return (actor->actorState.flags08 >> 4) & 1; }
 bool IsActorGettingUp(Actor *actor);
 float GetAVPercentage(Actor *actor, UInt32 av);
 bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
+void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
+void ExitFurniture(Actor *actor);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 bool IsActorUsingFurniture(Actor *actor);
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
 bool IsInFaction(Actor *actor, TESFaction *faction);
+
+constexpr int GetDialogueTypeFromSubtype(int subtype)
+{
+	if (subtype < 3) return 0; // kPlayerDialogue
+	if (subtype < 14) return 1; // kCommandDialogue
+	if (subtype < 15) return 2; // kSceneDialogue
+	if (subtype < 26) return 4; // kFavors
+	if (subtype < 55) return 3; // kCombat
+	if (subtype < 66) return 5; // kDetection
+	if (subtype < 75) return 6; // kService
+	else return 7; // kMiscellaneous
+}

@@ -62,23 +62,6 @@ bool g_isRightTriggerHeld = false;
 bool g_isLeftTriggerHeld = false;
 
 
-// Potentially, could hook TESObjectREFR::InitHavok to set the collision layer for the weapon when we drop it so it doesn't collide with the bumper
-
-// RightMeleeContactListener : hkpContactListener is at 0x2FFFDD0
-// LeftMeleeContactListener : hkpContactListener is at 0x2FFFDD8
-// May be flipped in left handed mode, I dunno
-
-// 6B03D0 - inits some VR melee things in the PlayerCharacter from ini settings when switching weapons
-
-// For setting transform of our trigger, probably hook at 0x6E5258
-
-// 2AE5E0 - recursive check of node for collision when weapon swing - 2AFAA0 does the actual checks for a single node - 2ADFD0 is the one that does it on the BSFadeNode root of a TESObjectREFR
-// ^^ Takes in BSFadeNode *, NiPoint3 * to position of the weapon hit? and checks which node within is the intersecting one?
-// ^^ It gets passed the location of the WEAPON node during a weapon swing
-
-// 60C808 - address of call to TESObjectREFR_EndHavokHit in Actor::KillImpl
-
-
 NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -290,7 +273,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	}
 
 	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
-	UpdateDialogue(nullptr, source, target, 3, dialogueSubtype, false, nullptr);
+	TriggerDialogue(source, target, dialogueSubtype, false);
 
 	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack)) {
 		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), isOffhand ? 45 : 49, 2);
@@ -558,24 +541,128 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 	return false;
 }
 
-void ExitFurniture(Actor *actor)
+struct NPCData
 {
-	ActorProcessManager *process = actor->processManager;
-	if (!process) return;
+	enum class Temperament
+	{
+		Normal,
+		SomewhatMiffed,
+		VeryMiffed,
+		Hostile,
+	};
 
-	MiddleProcess *middleProcess = process->middleProcess;
-	if (!middleProcess) return;
+	Temperament temperament = Temperament::Normal;
+	double dialogueTime = 0.0;
+	float accumulatedGrabbedTime = 0.f;
+	bool isGrabbed = false;
+	bool wasGrabbed = false;
 
-	UInt32 furnitureHandle = middleProcess->furnitureHandle;
-	if (furnitureHandle == *g_invalidRefHandle) return;
+	void TryTriggerDialogue(Character *character, int dialogueSubtype,  double now)
+	{
+		if (now - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
+			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true); // pickpocketTopic
+			dialogueTime = now;
+		}
+	}
 
-	BGSAction *activateAction = (BGSAction *)g_defaultObjectManager->objects[55];
-	if (!activateAction) return;
+	void StateUpdate(Character *character, double now)
+	{
+		// TODO:
+		//  - actor->StopCombat(player) may work to make them stop being hostile to us
+		//  - Incorporate touches/bumps (make touches add to accumulatedGrabbedTime?)
+		//  - Incorporate BumpActor (instead of where it is currently?
 
-	NiPointer<TESObjectREFR> furniture;
-	if (!LookupREFRByHandle(furnitureHandle, furniture)) return;
+		PlayerCharacter *player = *g_thePlayer;
 
-	SendAction(actor, furniture, activateAction);
+		if (Config::options.followersSkipAggression && IsTeammate(character)) return;
+		if (RelationshipRanks::GetRelationshipRank(character->baseForm, player->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
+
+		float deltaTime = *g_deltaTime;
+
+		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
+
+		accumulatedGrabbedTime += isGrabbed ? deltaTime : -deltaTime;
+		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
+
+		bool isHostile = Actor_IsHostileToActor(character, player);
+
+		if (temperament == NPCData::Temperament::Normal) {
+			if (isHostile) {
+				temperament = NPCData::Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+				temperament = NPCData::Temperament::SomewhatMiffed;
+			}
+		}
+
+		if (temperament == NPCData::Temperament::SomewhatMiffed) {
+			if (isHostile) {
+				temperament = NPCData::Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
+				temperament = NPCData::Temperament::Normal;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh, now);
+				if (Config::options.stopUsingFurnitureOnHighAggression) {
+					ExitFurniture(character);
+				}
+				temperament = NPCData::Temperament::VeryMiffed;
+			}
+			else if (!wasGrabbed && isGrabbed) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+			}
+		}
+
+		if (temperament == NPCData::Temperament::VeryMiffed) {
+			if (isHostile) {
+				temperament = NPCData::Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
+				temperament = NPCData::Temperament::SomewhatMiffed;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
+				Actor_SendAssaultAlarm(0, 0, character);
+				temperament = NPCData::Temperament::Hostile;
+			}
+			else if (!wasGrabbed && isGrabbed) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+			}
+		}
+
+		if (temperament == NPCData::Temperament::Hostile) {
+			if (!isHostile) {
+				accumulatedGrabbedTime = 0.f;
+				temperament = NPCData::Temperament::Normal;
+			}
+		}
+
+		wasGrabbed = isGrabbed;
+	}
+};
+
+std::unordered_map<Actor *, NPCData> g_npcs{};
+
+void TryUpdateNPCState(Actor *actor, double now)
+{
+	auto it = g_npcs.find(actor);
+	if (it == g_npcs.end()) {
+		// Not in the map yet
+		TESRace *race = actor->race;
+		if (!race) return;
+		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
+
+		if (IsTeammate(actor)) return;
+
+		g_npcs[actor] = NPCData{};
+	}
+	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
+		NPCData &data = it->second;
+		data.StateUpdate(character, now);
+	}
 }
 
 bool ShouldBumpActor(Actor *actor)
@@ -587,45 +674,56 @@ bool ShouldBumpActor(Actor *actor)
 
 	if (Config::options.dontBumpFollowers && IsTeammate(actor)) return false;
 
-	if (RelationshipRanks::GetRelationshipRank(actor, *g_thePlayer) > Config::options.bumpMaxRelationshipRank) return false;
+	if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.bumpMaxRelationshipRank) return false;
 
 	return true;
 }
 
-void TryBumpActor(Actor *actor, bool isLargeBump = false)
+bool ShouldShoveActor(Actor *actor)
 {
-	if (!ShouldBumpActor(actor)) return;
+	if (Actor_IsRunning(actor) || Actor_IsGhost(actor)) return false;
+	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
+	PlayerCharacter *player = *g_thePlayer;
+	if (Actor_IsHostileToActor(actor, player)) {
+		if (actor->processManager && player->processManager) {
+			if (Actor_GetDetectionCalculatedValue(player, actor, 3) > 0) {
+				// detected
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false)
+{
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return;
 
-	ExitFurniture(actor);
-
-	PlayerCharacter *player = *g_thePlayer;
-	NiPoint3 actorToPlayer = player->pos - actor->pos;
-	float heading = GetHeadingFromVector(actorToPlayer);
-	float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-
 	ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
 	ActorProcess_SetBumpDirection(process, bumpDirection);
-	Actor_GetBumped(actor, player, isLargeBump, false);
+	Actor_GetBumped(actor, *g_thePlayer, isLargeBump, false);
 	ActorProcess_SetBumpDirection(process, 0.f);
 }
 
 struct BumpRequest
 {
 	double bumpTime = 0.0;
+	float bumpDirection = 0.f;
 	bool consumed = false;
+	bool isLargeBump = false;
 };
 std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 
-void TryQueueBumpActor(Actor *actor)
+void TryQueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump)
 {
 	double now = GetTime();
 	std::unique_lock lock(g_bumpActorsLock);
-	if (auto it = g_bumpActors.find(actor); it == g_bumpActors.end() || now - it->second.bumpTime > Config::options.actorBumpCooldownTime) {
-		g_bumpActors[actor] = { now, false };
+	if (auto it = g_bumpActors.find(actor); it == g_bumpActors.end() || now - it->second.bumpTime > Config::options.actorBumpCooldownTime || (isLargeBump && !it->second.isLargeBump)) {
+		g_bumpActors[actor] = { now, bumpDirection, false, isLargeBump };
 	}
 }
 
@@ -636,8 +734,6 @@ bool ShouldKeepOffset(Actor *actor)
 	if (IsActorUsingFurniture(actor)) return false;
 
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
-
-	//if (!actor->race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return false;
 
 	return true;
 }
@@ -1052,7 +1148,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (Config::options.bumpActorsWhenTouched && hitSpeed > Config::options.bumpSpeedThreshold) {
 				if (hitRefr->formType == kFormType_Character) {
 					if (Actor *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-						TryQueueBumpActor(actor);
+						if (hitSpeed > Config::options.largeBumpSpeedThreshold) {
+							NiPoint3 hitDirection = VectorNormalized(hkHitVelocity);
+							float heading = GetHeadingFromVector(-hitDirection);
+							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+							TryQueueBumpActor(actor, bumpDirection, true);
+						}
+						else {
+							NiPoint3 actorToPlayer = (*g_thePlayer)->pos - actor->pos;
+							float heading = GetHeadingFromVector(actorToPlayer);
+							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+							TryQueueBumpActor(actor, bumpDirection, false);
+						}
 					}
 				}
 			}
@@ -1686,7 +1793,7 @@ float GetSpeedReduction(Actor *actor)
 {
 	if (!Config::options.doSpeedReduction) return 0.f;
 
-	if (Config::options.followersSkipSpeedReduction && IsTeammate(actor)) return 0.f;
+	if (Actor_IsInRagdollState(actor)) return 0.f;
 
 	PlayerCharacter *player = *g_thePlayer;
 
@@ -1702,13 +1809,30 @@ float GetSpeedReduction(Actor *actor)
 	float reduction = massReduction * (healthPercent * Config::options.speedReductionHealthInfluence + (1.f - Config::options.speedReductionHealthInfluence));
 	reduction = lerp(reduction, Config::options.maxSpeedReduction, 1.f - playerStaminaPercent);
 
+	if (IsTeammate(actor)) {
+		reduction *= Config::options.followerSpeedReductionMultiplier;
+	}
+
 	return std::clamp(reduction, 0.f, Config::options.maxSpeedReduction);
 }
 
 float GetGrabbedStaminaCost(Actor *actor)
 {
 	if (Config::options.followersSkipStaminaCost && IsTeammate(actor)) return 0.f;
-	return Config::options.grabbedActorStaminaCost;
+
+	if (Actor_IsInRagdollState(actor)) {
+		KnockState knockState = GetActorKnockState(actor);
+		bool isKnockedDown = knockState != KnockState::Normal && knockState != KnockState::GetUp; // knocked down and not getting up
+
+		bool isReanimating = actor->IsDead(1) && IsReanimating(actor);
+
+		if (!isKnockedDown && !isReanimating) return 0.f;
+	}
+
+	float healthPercent = std::clamp(GetAVPercentage(actor, 24), 0.f, 1.f);
+	float cost = Config::options.grabbedActorStaminaCost * (healthPercent * Config::options.grabbedActorStaminaCostHealthInfluence + (1.f - Config::options.grabbedActorStaminaCostHealthInfluence));
+
+	return cost;
 }
 
 bool g_rightDropAttempted = false;
@@ -1750,7 +1874,7 @@ void UpdateSpeedReduction()
 		// We are holding at least 1 object
 		if (rightHasHeld && leftHasHeld && g_rightHeldRefr == g_leftHeldRefr) {
 			// Both hands are holding the same refr (ex. different limbs of the same body). We don't want to double up on the slowdown.
-			if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
+			if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
 				speedReduction += GetSpeedReduction(actor);
 				float cost = GetGrabbedStaminaCost(actor);
 				if (cost > 0.f) {
@@ -1762,7 +1886,7 @@ void UpdateSpeedReduction()
 		}
 		else {
 			if (rightHasHeld) {
-				if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
+				if (Actor *actor = DYNAMIC_CAST(g_rightHeldRefr, TESObjectREFR, Actor)) {
 					speedReduction += GetSpeedReduction(actor);
 					float cost = GetGrabbedStaminaCost(actor);
 					if (cost > 0.f) {
@@ -1772,7 +1896,7 @@ void UpdateSpeedReduction()
 				}
 			}
 			if (leftHasHeld) {
-				if (Actor *actor = DYNAMIC_CAST(g_leftHeldRefr, TESObjectREFR, Actor); actor && !Actor_IsInRagdollState(actor)) {
+				if (Actor *actor = DYNAMIC_CAST(g_leftHeldRefr, TESObjectREFR, Actor)) {
 					speedReduction += GetSpeedReduction(actor);
 					float cost = GetGrabbedStaminaCost(actor);
 					if (cost > 0.f) {
@@ -1819,6 +1943,19 @@ void UpdateSpeedReduction()
 	}
 }
 
+void ResetObjects()
+{
+	g_npcs.clear();
+	g_activeActors.clear();
+	g_activeRagdolls.clear();
+	g_activeBipedGroups.clear();
+	g_hittableCharControllerGroups.clear();
+	g_selfCollidableBipedGroups.clear();
+	g_higgsLingeringRigidBodies.clear();
+	g_keepOffsetActors.clear();
+	g_contactListener = ContactListener{};
+}
+
 double g_worldChangedTime = 0.0;
 
 void ProcessHavokHitJobsHook()
@@ -1856,14 +1993,7 @@ void ProcessHavokHitJobsHook()
 				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_contactListener);
 			}
 
-			g_activeActors.clear();
-			g_activeRagdolls.clear();
-			g_activeBipedGroups.clear();
-			g_hittableCharControllerGroups.clear();
-			g_selfCollidableBipedGroups.clear();
-			g_higgsLingeringRigidBodies.clear();
-			g_keepOffsetActors.clear();
-			g_contactListener = ContactListener{};
+			ResetObjects();
 		}
 
 		_MESSAGE("Havok world changed");
@@ -2111,7 +2241,11 @@ void ProcessHavokHitJobsHook()
 			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 			if (!actor || !actor->GetNiNode()) continue;
 
+			TryUpdateNPCState(actor, now);
+
+#ifdef _DEBUG
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+#endif // _DEBUG
 
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
@@ -2146,6 +2280,9 @@ void ProcessHavokHitJobsHook()
 								if (!controller->GetInterfaceByName_2(keepOffsetFromActorStr)) {
 									if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
 										// Retry
+
+										TryQueueBumpActor(actor, 0.f, false); // try to get them unstuck by bumping them
+
 										g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
 										data.lastAttemptTime = now;
 									}
@@ -2745,7 +2882,10 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 	{
 		std::unique_lock lock(g_bumpActorsLock);
 		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end() && !it->second.consumed && GetTime() - it->second.bumpTime < Config::options.actorBumpCooldownTime) {
-			TryBumpActor(actor, false);
+			bool isLargeBump = it->second.isLargeBump;
+			if ((!isLargeBump && ShouldBumpActor(actor)) || (isLargeBump && ShouldShoveActor(actor))) {
+				BumpActor(actor, it->second.bumpDirection, isLargeBump);
+			}
 			it->second.consumed = true;
 		}
 	}
@@ -3169,6 +3309,12 @@ extern "C" {
 				}
 				else {
 					ShowErrorBoxAndTerminate("[CRITICAL] Did NOT get higgs interface. HIGGS is required for this mod.");
+				}
+			}
+			else if (msg->type == SKSEMessagingInterface::kMessage_PostLoadGame || msg->type == SKSEMessagingInterface::kMessage_NewGame) {
+				bool loadSucceeded = (bool)msg->data;
+				if (loadSucceeded) {
+					ResetObjects();
 				}
 			}
 		}

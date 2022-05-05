@@ -787,6 +787,32 @@ bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action)
 	return get_vfunc<_TESActionData_Process>(&input, 5)(&input);
 }
 
+void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue)
+{
+	int dialogueType = GetDialogueTypeFromSubtype(dialogueSubtype);
+	UpdateDialogue(nullptr, source, target, dialogueType, dialogueSubtype, interruptDialogue, nullptr);
+}
+
+void ExitFurniture(Actor *actor)
+{
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return;
+
+	MiddleProcess *middleProcess = process->middleProcess;
+	if (!middleProcess) return;
+
+	UInt32 furnitureHandle = middleProcess->furnitureHandle;
+	if (furnitureHandle == *g_invalidRefHandle) return;
+
+	BGSAction *activateAction = (BGSAction *)g_defaultObjectManager->objects[55];
+	if (!activateAction) return;
+
+	NiPointer<TESObjectREFR> furniture;
+	if (!LookupREFRByHandle(furnitureHandle, furniture)) return;
+
+	SendAction(actor, furniture, activateAction);
+}
+
 class IsInFactionVisitor : public Actor::FactionVisitor
 {
 public:

@@ -28,20 +28,33 @@ namespace Config {
 		bool bumpActorsWhenTouched = true;
 		bool exitFurnitureWhenBumped = true;
 		float bumpSpeedThreshold = 1.f;
+		float largeBumpSpeedThreshold = 2.f;
 		bool dontBumpAnimals = true;
 		bool dontBumpFollowers = false;
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 
+		bool followersSkipAggression = true;
+		bool stopUsingFurnitureOnHighAggression = true;
+		double aggressionDialogueCooldownTime = 1.0;
+		float aggressionRequiredGrabTimeLow = 0.2f;
+		float aggressionRequiredGrabTimeHigh = 3.5f;
+		float aggressionRequiredGrabTimeAssault = 7.f;
+		float aggressionMaxAccumulatedGrabTime = 20.f;
+		int aggressionMaxRelationshipRank = 0; // Acquantaince
+		int aggressionDialogueSubtypeLow = 88; // pickpocketTopic
+		int aggressionDialogueSubtypeHigh = 49; // trespass
+
 		bool doSpeedReduction = true;
-		bool followersSkipSpeedReduction = true;
 		float maxSpeedReduction = 80.f;
 		float speedReductionHealthInfluence = 0.5f;
 		float speedReductionMassProportion = 0.625f;
 		float speedReductionMassExponent = 1.f;
+		float followerSpeedReductionMultiplier = 0.2f;
 
 		bool followersSkipStaminaCost = true;
-		float grabbedActorStaminaCost = 10.f;
+		float grabbedActorStaminaCost = 9.f;
+		float grabbedActorStaminaCostHealthInfluence = 0.8f;
 
 		bool ragdollOnGrab = false;
 		bool ragdollSmallRacesOnGrab = true;
