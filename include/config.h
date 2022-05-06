@@ -89,6 +89,9 @@ namespace Config {
 
 		float playerVsBipedInteractionImpulseMultiplier = 0.f;
 
+		bool stopRagdollNonSelfCollisionForCloseActors = true;
+		float ragdollNonSelfCollisionActorMinDistance = 1.f;
+
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;
 		bool doBipedSelfCollision = true;

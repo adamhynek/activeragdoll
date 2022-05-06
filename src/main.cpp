@@ -572,11 +572,6 @@ struct NPCData
 		//  - Incorporate touches/bumps (make touches add to accumulatedGrabbedTime?)
 		//  - Incorporate BumpActor (instead of where it is currently?
 
-		PlayerCharacter *player = *g_thePlayer;
-
-		if (Config::options.followersSkipAggression && IsTeammate(character)) return;
-		if (RelationshipRanks::GetRelationshipRank(character->baseForm, player->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
-
 		float deltaTime = *g_deltaTime;
 
 		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
@@ -584,31 +579,31 @@ struct NPCData
 		accumulatedGrabbedTime += isGrabbed ? deltaTime : -deltaTime;
 		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
 
-		bool isHostile = Actor_IsHostileToActor(character, player);
+		bool isHostile = Actor_IsHostileToActor(character, *g_thePlayer);
 
-		if (temperament == NPCData::Temperament::Normal) {
+		if (temperament == Temperament::Normal) {
 			if (isHostile) {
-				temperament = NPCData::Temperament::Hostile;
+				temperament = Temperament::Hostile;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
 				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
-				temperament = NPCData::Temperament::SomewhatMiffed;
+				temperament = Temperament::SomewhatMiffed;
 			}
 		}
 
-		if (temperament == NPCData::Temperament::SomewhatMiffed) {
+		if (temperament == Temperament::SomewhatMiffed) {
 			if (isHostile) {
-				temperament = NPCData::Temperament::Hostile;
+				temperament = Temperament::Hostile;
 			}
 			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
-				temperament = NPCData::Temperament::Normal;
+				temperament = Temperament::Normal;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
 				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh, now);
 				if (Config::options.stopUsingFurnitureOnHighAggression) {
 					ExitFurniture(character);
 				}
-				temperament = NPCData::Temperament::VeryMiffed;
+				temperament = Temperament::VeryMiffed;
 			}
 			else if (!wasGrabbed && isGrabbed) {
 				// They were just re-grabbed - make them say something but not too often
@@ -616,16 +611,16 @@ struct NPCData
 			}
 		}
 
-		if (temperament == NPCData::Temperament::VeryMiffed) {
+		if (temperament == Temperament::VeryMiffed) {
 			if (isHostile) {
-				temperament = NPCData::Temperament::Hostile;
+				temperament = Temperament::Hostile;
 			}
 			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
-				temperament = NPCData::Temperament::SomewhatMiffed;
+				temperament = Temperament::SomewhatMiffed;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
 				Actor_SendAssaultAlarm(0, 0, character);
-				temperament = NPCData::Temperament::Hostile;
+				temperament = Temperament::Hostile;
 			}
 			else if (!wasGrabbed && isGrabbed) {
 				// They were just re-grabbed - make them say something but not too often
@@ -633,10 +628,10 @@ struct NPCData
 			}
 		}
 
-		if (temperament == NPCData::Temperament::Hostile) {
+		if (temperament == Temperament::Hostile) {
 			if (!isHostile) {
 				accumulatedGrabbedTime = 0.f;
-				temperament = NPCData::Temperament::Normal;
+				temperament = Temperament::Normal;
 			}
 		}
 
@@ -655,7 +650,8 @@ void TryUpdateNPCState(Actor *actor, double now)
 		if (!race) return;
 		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
 
-		if (IsTeammate(actor)) return;
+		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
+		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
 
 		g_npcs[actor] = NPCData{};
 	}
@@ -1006,6 +1002,20 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (Config::options.overrideSoundVelForRagdollCollisions) {
 				// Disable collision sounds for this frame
 				*g_fMinSoundVel = Config::options.ragdollSoundVel;
+			}
+
+			if (Config::options.stopRagdollNonSelfCollisionForCloseActors) {
+				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
+					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
+						if (refrA != refrB) {
+							if (VectorLength(refrA->pos - refrB->pos) < Config::options.ragdollNonSelfCollisionActorMinDistance) {
+								// Disable collision between bipeds whose references are roughly in the same position
+								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+								return;
+							}
+						}
+					}
+				}
 			}
 		}
 
