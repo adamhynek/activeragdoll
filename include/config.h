@@ -34,10 +34,12 @@ namespace Config {
 		int bumpMaxRelationshipRank = 0; // Acquantaince
 		double actorBumpCooldownTime = 3.0;
 
+		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
 		double aggressionDialogueCooldownTime = 1.0;
-		float aggressionRequiredGrabTimeLow = 0.2f;
+		float aggressionRequiredGrabTimeLow = 0.25f;
+		float aggressionRequiredGrabTimeLowFallback = 1.f;
 		float aggressionRequiredGrabTimeHigh = 3.5f;
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;
@@ -61,6 +63,7 @@ namespace Config {
 		float smallRaceHealthThreshold = 6.f;
 
 		bool doKeepOffset = true;
+		bool bumpActorIfKeepOffsetFails = true;
 		double keepOffsetRetryInterval = 1.0;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units

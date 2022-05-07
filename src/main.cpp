@@ -541,125 +541,6 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 	return false;
 }
 
-struct NPCData
-{
-	enum class Temperament
-	{
-		Normal,
-		SomewhatMiffed,
-		VeryMiffed,
-		Hostile,
-	};
-
-	Temperament temperament = Temperament::Normal;
-	double dialogueTime = 0.0;
-	float accumulatedGrabbedTime = 0.f;
-	bool isGrabbed = false;
-	bool wasGrabbed = false;
-
-	void TryTriggerDialogue(Character *character, int dialogueSubtype,  double now)
-	{
-		if (now - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
-			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true); // pickpocketTopic
-			dialogueTime = now;
-		}
-	}
-
-	void StateUpdate(Character *character, double now)
-	{
-		// TODO:
-		//  - actor->StopCombat(player) may work to make them stop being hostile to us
-		//  - Incorporate touches/bumps (make touches add to accumulatedGrabbedTime?)
-		//  - Incorporate BumpActor (instead of where it is currently?
-
-		float deltaTime = *g_deltaTime;
-
-		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-
-		accumulatedGrabbedTime += isGrabbed ? deltaTime : -deltaTime;
-		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
-
-		bool isHostile = Actor_IsHostileToActor(character, *g_thePlayer);
-
-		if (temperament == Temperament::Normal) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
-				temperament = Temperament::SomewhatMiffed;
-			}
-		}
-
-		if (temperament == Temperament::SomewhatMiffed) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
-				temperament = Temperament::Normal;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh, now);
-				if (Config::options.stopUsingFurnitureOnHighAggression) {
-					ExitFurniture(character);
-				}
-				temperament = Temperament::VeryMiffed;
-			}
-			else if (!wasGrabbed && isGrabbed) {
-				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
-			}
-		}
-
-		if (temperament == Temperament::VeryMiffed) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
-				temperament = Temperament::SomewhatMiffed;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
-				Actor_SendAssaultAlarm(0, 0, character);
-				temperament = Temperament::Hostile;
-			}
-			else if (!wasGrabbed && isGrabbed) {
-				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
-			}
-		}
-
-		if (temperament == Temperament::Hostile) {
-			if (!isHostile) {
-				accumulatedGrabbedTime = 0.f;
-				temperament = Temperament::Normal;
-			}
-		}
-
-		wasGrabbed = isGrabbed;
-	}
-};
-
-std::unordered_map<Actor *, NPCData> g_npcs{};
-
-void TryUpdateNPCState(Actor *actor, double now)
-{
-	auto it = g_npcs.find(actor);
-	if (it == g_npcs.end()) {
-		// Not in the map yet
-		TESRace *race = actor->race;
-		if (!race) return;
-		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
-
-		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
-		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
-
-		g_npcs[actor] = NPCData{};
-	}
-	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
-		NPCData &data = it->second;
-		data.StateUpdate(character, now);
-	}
-}
 
 bool ShouldBumpActor(Actor *actor)
 {
@@ -693,14 +574,14 @@ bool ShouldShoveActor(Actor *actor)
 	return true;
 }
 
-void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false)
+void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool dontTriggerDialogue = false)
 {
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return;
 
 	ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
 	ActorProcess_SetBumpDirection(process, bumpDirection);
-	Actor_GetBumped(actor, *g_thePlayer, isLargeBump, false);
+	Actor_GetBumped(actor, *g_thePlayer, isLargeBump, dontTriggerDialogue);
 	ActorProcess_SetBumpDirection(process, 0.f);
 }
 
@@ -710,16 +591,21 @@ struct BumpRequest
 	float bumpDirection = 0.f;
 	bool consumed = false;
 	bool isLargeBump = false;
+	bool dontTriggerDialogue = false;
 };
 std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 
-void TryQueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump)
+void TryQueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool dontTriggerDialogue, bool force = false)
 {
 	double now = GetTime();
 	std::unique_lock lock(g_bumpActorsLock);
-	if (auto it = g_bumpActors.find(actor); it == g_bumpActors.end() || now - it->second.bumpTime > Config::options.actorBumpCooldownTime || (isLargeBump && !it->second.isLargeBump)) {
-		g_bumpActors[actor] = { now, bumpDirection, false, isLargeBump };
+	auto it = g_bumpActors.find(actor);
+	if (it == g_bumpActors.end()) {
+		g_bumpActors[actor] = { now, bumpDirection, false, isLargeBump, dontTriggerDialogue };
+	}
+	else if (force || (now - it->second.bumpTime > Config::options.actorBumpCooldownTime) || (isLargeBump && !it->second.isLargeBump)) {
+		it->second = { now, bumpDirection, false, isLargeBump, dontTriggerDialogue };
 	}
 }
 
@@ -755,6 +641,134 @@ bool ShouldRagdollOnGrab(Actor *actor)
 
 	return false;
 }
+
+
+struct NPCData
+{
+	enum class Temperament
+	{
+		Normal,
+		SomewhatMiffed,
+		VeryMiffed,
+		Hostile,
+	};
+
+	Temperament temperament = Temperament::Normal;
+	double dialogueTime = 0.0;
+	float accumulatedGrabbedTime = 0.f;
+	bool isGrabbed = false;
+	bool wasGrabbed = false;
+
+	void TryTriggerDialogue(Character *character, int dialogueSubtype,  double now)
+	{
+		if (now - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
+			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true);
+			dialogueTime = now;
+		}
+	}
+
+	void StateUpdate(Character *character, double now)
+	{
+		// TODO:
+		//  - StopCombatAlarmOnActor(player) or actor->StopCombat(player) may work to make them stop being hostile to us
+		//  - Incorporate touches/bumps (make touches add to accumulatedGrabbedTime?)
+		//  - Incorporate BumpActor (instead of where it is currently?
+
+		float deltaTime = *g_deltaTime;
+
+		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
+
+		accumulatedGrabbedTime += isGrabbed ? deltaTime : -deltaTime;
+		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
+
+		bool isHostile = Actor_IsHostileToActor(character, *g_thePlayer);
+
+		if (temperament == Temperament::Normal) {
+			if (isHostile) {
+				temperament = Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
+				// Wait until we have keepoffset interface, otherwise we could interrupt the dialogue here by bumping the actor trying to get the interface to be created
+				if (!ShouldKeepOffset(character) || HasKeepOffsetInterface(character) || accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLowFallback) {
+					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+					temperament = Temperament::SomewhatMiffed;
+				}
+			}
+		}
+
+		if (temperament == Temperament::SomewhatMiffed) {
+			if (isHostile) {
+				temperament = Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
+				temperament = Temperament::Normal;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh, now);
+				if (Config::options.stopUsingFurnitureOnHighAggression) {
+					ExitFurniture(character);
+				}
+				temperament = Temperament::VeryMiffed;
+			}
+			else if (!wasGrabbed && isGrabbed) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+			}
+		}
+
+		if (temperament == Temperament::VeryMiffed) {
+			if (isHostile) {
+				temperament = Temperament::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
+				temperament = Temperament::SomewhatMiffed;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
+				Actor_SendAssaultAlarm(0, 0, character);
+				isHostile = Actor_IsHostileToActor(character, *g_thePlayer); // need to update this after assaulting the actor
+				temperament = Temperament::Hostile;
+			}
+			else if (!wasGrabbed && isGrabbed) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+			}
+		}
+
+		if (temperament == Temperament::Hostile) {
+			if (!isHostile) {
+				accumulatedGrabbedTime = 0.f;
+				temperament = Temperament::Normal;
+			}
+		}
+
+		wasGrabbed = isGrabbed;
+	}
+};
+
+std::unordered_map<Actor *, NPCData> g_npcs{};
+
+void TryUpdateNPCState(Actor *actor, double now)
+{
+	if (!Config::options.doAggression) return;
+
+	auto it = g_npcs.find(actor);
+	if (it == g_npcs.end()) {
+		// Not in the map yet
+		TESRace *race = actor->race;
+		if (!race) return;
+		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
+
+		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
+		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
+
+		g_npcs[actor] = NPCData{};
+	}
+	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
+		NPCData &data = it->second;
+		data.StateUpdate(character, now);
+	}
+}
+
 
 float g_savedMinSoundVel;
 
@@ -1050,6 +1064,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			return;
 		}
 
+		PlayerCharacter *player = *g_thePlayer;
+		if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) {
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
+		}
+
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 
 		bool isLeft = IsLeftRigidBody(hittingRigidBody);
@@ -1073,7 +1093,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		float hitSpeed = VectorLength(hkHitVelocity);
 		// TODO: Make the hit speed affect damage? (how?)
 		bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
-		PlayerCharacter *player = *g_thePlayer;
 		TESForm *equippedObj = player->GetEquippedObject(isOffhand);
 		TESObjectWEAP *weap = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
 
@@ -1159,16 +1178,18 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				if (hitRefr->formType == kFormType_Character) {
 					if (Actor *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
 						if (hitSpeed > Config::options.largeBumpSpeedThreshold) {
-							NiPoint3 hitDirection = VectorNormalized(hkHitVelocity);
-							float heading = GetHeadingFromVector(-hitDirection);
-							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-							TryQueueBumpActor(actor, bumpDirection, true);
+							if (ShouldShoveActor(actor)) {
+								NiPoint3 hitDirection = VectorNormalized(hkHitVelocity);
+								float heading = GetHeadingFromVector(-hitDirection);
+								float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+								TryQueueBumpActor(actor, bumpDirection, true, false);
+							}
 						}
-						else {
+						else if (ShouldBumpActor(actor)){
 							NiPoint3 actorToPlayer = (*g_thePlayer)->pos - actor->pos;
 							float heading = GetHeadingFromVector(actorToPlayer);
 							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-							TryQueueBumpActor(actor, bumpDirection, false);
+							TryQueueBumpActor(actor, bumpDirection, false, false);
 						}
 					}
 				}
@@ -2283,30 +2304,24 @@ void ProcessHavokHitJobsHook()
 							// Already in the set, so check if it actually succeeded at first
 							KeepOffsetData &data = it->second;
 
-							if (MovementControllerNPC *controller = GetMovementController(actor)) {
-								InterlockedIncrement(&controller->m_refCount); // incref
+							if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
+								if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+									// Retry
 
-								static BSFixedString keepOffsetFromActorStr("Keep Offset From Actor");
-								if (!controller->GetInterfaceByName_2(keepOffsetFromActorStr)) {
-									if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
-										// Retry
-
-										TryQueueBumpActor(actor, 0.f, false); // try to get them unstuck by bumping them
-
-										g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
-										data.lastAttemptTime = now;
+									if (Config::options.bumpActorIfKeepOffsetFails) {
+										// Try to get them unstuck by bumping them
+										// TODO: This interrupts our aggression dialogue
+										TryQueueBumpActor(actor, 0.f, false, true, true);
 									}
-								}
-								else if (!data.success) {
-									// To be sure, do a single additional attempt once we know the interface exists
-									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
-									data.success = true;
-								}
 
-								// decref
-								if (InterlockedExchangeSubtract(&controller->m_refCount, (UInt32)1) == 1) {
-									get_vfunc< _BSIntrusiveRefCounted_Destruct>(controller, 0x0)(controller, 1);
+									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+									data.lastAttemptTime = now;
 								}
+							}
+							else if (!data.success) {
+								// To be sure, do a single additional attempt once we know the interface exists
+								g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+								data.success = true;
 							}
 						}
 					}
@@ -2891,11 +2906,8 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 	// Do movement jobs here
 	{
 		std::unique_lock lock(g_bumpActorsLock);
-		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end() && !it->second.consumed && GetTime() - it->second.bumpTime < Config::options.actorBumpCooldownTime) {
-			bool isLargeBump = it->second.isLargeBump;
-			if ((!isLargeBump && ShouldBumpActor(actor)) || (isLargeBump && ShouldShoveActor(actor))) {
-				BumpActor(actor, it->second.bumpDirection, isLargeBump);
-			}
+		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end() && !it->second.consumed) {
+			BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.dontTriggerDialogue);
 			it->second.consumed = true;
 		}
 	}

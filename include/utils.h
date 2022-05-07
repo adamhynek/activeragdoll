@@ -101,11 +101,14 @@ ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
 KnockState GetActorKnockState(Actor *actor);
 inline bool IsReanimating(Actor *actor) { return (actor->actorState.flags08 >> 4) & 1; }
+inline bool IsSwimming(Actor *actor) { return (actor->actorState.flags04 >> 10) & 1; }
+inline bool IsStaggered(Actor *actor) { return (actor->actorState.flags08 >> 13) & 1; }
 bool IsActorGettingUp(Actor *actor);
 float GetAVPercentage(Actor *actor, UInt32 av);
 bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
 void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
 void ExitFurniture(Actor *actor);
+bool HasKeepOffsetInterface(Actor * actor);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 bool IsActorUsingFurniture(Actor *actor);
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }

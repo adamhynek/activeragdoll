@@ -529,7 +529,7 @@ extern RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo;
 typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
 extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 
-typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool a4);
+typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool dontTriggerDialogue);
 extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
 
 typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);

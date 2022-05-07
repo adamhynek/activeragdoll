@@ -813,6 +813,23 @@ void ExitFurniture(Actor *actor)
 	SendAction(actor, furniture, activateAction);
 }
 
+bool HasKeepOffsetInterface(Actor * actor)
+{
+	bool hasInterface = false;
+	if (MovementControllerNPC *controller = GetMovementController(actor)) {
+		InterlockedIncrement(&controller->m_refCount); // incref
+
+		static BSFixedString keepOffsetFromActorStr("Keep Offset From Actor");
+		hasInterface = controller->GetInterfaceByName_2(keepOffsetFromActorStr) != nullptr;
+
+		// decref
+		if (InterlockedExchangeSubtract(&controller->m_refCount, (UInt32)1) == 1) {
+			get_vfunc<_BSIntrusiveRefCounted_Destruct>(controller, 0x0)(controller, 1);
+		}
+	}
+	return hasInterface;
+}
+
 class IsInFactionVisitor : public Actor::FactionVisitor
 {
 public:
