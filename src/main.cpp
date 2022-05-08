@@ -61,7 +61,6 @@ BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 bool g_isRightTriggerHeld = false;
 bool g_isLeftTriggerHeld = false;
 
-
 NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -434,6 +433,126 @@ struct LinearImpulseJob : GenericJob
 	}
 };
 
+
+void UpdateCollisionFilterOnAllBones(Actor *actor)
+{
+	if (Actor_IsInRagdollState(actor)) return;
+
+	bool hasRagdollInterface = false;
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+	}
+
+	if (hasRagdollInterface) {
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+								bhkWorld *worldWrapper = world->m_userData;
+								{
+									BSWriteLocker lock(&worldWrapper->worldLock);
+
+									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
+										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+void RefreshBipedVsBipedFilterOnAllBones(Actor *actor)
+{
+	if (Actor_IsInRagdollState(actor)) return;
+
+	bool hasRagdollInterface = false;
+	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+	if (GetAnimationGraphManager(actor, animGraphManager)) {
+		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+	}
+
+	if (hasRagdollInterface) {
+		if (GetAnimationGraphManager(actor, animGraphManager)) {
+			BSAnimationGraphManager *manager = animGraphManager.ptr;
+			{
+				SimpleLocker lock(&manager->updateLock);
+				for (int i = 0; i < manager->graphs.size; i++) {
+					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+								bhkWorld *worldWrapper = world->m_userData;
+								{
+									BSWriteLocker lock(&worldWrapper->worldLock);
+
+									bhkCollisionFilter *filter = (bhkCollisionFilter *)world->m_collisionFilter;
+
+									UInt64 bipedFilter = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped];
+									UInt64 bipedNoCCFilter = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC];
+
+									// disable biped non-self collision
+									bool doBipedNonSelfCollision = Config::options.doBipedNonSelfCollision;
+									Config::options.doBipedNonSelfCollision = false;
+
+									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
+										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
+									}
+
+									// re-enable collision
+									Config::options.doBipedNonSelfCollision = doBipedNonSelfCollision;
+
+									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
+										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+std::unordered_map<Actor *, double> g_filterRefreshTimes{};
+
+struct RefreshBipedVsBipedFilterJob : GenericJob
+{
+	UInt32 actorHandle;
+
+	RefreshBipedVsBipedFilterJob(UInt32 handle) :
+		actorHandle(handle) {}
+
+	virtual void Run() override
+	{
+		if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(actorHandle, refr)) {
+			if (refr->formType == kFormType_Character) {
+				if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+					auto it = g_filterRefreshTimes.find(actor);
+					if (it == g_filterRefreshTimes.end()) {
+						g_filterRefreshTimes[actor] = g_currentFrameTime;
+						RefreshBipedVsBipedFilterOnAllBones(actor);
+					}
+					else if (g_currentFrameTime - it->second > Config::options.closeActorFilterRefreshInterval) {
+						it->second = g_currentFrameTime;
+						RefreshBipedVsBipedFilterOnAllBones(actor);
+					}
+				}
+			}
+		}
+	}
+};
+
 std::vector<std::unique_ptr<GenericJob>> g_prePhysicsStepJobs{};
 
 template<class T, typename... Args>
@@ -598,14 +717,13 @@ std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 
 void TryQueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool dontTriggerDialogue, bool force = false)
 {
-	double now = GetTime();
 	std::unique_lock lock(g_bumpActorsLock);
 	auto it = g_bumpActors.find(actor);
 	if (it == g_bumpActors.end()) {
-		g_bumpActors[actor] = { now, bumpDirection, false, isLargeBump, dontTriggerDialogue };
+		g_bumpActors[actor] = { g_currentFrameTime, bumpDirection, false, isLargeBump, dontTriggerDialogue };
 	}
-	else if (force || (now - it->second.bumpTime > Config::options.actorBumpCooldownTime) || (isLargeBump && !it->second.isLargeBump)) {
-		it->second = { now, bumpDirection, false, isLargeBump, dontTriggerDialogue };
+	else if (force || (g_currentFrameTime - it->second.bumpTime > Config::options.actorBumpCooldownTime) || (isLargeBump && !it->second.isLargeBump)) {
+		it->second = { g_currentFrameTime, bumpDirection, false, isLargeBump, dontTriggerDialogue };
 	}
 }
 
@@ -659,15 +777,15 @@ struct NPCData
 	bool isGrabbed = false;
 	bool wasGrabbed = false;
 
-	void TryTriggerDialogue(Character *character, int dialogueSubtype,  double now)
+	void TryTriggerDialogue(Character *character, int dialogueSubtype)
 	{
-		if (now - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
+		if (g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
 			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true);
-			dialogueTime = now;
+			dialogueTime = g_currentFrameTime;
 		}
 	}
 
-	void StateUpdate(Character *character, double now)
+	void StateUpdate(Character *character)
 	{
 		// TODO:
 		//  - StopCombatAlarmOnActor(player) or actor->StopCombat(player) may work to make them stop being hostile to us
@@ -690,7 +808,7 @@ struct NPCData
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
 				// Wait until we have keepoffset interface, otherwise we could interrupt the dialogue here by bumping the actor trying to get the interface to be created
 				if (!ShouldKeepOffset(character) || HasKeepOffsetInterface(character) || accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLowFallback) {
-					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
 					temperament = Temperament::SomewhatMiffed;
 				}
 			}
@@ -704,7 +822,7 @@ struct NPCData
 				temperament = Temperament::Normal;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh, now);
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
 				if (Config::options.stopUsingFurnitureOnHighAggression) {
 					ExitFurniture(character);
 				}
@@ -712,7 +830,7 @@ struct NPCData
 			}
 			else if (!wasGrabbed && isGrabbed) {
 				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
 			}
 		}
 
@@ -730,7 +848,7 @@ struct NPCData
 			}
 			else if (!wasGrabbed && isGrabbed) {
 				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow, now);
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
 			}
 		}
 
@@ -747,7 +865,7 @@ struct NPCData
 
 std::unordered_map<Actor *, NPCData> g_npcs{};
 
-void TryUpdateNPCState(Actor *actor, double now)
+void TryUpdateNPCState(Actor *actor)
 {
 	if (!Config::options.doAggression) return;
 
@@ -765,7 +883,7 @@ void TryUpdateNPCState(Actor *actor, double now)
 	}
 	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
 		NPCData &data = it->second;
-		data.StateUpdate(character, now);
+		data.StateUpdate(character);
 	}
 }
 
@@ -916,8 +1034,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
-		double now = GetTime();
-		hitCooldownTargets[isLeft][hitRefr] = { now, now };
+		hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime };
 	}
 
 	void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal)
@@ -952,7 +1069,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (hitData.totalDamage > 0.f) {
 				Actor_GetHit(target, hitData);
 				if (Config::options.physicsHitRecoveryTime > 0) {
-					physicsHitCooldownTargets[{ target, collidingBody->hkBody }] = GetTime();
+					physicsHitCooldownTargets[{ target, collidingBody->hkBody }] = g_currentFrameTime;
 				}
 			}
 		}
@@ -1023,6 +1140,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 						if (refrA != refrB) {
 							if (VectorLength(refrA->pos - refrB->pos) < Config::options.ragdollNonSelfCollisionActorMinDistance) {
+								QueuePrePhysicsJob<RefreshBipedVsBipedFilterJob>(GetOrCreateRefrHandle(refrA));
+								QueuePrePhysicsJob<RefreshBipedVsBipedFilterJob>(GetOrCreateRefrHandle(refrB));
+
 								// Disable collision between bipeds whose references are roughly in the same position
 								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 								return;
@@ -1264,8 +1384,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
-		double now = GetTime();
-
 		// Now fill in the currently collided-with actors based on active collisions
 		for (auto[pair, count] : activeCollisions) {
 			auto[rigidBodyA, rigidBodyB] = pair;
@@ -1281,7 +1399,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				bool isLeft = IsLeftRigidBody(hittingRigidBody);
 				if (hitCooldownTargets[isLeft].count(hitRefr)) {
 					// refr is still collided with, so refresh its hit cooldown
-					hitCooldownTargets[isLeft][hitRefr].stoppedCollidingTime = now;
+					hitCooldownTargets[isLeft][hitRefr].stoppedCollidingTime = g_currentFrameTime;
 				}
 			}
 		}
@@ -1290,8 +1408,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		for (auto &targets : hitCooldownTargets) { // For each hand's cooldown targets
 			for (auto it = targets.begin(); it != targets.end();) {
 				auto[target, cooldown] = *it;
-				if ((now - cooldown.stoppedCollidingTime) > Config::options.hitCooldownTimeStoppedColliding ||
-					(now - cooldown.startTime) > Config::options.hitCooldownTimeFallback)
+				if ((g_currentFrameTime - cooldown.stoppedCollidingTime) > Config::options.hitCooldownTimeStoppedColliding ||
+					(g_currentFrameTime - cooldown.startTime) > Config::options.hitCooldownTimeFallback)
 					it = targets.erase(it);
 				else
 					++it;
@@ -1301,7 +1419,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		// Clear out old physics hit cooldown targets
 		for (auto it = physicsHitCooldownTargets.begin(); it != physicsHitCooldownTargets.end();) {
 			auto[target, hitTime] = *it;
-			if ((now - hitTime) * *g_globalTimeMultiplier > Config::options.physicsHitRecoveryTime)
+			if ((g_currentFrameTime - hitTime) * *g_globalTimeMultiplier > Config::options.physicsHitRecoveryTime)
 				it = physicsHitCooldownTargets.erase(it);
 			else
 				++it;
@@ -1311,7 +1429,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			std::unique_lock lock(g_bumpActorsLock);
 			for (auto it = g_bumpActors.begin(); it != g_bumpActors.end();) {
 				double bumpTime = it->second.bumpTime;
-				if (now - bumpTime > Config::options.actorBumpCooldownTime)
+				if (g_currentFrameTime - bumpTime > Config::options.actorBumpCooldownTime)
 					it = g_bumpActors.erase(it);
 				else
 					++it;
@@ -1629,14 +1747,13 @@ bool AddRagdollToWorld(Actor *actor)
 						std::shared_ptr<ActiveRagdoll> activeRagdoll(new ActiveRagdoll());
 						g_activeRagdolls[driver] = activeRagdoll;
 
-						double now = GetTime();
 						Blender &blender = activeRagdoll->blender;
-						blender.StartBlend(Blender::BlendType::AnimToRagdoll, now, Config::options.blendInTime);
+						blender.StartBlend(Blender::BlendType::AnimToRagdoll, g_currentFrameTime, Config::options.blendInTime);
 						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
 						blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
 						blender.isFirstBlendFrame = false;
 
-						activeRagdoll->stateChangedTime = now;
+						activeRagdoll->stateChangedTime = g_currentFrameTime;
 						activeRagdoll->state = RagdollState::BlendIn;
 
 						if (!graph.ptr->world) {
@@ -1715,43 +1832,6 @@ void DisableSyncOnUpdate(Actor *actor)
 	if (hasRagdollInterface) {
 		bool x[2] = { false, true };
 		BSAnimationGraphManager_DisableOrEnableSyncOnUpdate(animGraphManager.ptr, x);
-	}
-}
-
-void UpdateCollisionFilterOnAllBones(Actor *actor)
-{
-	if (Actor_IsInRagdollState(actor)) return;
-
-	bool hasRagdollInterface = false;
-	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
-	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
-	}
-
-	if (hasRagdollInterface) {
-		if (GetAnimationGraphManager(actor, animGraphManager)) {
-			BSAnimationGraphManager *manager = animGraphManager.ptr;
-			{
-				SimpleLocker lock(&manager->updateLock);
-				for (int i = 0; i < manager->graphs.size; i++) {
-					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
-								bhkWorld *worldWrapper = world->m_userData;
-								{
-									BSWriteLocker lock(&worldWrapper->worldLock);
-
-									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
-										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
 	}
 }
 
@@ -2003,7 +2083,7 @@ void ProcessHavokHitJobsHook()
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
 
-	double now = GetTime();
+	g_currentFrameTime = GetTime();
 
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
@@ -2065,7 +2145,7 @@ void ProcessHavokHitJobsHook()
 		}
 
 		g_contactListener.world = world;
-		g_worldChangedTime = now;
+		g_worldChangedTime = g_currentFrameTime;
 	}
 
 	if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
@@ -2226,16 +2306,16 @@ void ProcessHavokHitJobsHook()
 		g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
 
 		if (g_rightHeldObject) {
-			g_higgsLingeringRigidBodies[g_rightHeldObject] = now;
+			g_higgsLingeringRigidBodies[g_rightHeldObject] = g_currentFrameTime;
 		}
 		if (g_leftHeldObject) {
-			g_higgsLingeringRigidBodies[g_leftHeldObject] = now;
+			g_higgsLingeringRigidBodies[g_leftHeldObject] = g_currentFrameTime;
 		}
 
 		// Clear out old dropped / thrown rigidbodies
 		for (auto it = g_higgsLingeringRigidBodies.begin(); it != g_higgsLingeringRigidBodies.end();) {
 			auto[target, hitTime] = *it;
-			if ((now - hitTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectLingerTime)
+			if ((g_currentFrameTime - hitTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectLingerTime)
 				it = g_higgsLingeringRigidBodies.erase(it);
 			else
 				++it;
@@ -2263,7 +2343,7 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
-	if (now - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
+	if (g_currentFrameTime - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
 
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
@@ -2272,7 +2352,7 @@ void ProcessHavokHitJobsHook()
 			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 			if (!actor || !actor->GetNiNode()) continue;
 
-			TryUpdateNPCState(actor, now);
+			TryUpdateNPCState(actor);
 
 #ifdef _DEBUG
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
@@ -2298,14 +2378,14 @@ void ProcessHavokHitJobsHook()
 							//UInt32 handle = actorHandle;
 							//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
 
-							g_keepOffsetActors[actor] = { now, false };
+							g_keepOffsetActors[actor] = { g_currentFrameTime, false };
 						}
 						else {
 							// Already in the set, so check if it actually succeeded at first
 							KeepOffsetData &data = it->second;
 
 							if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
-								if (now - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+								if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
 									// Retry
 
 									if (Config::options.bumpActorIfKeepOffsetFails) {
@@ -2315,7 +2395,7 @@ void ProcessHavokHitJobsHook()
 									}
 
 									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
-									data.lastAttemptTime = now;
+									data.lastAttemptTime = g_currentFrameTime;
 								}
 							}
 							else if (!data.success) {
@@ -2501,14 +2581,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	ragdoll->deltaTime = deltaTime;
 
-	double frameTime = GetTime();
-	ragdoll->frameTime = frameTime;
-
 	KnockState knockState = GetActorKnockState(actor);
 	if (Config::options.blendWhenGettingUp) {
 		if (ragdoll->knockState == KnockState::BeginGetUp && knockState == KnockState::GetUp) {
 			// Went from starting to get up to actually getting up
-			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, frameTime, Config::options.getUpBlendTime);
+			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, g_currentFrameTime, Config::options.getUpBlendTime);
 		}
 	}
 	ragdoll->knockState = knockState;
@@ -2551,7 +2628,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 
 	if (Config::options.enableKeyframes) {
-		double elapsedTime = (frameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
+		double elapsedTime = (g_currentFrameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
 		if (elapsedTime <= Config::options.blendInKeyframeTime) {
 			if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
 				SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
@@ -2812,7 +2889,7 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	if (blender.isActive) {
 		bool done = !Config::options.doBlending;
 		if (!done) {
-			done = blender.Update(*ragdoll, *driver, inOut, ragdoll->frameTime);
+			done = blender.Update(*ragdoll, *driver, inOut, g_currentFrameTime);
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {
