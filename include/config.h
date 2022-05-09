@@ -39,7 +39,7 @@ namespace Config {
 		bool stopUsingFurnitureOnHighAggression = true;
 		double aggressionDialogueCooldownTime = 1.0;
 		float aggressionRequiredGrabTimeLow = 0.25f;
-		float aggressionRequiredGrabTimeLowFallback = 1.f;
+		float aggressionRequiredGrabTimeLowFallback = 1.5f;
 		float aggressionRequiredGrabTimeHigh = 3.5f;
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;
@@ -95,6 +95,7 @@ namespace Config {
 		bool stopRagdollNonSelfCollisionForCloseActors = true;
 		double closeActorFilterRefreshInterval = 1.0;
 		float ragdollNonSelfCollisionActorMinDistance = 2.f;
+		bool stopRagdollNonSelfCollisionForActorsWithVehicle = true;
 
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;

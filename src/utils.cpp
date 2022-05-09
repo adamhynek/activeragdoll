@@ -757,6 +757,15 @@ void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause)
 	((_TESObjectREFR_SetActorCause)(vtbl[0x50]))(refr, cause);
 }
 
+UInt32 GetHorseHandle(TESObjectREFR *actor)
+{
+	BSReadLocker lock(&actor->extraData.m_lock);
+	if (BSExtraData *extraHorse = actor->extraData.GetByType(0x7B)) {
+		return *(UInt32 *)((UInt64)extraHorse + 0x10);
+	}
+	return *g_invalidRefHandle;
+}
+
 KnockState GetActorKnockState(Actor *actor)
 {
 	return KnockState((actor->actorState.flags04 >> 25) & 7);

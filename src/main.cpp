@@ -1140,10 +1140,20 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 						if (refrA != refrB) {
 							if (VectorLength(refrA->pos - refrB->pos) < Config::options.ragdollNonSelfCollisionActorMinDistance) {
-								QueuePrePhysicsJob<RefreshBipedVsBipedFilterJob>(GetOrCreateRefrHandle(refrA));
-								QueuePrePhysicsJob<RefreshBipedVsBipedFilterJob>(GetOrCreateRefrHandle(refrB));
-
 								// Disable collision between bipeds whose references are roughly in the same position
+								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+								return;
+							}
+						}
+					}
+				}
+			}
+
+			if (Config::options.stopRagdollNonSelfCollisionForActorsWithVehicle) {
+				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
+					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
+						if (refrA != refrB) {
+							if (GetHorseHandle(refrA) != *g_invalidRefHandle && GetHorseHandle(refrB) != *g_invalidRefHandle) {
 								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 								return;
 							}

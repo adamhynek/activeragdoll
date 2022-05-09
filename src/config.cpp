@@ -158,6 +158,8 @@ namespace Config {
 		if (!ReadBool("stopRagdollNonSelfCollisionForCloseActors", options.stopRagdollNonSelfCollisionForCloseActors)) return false;
 		if (!ReadFloat("ragdollNonSelfCollisionActorMinDistance", options.ragdollNonSelfCollisionActorMinDistance)) return false;
 
+		if (!ReadBool("stopRagdollNonSelfCollisionForActorsWithVehicle", options.stopRagdollNonSelfCollisionForActorsWithVehicle)) return false;
+
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
 		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
