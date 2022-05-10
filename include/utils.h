@@ -99,6 +99,7 @@ void ModSpeedMult(Actor *actor, float amount);
 MovementControllerNPC * GetMovementController(Actor *actor);
 ActorCause * TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause* cause);
+inline UInt32 GetVehicleHandle(Actor *actor) { return actor->unk1E8; }
 UInt32 GetHorseHandle(TESObjectREFR *actor);
 KnockState GetActorKnockState(Actor *actor);
 inline bool IsReanimating(Actor *actor) { return (actor->actorState.flags08 >> 4) & 1; }

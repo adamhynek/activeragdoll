@@ -382,6 +382,23 @@ struct GenericJob
 	virtual void Run() = 0;
 };
 
+struct DelayedJob : GenericJob
+{
+	DelayedJob(std::function<void(void)> job, double delay) :
+		job(job)
+	{
+		runTime = g_currentFrameTime + delay;
+	}
+
+	virtual void Run() override
+	{
+		job();
+	}
+
+	double runTime = 0.0;
+	std::function<void(void)> job;
+};
+
 struct PointImpulseJob : GenericJob
 {
 	hkpRigidBody *rigidBody{};
@@ -560,6 +577,29 @@ void QueuePrePhysicsJob(Args&&... args)
 {
 	static_assert(std::is_base_of<GenericJob, T>::value);
 	g_prePhysicsStepJobs.push_back(std::make_unique<T>(std::forward<Args>(args)...));
+}
+
+std::vector<std::unique_ptr<DelayedJob>> g_delayedJobs{};
+
+void QueueDelayedJob(std::function<void(void)> job, double delay)
+{
+	g_delayedJobs.push_back(std::make_unique<DelayedJob>(job, delay));
+}
+
+void RunDelayedJobs(double now)
+{
+	for (int i = 0; i < g_delayedJobs.size(); ++i) {
+		DelayedJob *job = g_delayedJobs[i].get();
+		if (now >= job->runTime) {
+			job->Run();
+
+			// Constant-time removal
+			std::swap(g_delayedJobs[i], g_delayedJobs.back());
+			g_delayedJobs.pop_back();
+
+			--i; // so that the increment brings it back to the current value
+		}
+	}
 }
 
 struct ControllerVelocityData
@@ -1153,9 +1193,13 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
 					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 						if (refrA != refrB) {
-							if (GetHorseHandle(refrA) != *g_invalidRefHandle && GetHorseHandle(refrB) != *g_invalidRefHandle) {
-								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-								return;
+							if (Actor *actorA = DYNAMIC_CAST(refrA, TESObjectREFR, Actor)) {
+								if (Actor *actorB = DYNAMIC_CAST(refrB, TESObjectREFR, Actor)) {
+									if (GetVehicleHandle(actorA) != *g_invalidRefHandle && GetVehicleHandle(actorB) != *g_invalidRefHandle) {
+										evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+										return;
+									}
+								}
 							}
 						}
 					}
@@ -1315,7 +1359,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 								TryQueueBumpActor(actor, bumpDirection, true, false);
 							}
 						}
-						else if (ShouldBumpActor(actor)){
+						else if (ShouldBumpActor(actor)) {
 							NiPoint3 actorToPlayer = (*g_thePlayer)->pos - actor->pos;
 							float heading = GetHeadingFromVector(actorToPlayer);
 							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
@@ -2336,6 +2380,8 @@ void ProcessHavokHitJobsHook()
 
 	// Do this after we've update higgs things
 	UpdateSpeedReduction();
+
+	RunDelayedJobs(g_currentFrameTime);
 
 	{ // Ensure our listener is the last one (will be called first)
 		hkArray<hkpContactListener*> &listeners = world->world->m_contactListeners;
