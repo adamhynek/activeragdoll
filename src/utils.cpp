@@ -739,6 +739,22 @@ void ModSpeedMult(Actor *actor, float amount)
 	get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 1, 32, -0.1f);
 }
 
+// 0 -> right, 1 -> left, 2-> both
+void PlayMeleeImpactRumble(int hand)
+{
+	if (hand > 1) {
+		VRMeleeData *meleeData = GetVRMeleeData(false);
+		PlayRumble(true, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+		meleeData = GetVRMeleeData(true);
+		PlayRumble(false, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+	}
+	else {
+		bool isLeft = hand == 1;
+		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+		PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
+	}
+}
+
 MovementControllerNPC * GetMovementController(Actor *actor)
 {
 	// TODO: This is actually refcounted

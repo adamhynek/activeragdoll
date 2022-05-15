@@ -488,88 +488,6 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
 	}
 }
 
-void RefreshBipedVsBipedFilterOnAllBones(Actor *actor)
-{
-	if (Actor_IsInRagdollState(actor)) return;
-
-	bool hasRagdollInterface = false;
-	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
-	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
-	}
-
-	if (hasRagdollInterface) {
-		if (GetAnimationGraphManager(actor, animGraphManager)) {
-			BSAnimationGraphManager *manager = animGraphManager.ptr;
-			{
-				SimpleLocker lock(&manager->updateLock);
-				for (int i = 0; i < manager->graphs.size; i++) {
-					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-						if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-							if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
-								bhkWorld *worldWrapper = world->m_userData;
-								{
-									BSWriteLocker lock(&worldWrapper->worldLock);
-
-									bhkCollisionFilter *filter = (bhkCollisionFilter *)world->m_collisionFilter;
-
-									UInt64 bipedFilter = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped];
-									UInt64 bipedNoCCFilter = filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC];
-
-									// disable biped non-self collision
-									bool doBipedNonSelfCollision = Config::options.doBipedNonSelfCollision;
-									Config::options.doBipedNonSelfCollision = false;
-
-									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
-										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
-									}
-
-									// re-enable collision
-									Config::options.doBipedNonSelfCollision = doBipedNonSelfCollision;
-
-									for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
-										hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-}
-
-std::unordered_map<Actor *, double> g_filterRefreshTimes{};
-
-struct RefreshBipedVsBipedFilterJob : GenericJob
-{
-	UInt32 actorHandle;
-
-	RefreshBipedVsBipedFilterJob(UInt32 handle) :
-		actorHandle(handle) {}
-
-	virtual void Run() override
-	{
-		if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(actorHandle, refr)) {
-			if (refr->formType == kFormType_Character) {
-				if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-					auto it = g_filterRefreshTimes.find(actor);
-					if (it == g_filterRefreshTimes.end()) {
-						g_filterRefreshTimes[actor] = g_currentFrameTime;
-						RefreshBipedVsBipedFilterOnAllBones(actor);
-					}
-					else if (g_currentFrameTime - it->second > Config::options.closeActorFilterRefreshInterval) {
-						it->second = g_currentFrameTime;
-						RefreshBipedVsBipedFilterOnAllBones(actor);
-					}
-				}
-			}
-		}
-	}
-};
-
 std::vector<std::unique_ptr<GenericJob>> g_prePhysicsStepJobs{};
 
 template<class T, typename... Args>
@@ -706,30 +624,13 @@ bool ShouldBumpActor(Actor *actor)
 	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
-	if (Config::options.dontBumpAnimals && actor->race->keyword.HasKeyword(g_keyword_actorTypeAnimal)) return false;
-
-	if (Config::options.dontBumpFollowers && IsTeammate(actor)) return false;
-
-	if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.bumpMaxRelationshipRank) return false;
-
 	return true;
 }
 
 bool ShouldShoveActor(Actor *actor)
 {
-	if (Actor_IsRunning(actor) || Actor_IsGhost(actor)) return false;
-	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
-
-	PlayerCharacter *player = *g_thePlayer;
-	if (Actor_IsHostileToActor(actor, player)) {
-		if (actor->processManager && player->processManager) {
-			if (Actor_GetDetectionCalculatedValue(player, actor, 3) > 0) {
-				// detected
-				return false;
-			}
-		}
-	}
-
+	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || IsActorUsingFurniture(actor) || Actor_IsInRagdollState(actor) || actor->actorState.IsWeaponDrawn()) return false;
+	if (!actor->race || actor->race->data.unk40 >= 2 || (actor->race->flags >> 2 & 1)) return false; // race size is >= large or is child
 	return true;
 }
 
@@ -746,24 +647,20 @@ void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool
 
 struct BumpRequest
 {
-	double bumpTime = 0.0;
 	float bumpDirection = 0.f;
-	bool consumed = false;
 	bool isLargeBump = false;
 	bool dontTriggerDialogue = false;
 };
 std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
+std::unordered_map<Actor *, double> g_shovedActors{};
 
-void TryQueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool dontTriggerDialogue, bool force = false)
+void QueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool dontTriggerDialogue)
 {
 	std::unique_lock lock(g_bumpActorsLock);
 	auto it = g_bumpActors.find(actor);
 	if (it == g_bumpActors.end()) {
-		g_bumpActors[actor] = { g_currentFrameTime, bumpDirection, false, isLargeBump, dontTriggerDialogue };
-	}
-	else if (force || (g_currentFrameTime - it->second.bumpTime > Config::options.actorBumpCooldownTime) || (isLargeBump && !it->second.isLargeBump)) {
-		it->second = { g_currentFrameTime, bumpDirection, false, isLargeBump, dontTriggerDialogue };
+		g_bumpActors[actor] = { bumpDirection, isLargeBump, dontTriggerDialogue };
 	}
 }
 
@@ -801,133 +698,6 @@ bool ShouldRagdollOnGrab(Actor *actor)
 }
 
 
-struct NPCData
-{
-	enum class Temperament
-	{
-		Normal,
-		SomewhatMiffed,
-		VeryMiffed,
-		Hostile,
-	};
-
-	Temperament temperament = Temperament::Normal;
-	double dialogueTime = 0.0;
-	float accumulatedGrabbedTime = 0.f;
-	bool isGrabbed = false;
-	bool wasGrabbed = false;
-
-	void TryTriggerDialogue(Character *character, int dialogueSubtype)
-	{
-		if (g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
-			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true);
-			dialogueTime = g_currentFrameTime;
-		}
-	}
-
-	void StateUpdate(Character *character)
-	{
-		// TODO:
-		//  - StopCombatAlarmOnActor(player) or actor->StopCombat(player) may work to make them stop being hostile to us
-		//  - Incorporate touches/bumps (make touches add to accumulatedGrabbedTime?)
-		//  - Incorporate BumpActor (instead of where it is currently?
-
-		float deltaTime = *g_deltaTime;
-
-		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-
-		accumulatedGrabbedTime += isGrabbed ? deltaTime : -deltaTime;
-		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
-
-		bool isHostile = Actor_IsHostileToActor(character, *g_thePlayer);
-
-		if (temperament == Temperament::Normal) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
-				// Wait until we have keepoffset interface, otherwise we could interrupt the dialogue here by bumping the actor trying to get the interface to be created
-				if (!ShouldKeepOffset(character) || HasKeepOffsetInterface(character) || accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLowFallback) {
-					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
-					temperament = Temperament::SomewhatMiffed;
-				}
-			}
-		}
-
-		if (temperament == Temperament::SomewhatMiffed) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
-				temperament = Temperament::Normal;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
-				if (Config::options.stopUsingFurnitureOnHighAggression) {
-					ExitFurniture(character);
-				}
-				temperament = Temperament::VeryMiffed;
-			}
-			else if (!wasGrabbed && isGrabbed) {
-				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
-			}
-		}
-
-		if (temperament == Temperament::VeryMiffed) {
-			if (isHostile) {
-				temperament = Temperament::Hostile;
-			}
-			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
-				temperament = Temperament::SomewhatMiffed;
-			}
-			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
-				Actor_SendAssaultAlarm(0, 0, character);
-				isHostile = Actor_IsHostileToActor(character, *g_thePlayer); // need to update this after assaulting the actor
-				temperament = Temperament::Hostile;
-			}
-			else if (!wasGrabbed && isGrabbed) {
-				// They were just re-grabbed - make them say something but not too often
-				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
-			}
-		}
-
-		if (temperament == Temperament::Hostile) {
-			if (!isHostile) {
-				accumulatedGrabbedTime = 0.f;
-				temperament = Temperament::Normal;
-			}
-		}
-
-		wasGrabbed = isGrabbed;
-	}
-};
-
-std::unordered_map<Actor *, NPCData> g_npcs{};
-
-void TryUpdateNPCState(Actor *actor)
-{
-	if (!Config::options.doAggression) return;
-
-	auto it = g_npcs.find(actor);
-	if (it == g_npcs.end()) {
-		// Not in the map yet
-		TESRace *race = actor->race;
-		if (!race) return;
-		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
-
-		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
-		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
-
-		g_npcs[actor] = NPCData{};
-	}
-	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
-		NPCData &data = it->second;
-		data.StateUpdate(character);
-	}
-}
-
-
 float g_savedMinSoundVel;
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -948,6 +718,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody *>, int> activeCollisions{};
 	std::unordered_set<hkpRigidBody *> collidedRigidbodies{};
 	std::unordered_set<TESObjectREFR *> collidedRefs{};
+	std::unordered_set<TESObjectREFR *> handCollidedRefs{};
 
 	struct CooldownData
 	{
@@ -955,28 +726,13 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		double stoppedCollidingTime = 0.0;
 	};
 	std::unordered_map<TESObjectREFR *, CooldownData> hitCooldownTargets[2]{}; // each hand has its own cooldown
+	std::unordered_map<TESObjectREFR *, double> collisionCooldownTargets[2]{};
 	std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
 	std::vector<CollisionEvent> events{};
 
 	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
-	}
-
-	// 0 -> right, 1 -> left, 2-> both
-	void PlayMeleeImpactRumble(int hand)
-	{
-		if (hand > 1) {
-			VRMeleeData *meleeData = GetVRMeleeData(false);
-			PlayRumble(true, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
-			meleeData = GetVRMeleeData(true);
-			PlayRumble(false, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
-		}
-		else {
-			bool isLeft = hand == 1;
-			VRMeleeData *meleeData = GetVRMeleeData(isLeft);
-			PlayRumble(!isLeft, meleeData->impactConfirmRumbleIntensity, meleeData->impactConfirmRumbleDuration);
-		}
 	}
 
 	NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, float impulseMult)
@@ -1179,7 +935,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
 					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 						if (refrA != refrB) {
-							if (VectorLength(refrA->pos - refrB->pos) < Config::options.ragdollNonSelfCollisionActorMinDistance) {
+							if (VectorLength(refrA->pos - refrB->pos) < Config::options.closeActorMinDistance) {
 								// Disable collision between bipeds whose references are roughly in the same position
 								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 								return;
@@ -1337,8 +1093,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			return;
 		}
 		else {
-			// It's not a hit, so disable contact for keyframed/fixed objects in this case
+			// It's not a hit
+
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
+				// Disable contact for keyframed / fixed objects in this case
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 				return;
 			}
@@ -1348,25 +1106,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				return;
 			}
 
-			if (Config::options.bumpActorsWhenTouched && hitSpeed > Config::options.bumpSpeedThreshold) {
-				if (hitRefr->formType == kFormType_Character) {
-					if (Actor *actor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor)) {
-						if (hitSpeed > Config::options.largeBumpSpeedThreshold) {
-							if (ShouldShoveActor(actor)) {
-								NiPoint3 hitDirection = VectorNormalized(hkHitVelocity);
-								float heading = GetHeadingFromVector(-hitDirection);
-								float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-								TryQueueBumpActor(actor, bumpDirection, true, false);
-							}
-						}
-						else if (ShouldBumpActor(actor)) {
-							NiPoint3 actorToPlayer = (*g_thePlayer)->pos - actor->pos;
-							float heading = GetHeadingFromVector(actorToPlayer);
-							float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-							TryQueueBumpActor(actor, bumpDirection, false, false);
-						}
-					}
-				}
+			if (collisionCooldownTargets[isLeft].count(hitRefr)) {
+				// refr shouldn't be collided with, but should still be able to be hit (so all code above still runs)
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				return;
 			}
 		}
 	}
@@ -1420,6 +1163,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		// Clear out any collisions that are no longer active (or that were only removed, since we do events for any removes but only some adds)
 		collidedRigidbodies.clear();
 		collidedRefs.clear();
+		handCollidedRefs.clear();
 		for (auto it = activeCollisions.begin(); it != activeCollisions.end();) {
 			auto[pair, count] = *it;
 			if (count <= 0) {
@@ -1432,6 +1176,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 				if (TESObjectREFR *ref = GetRefFromCollidable(collidedBody->getCollidable())) {
 					collidedRefs.insert(ref);
+
+					hkpRigidBody *collidingBody = collidedBody == bodyA ? bodyB : bodyA;
+					if (IsHandRigidBody(collidingBody)) {
+						handCollidedRefs.insert(ref);
+					}
 				}
 
 				++it;
@@ -1479,12 +1228,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				++it;
 		}
 
-		{
-			std::unique_lock lock(g_bumpActorsLock);
-			for (auto it = g_bumpActors.begin(); it != g_bumpActors.end();) {
-				double bumpTime = it->second.bumpTime;
-				if (g_currentFrameTime - bumpTime > Config::options.actorBumpCooldownTime)
-					it = g_bumpActors.erase(it);
+		// Clear out old collision cooldown targets
+		for (auto &targets : collisionCooldownTargets) { // For each hand's cooldown targets
+			for (auto it = targets.begin(); it != targets.end();) {
+				auto[target, disabledTime] = *it;
+				if ((g_currentFrameTime - disabledTime) > Config::options.collisionCooldownTime)
+					it = targets.erase(it);
 				else
 					++it;
 			}
@@ -1660,6 +1409,239 @@ void PrePhysicsStepCallback(void *world)
 			rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; // disable collision
 			bhkWorldObject_UpdateCollisionFilter(rb);
 		}
+	}
+}
+
+
+struct NPCData
+{
+	enum class State
+	{
+		Normal,
+		SomewhatMiffed,
+		SomewhatMiffedWait,
+		VeryMiffed,
+		VeryMiffedWait,
+		Assaulted,
+		Hostile,
+	};
+
+	State state = State::Normal;
+	double dialogueTime = 0.0;
+	double furnitureExitTime = 0.0;
+	double bumpTime = 0.0;
+	double lastGrabbedTouchedTime = 0.0;
+	double waitTime = 0.0;
+	double waitDuration = 0.0;
+	float accumulatedGrabbedTime = 0.f;
+	bool isGrabbed = false;
+	bool wasGrabbed = false;
+	bool isTouched = false;
+	bool wasTouched = false;
+
+	void TryTriggerDialogue(Character *character, int dialogueSubtype)
+	{
+		if (Actor_IsInRagdollState(character)) return;
+
+		if (g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
+			TriggerDialogue(character, *g_thePlayer, dialogueSubtype, true);
+			dialogueTime = g_currentFrameTime;
+		}
+	}
+
+	void TryExitFurniture(Character *character)
+	{
+		if (Actor_IsInRagdollState(character)) return;
+
+		if (g_currentFrameTime - furnitureExitTime > Config::options.aggressionFurnitureExitCooldownTime) {
+			ExitFurniture(character);
+			furnitureExitTime = g_currentFrameTime;
+		}
+	}
+
+	void TryBump(Character *character)
+	{
+		if (Actor_IsInRagdollState(character)) return;
+
+		if (g_currentFrameTime - bumpTime > Config::options.aggressionBumpCooldownTime) {
+			NiPoint3 actorToPlayer = (*g_thePlayer)->pos - character->pos;
+			float heading = GetHeadingFromVector(actorToPlayer);
+			float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(character, 0xA5)(character, false);
+			QueueBumpActor(character, bumpDirection, false, false);
+
+			bumpTime = g_currentFrameTime;
+		}
+	}
+
+	void StateUpdate(Character *character, bool isShoved)
+	{
+		float deltaTime = *g_deltaTime;
+
+		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
+		isTouched = g_contactListener.collidedRefs.count(character);
+
+		bool isNewGrab = !wasGrabbed && isGrabbed;
+		bool isNewTouch = !wasTouched && isTouched;
+
+		PlayerCharacter *player = *g_thePlayer;
+
+		// These two are to not do aggression if they are in... certain scenes... with the player
+		bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
+		bool isInVehicleAndSoIsPlayer = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle && GetVehicleHandle(player) != *g_invalidRefHandle;
+		
+		if (isGrabbed || isTouched || isShoved) {
+			if (!Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !sharesPlayerPosition && !isInVehicleAndSoIsPlayer) {
+				accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
+				lastGrabbedTouchedTime = g_currentFrameTime;
+			}
+		}
+		else if (g_currentFrameTime - lastGrabbedTouchedTime >= Config::options.aggressionStopDelay) {
+			accumulatedGrabbedTime -= deltaTime;
+		}
+		accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
+
+		bool isHostile = Actor_IsHostileToActor(character, player);
+
+		if (state == State::Normal) {
+			if (isHostile) {
+				state = State::Hostile;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
+				if (isGrabbed) {
+					// Wait until we have the keepoffset interface, otherwise we could interrupt the dialogue here by bumping the actor trying to get the interface to be created
+					if (!ShouldKeepOffset(character) || HasKeepOffsetInterface(character) || accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLowFallback) {
+						TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
+						state = State::SomewhatMiffed;
+					}
+				}
+				else {
+					if (isShoved || ShouldBumpActor(character)) {
+						waitTime = g_currentFrameTime;
+						if (isShoved) {
+							waitDuration = Config::options.shoveAggressionWaitTime;
+						}
+						else {
+							TryBump(character);
+							waitDuration = Config::options.aggressionBumpWaitTime;
+						}
+						state = State::SomewhatMiffedWait;
+					}
+					else {
+						TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
+						state = State::SomewhatMiffed;
+					}
+				}
+			}
+		}
+
+		if (state == State::SomewhatMiffedWait) {
+			if (g_currentFrameTime - waitTime > waitDuration) {
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
+				state = State::SomewhatMiffed;
+			}
+		}
+
+		if (state == State::SomewhatMiffed) {
+			if (isHostile) {
+				state = State::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeLow) {
+				state = State::Normal;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
+				if (isShoved) {
+					waitTime = g_currentFrameTime;
+					waitDuration = Config::options.shoveAggressionWaitTime;
+					state = State::VeryMiffedWait;
+				}
+				else {
+					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
+					if (Config::options.stopUsingFurnitureOnHighAggression) {
+						TryExitFurniture(character);
+					}
+					state = State::VeryMiffed;
+				}
+			}
+			else if (isNewGrab || isNewTouch) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeLow);
+			}
+		}
+
+		if (state == State::VeryMiffedWait) {
+			if (g_currentFrameTime - waitTime > waitDuration) {
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
+				state = State::VeryMiffed;
+			}
+		}
+
+		if (state == State::VeryMiffed) {
+			if (isHostile) {
+				state = State::Hostile;
+			}
+			else if (accumulatedGrabbedTime <= Config::options.aggressionRequiredGrabTimeHigh) {
+				state = State::SomewhatMiffed;
+			}
+			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
+				Actor_SendAssaultAlarm(0, 0, character);
+				isHostile = Actor_IsHostileToActor(character, player); // need to update this after assaulting the actor
+				if (isHostile) {
+					state = State::Assaulted;
+				}
+			}
+			else if (isNewGrab || isNewTouch) {
+				// They were just re-grabbed - make them say something but not too often
+				TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
+			}
+		}
+
+		if (state == State::Hostile) {
+			if (!isHostile) {
+				accumulatedGrabbedTime = 0.f;
+				state = State::Normal;
+			}
+		}
+
+		if (state == State::Assaulted) {
+			if (!isHostile) {
+				accumulatedGrabbedTime = 0.f;
+				state = State::Normal;
+			}
+			else if (VectorLength(character->pos - player->pos) >= Config::options.aggressionStopCombatAlarmDistance) {
+				// We're far enough away from the assaulted actor so make them forgive us
+				Actor_StopCombatAlarm(0, 0, player);
+				accumulatedGrabbedTime = 0.f;
+				state = State::Normal;
+			}
+		}
+
+		wasGrabbed = isGrabbed;
+		wasTouched = isTouched;
+	}
+};
+
+std::unordered_map<Actor *, NPCData> g_npcs{};
+
+void TryUpdateNPCState(Actor *actor, bool isShoved)
+{
+	if (!Config::options.doAggression) return;
+
+	auto it = g_npcs.find(actor);
+	if (it == g_npcs.end()) {
+		// Not in the map yet
+		TESRace *race = actor->race;
+		if (!race) return;
+		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
+		if (race->editorId && Config::options.aggressionExcludeRaces.count(std::string_view(race->editorId))) return;
+
+		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
+		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
+
+		g_npcs[actor] = NPCData{};
+	}
+	else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
+		NPCData &data = it->second;
+		data.StateUpdate(character, isShoved);
 	}
 }
 
@@ -2103,7 +2085,14 @@ void UpdateSpeedReduction()
 				// drop left object
 				DropObject(true);
 			}
+
 			FlashHudMenuMeter(26);
+
+			if (Config::options.playSoundOnGrabStaminaDepletion) {
+				if (BGSSoundDescriptorForm *shoutFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[129]) {
+					PlaySoundAtNode(shoutFailSound, player->GetNiNode(), {});
+				}
+			}
 		}
 	}
 }
@@ -2118,6 +2107,8 @@ void ResetObjects()
 	g_selfCollidableBipedGroups.clear();
 	g_higgsLingeringRigidBodies.clear();
 	g_keepOffsetActors.clear();
+	g_bumpActors.clear();
+	g_shovedActors.clear();
 	g_contactListener = ContactListener{};
 }
 
@@ -2183,6 +2174,9 @@ void ProcessHavokHitJobsHook()
 			}
 			if (Config::options.enableBipedWeaponCollision) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Weapon);
+			}
+			if (Config::options.enableBipedProjectileCollision) {
+				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Projectile);
 			}
 			if (Config::options.enableBipedDeadBipCollision) {
 				filter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped] |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_DeadBip);
@@ -2399,6 +2393,16 @@ void ProcessHavokHitJobsHook()
 		}
 	}
 
+	{ // Clear out old shoved actors
+		for (auto it = g_shovedActors.begin(); it != g_shovedActors.end();) {
+			auto[actor, shovedTime] = *it;
+			if ((g_currentFrameTime - shovedTime) > Config::options.shoveCooldown)
+				it = g_shovedActors.erase(it);
+			else
+				++it;
+		}
+	}
+
 	if (g_currentFrameTime - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
 
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
@@ -2408,7 +2412,38 @@ void ProcessHavokHitJobsHook()
 			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 			if (!actor || !actor->GetNiNode()) continue;
 
-			TryUpdateNPCState(actor);
+			bool didShove = false;
+			if (Config::options.enableActorShove && !player->actorState.IsWeaponDrawn() && !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player)) {
+				for (int isLeft = 0; isLeft < 2; ++isLeft) {
+					ControllerVelocityData &velocityData = g_controllerVelocities[isLeft];
+
+					if (velocityData.avgSpeed > Config::options.shoveSpeedThreshold) {
+						if (g_contactListener.handCollidedRefs.count(actor) && ShouldShoveActor(actor)) {
+							if (!g_shovedActors.count(actor)) {
+								NiPoint3 handDirection = VectorNormalized(velocityData.avgVelocity);
+								float heading = GetHeadingFromVector(-handDirection);
+								float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+								QueueBumpActor(actor, bumpDirection, true, false);
+
+								PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
+								// Ignore future contact points for a bit to make things less janky
+								g_contactListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
+
+								if (g_controllerVelocities[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
+									PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
+									g_contactListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
+								}
+
+								g_shovedActors[actor] = g_currentFrameTime;
+
+								didShove = true;
+							}
+						}
+					}
+				}
+			}
+
+			TryUpdateNPCState(actor, didShove);
 
 #ifdef _DEBUG
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
@@ -2447,7 +2482,7 @@ void ProcessHavokHitJobsHook()
 									if (Config::options.bumpActorIfKeepOffsetFails) {
 										// Try to get them unstuck by bumping them
 										// TODO: This interrupts our aggression dialogue
-										TryQueueBumpActor(actor, 0.f, false, true, true);
+										QueueBumpActor(actor, 0.f, false, true);
 									}
 
 									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
@@ -2485,25 +2520,29 @@ void ProcessHavokHitJobsHook()
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
 			bool isActiveActor = g_activeActors.size() > 0 && g_activeActors.count(actor);
-			bool isProcessedActor = isActiveActor || isHittableCharController;
 			bool canAddToWorld = CanAddToWorld(actor);
 			
 			if (shouldAddToWorld) {
-				if (!isAddedToWorld || !isProcessedActor) {
-					if (canAddToWorld) {
-						AddRagdollToWorld(actor);
-						if (collisionGroup != 0) {
-							g_activeBipedGroups.insert(collisionGroup);
-						}
+				if (!isAddedToWorld && canAddToWorld) {
+					AddRagdollToWorld(actor);
+					if (collisionGroup != 0) {
+						g_activeBipedGroups.insert(collisionGroup);
 					}
-					else {
-						// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
-						// In this case, we need to register collisions against their charcontroller.
+				}
+
+				if (!canAddToWorld) {
+					// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
+					// In this case, we need to register collisions against their charcontroller.
+					if (collisionGroup != 0) {
 						g_hittableCharControllerGroups.insert(collisionGroup);
 					}
 				}
 
 				if (isActiveActor) {
+					if (collisionGroup != 0) {
+						g_activeBipedGroups.insert(collisionGroup);
+					}
+
 					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
 					DisableSyncOnUpdate(actor);
 
@@ -3039,9 +3078,9 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 	// Do movement jobs here
 	{
 		std::unique_lock lock(g_bumpActorsLock);
-		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end() && !it->second.consumed) {
+		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end()) {
 			BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.dontTriggerDialogue);
-			it->second.consumed = true;
+			g_bumpActors.erase(it);
 		}
 	}
 

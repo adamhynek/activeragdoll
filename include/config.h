@@ -25,24 +25,30 @@ namespace Config {
 
 		double worldChangedWaitTime = 0.4;
 
-		bool bumpActorsWhenTouched = true;
-		bool exitFurnitureWhenBumped = true;
-		float bumpSpeedThreshold = 1.f;
-		float largeBumpSpeedThreshold = 2.f;
-		bool dontBumpAnimals = true;
-		bool dontBumpFollowers = false;
-		int bumpMaxRelationshipRank = 0; // Acquantaince
-		double actorBumpCooldownTime = 3.0;
+		bool enableActorShove = true;
+		float shoveSpeedThreshold = 2.2f;
+		float shoveRumbleIntensity = 0.2f;
+		float shoveRumbleDuration = 0.15f;
+		float shoveAggressionImpact = 2.5f;
+		double shoveAggressionWaitTime = 1.f;
+		double shoveCooldown = 1.5;
+		double collisionCooldownTime = 0.5;
 
 		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
-		double aggressionDialogueCooldownTime = 1.0;
+		double aggressionDialogueCooldownTime = 1.8;
+		double aggressionBumpCooldownTime = 1.0;
+		double aggressionBumpWaitTime = 0.3;
+		double aggressionFurnitureExitCooldownTime = 3.0;
+		double aggressionStopDelay = 0.5;
+		float aggressionRequiredGrabTimeBump = 0.1f;
 		float aggressionRequiredGrabTimeLow = 0.25f;
 		float aggressionRequiredGrabTimeLowFallback = 1.5f;
 		float aggressionRequiredGrabTimeHigh = 3.5f;
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;
+		float aggressionStopCombatAlarmDistance = 1500.f;
 		int aggressionMaxRelationshipRank = 0; // Acquantaince
 		int aggressionDialogueSubtypeLow = 88; // pickpocketTopic
 		int aggressionDialogueSubtypeHigh = 49; // trespass
@@ -55,7 +61,8 @@ namespace Config {
 		float followerSpeedReductionMultiplier = 0.2f;
 
 		bool followersSkipStaminaCost = true;
-		float grabbedActorStaminaCost = 9.f;
+		bool playSoundOnGrabStaminaDepletion = true;
+		float grabbedActorStaminaCost = 10.f;
 		float grabbedActorStaminaCostHealthInfluence = 0.8f;
 
 		bool ragdollOnGrab = false;
@@ -93,9 +100,11 @@ namespace Config {
 		float playerVsBipedInteractionImpulseMultiplier = 0.f;
 
 		bool stopRagdollNonSelfCollisionForCloseActors = true;
-		double closeActorFilterRefreshInterval = 1.0;
-		float ragdollNonSelfCollisionActorMinDistance = 2.f;
+		float closeActorMinDistance = 2.f;
 		bool stopRagdollNonSelfCollisionForActorsWithVehicle = true;
+
+		bool stopAggressionForCloseActors = true;
+		bool stopAggressionForActorsWithVehicle = true;
 
 		bool enableBipedBipedCollision = true;
 		bool enableBipedBipedCollisionNoCC = true;
@@ -107,6 +116,7 @@ namespace Config {
 		bool disableBipedCollisionWithWorld = true;
 		bool enableBipedClutterCollision = true;
 		bool enableBipedWeaponCollision = true;
+		bool enableBipedProjectileCollision = true;
 		bool disableGravityForActiveRagdolls = true;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
@@ -165,6 +175,7 @@ namespace Config {
 
 		std::set<std::string, std::less<>> additionalSelfCollisionRaces;
 		std::set<std::string, std::less<>> excludeRaces;
+		std::set<std::string, std::less<>> aggressionExcludeRaces;
 	};
 	extern Options options; // global object containing options
 

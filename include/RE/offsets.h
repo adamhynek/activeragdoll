@@ -535,6 +535,9 @@ extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
 typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);
 extern RelocAddr<_GetHeadingFromVector> GetHeadingFromVector;
 
+typedef void(*_ActorProcess_PlayIdle)(ActorProcessManager *_this, Actor *source, int defaultObject, Actor *target, bool a5, bool a6, TESIdleForm *idle);
+extern RelocAddr<_ActorProcess_PlayIdle> ActorProcess_PlayIdle;
+
 typedef void(*_ActorProcess_SetBumpState)(ActorProcessManager *_this, UInt32 bumpState);
 extern RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState;
 
@@ -616,10 +619,16 @@ extern RelocAddr<_Actor_GetDetectionCalculatedValue> Actor_GetDetectionCalculate
 typedef void(*_Actor_SendAssaultAlarm)(UInt64 a1, UInt64 a2, Actor *actor); // a1, a2 unused
 extern RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm;
 
+typedef void(*_Actor_StopCombatAlarm)(UInt64 a1, UInt64 a2, Actor *actor); // a1, a2 unused
+extern RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm;
+
+typedef void(*_Actor_IsTalking)(Actor *_this);
+extern RelocAddr<_Actor_IsTalking> Actor_IsTalking;
+
 typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
 extern RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask;
 
-typedef void(*_PlayRumble)(UInt32 isLeft, float rumbleIntensity, float rumbleDuration);
+typedef void(*_PlayRumble)(UInt32 isRight, float rumbleIntensity, float rumbleDuration);
 extern RelocAddr<_PlayRumble> PlayRumble;
 
 typedef InventoryEntryData * (*_ActorProcess_GetCurrentlyEquippedWeapon)(ActorProcessManager *_this, bool isOffhand);

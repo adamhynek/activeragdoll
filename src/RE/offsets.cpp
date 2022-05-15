@@ -242,6 +242,7 @@ RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo(0xAA9E10
 RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_GetBumped> Actor_GetBumped(0x5E4B70);
 RelocAddr<_GetHeadingFromVector> GetHeadingFromVector(0xC97030);
+RelocAddr<_ActorProcess_PlayIdle> ActorProcess_PlayIdle(0x654490);
 RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState(0x661A10);
 RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection(0x664C00);
 RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway(0x686920);
@@ -269,6 +270,8 @@ RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
 RelocAddr<_Actor_IsHostileToActor> Actor_IsHostileToActor(0x5F0560);
 RelocAddr<_Actor_GetDetectionCalculatedValue> Actor_GetDetectionCalculatedValue(0x605190);
 RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm(0x986530);
+RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm(0x987A70);
+RelocAddr<_Actor_IsTalking> Actor_IsTalking(0x5DA8F0);
 RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask(0x5CB4F0);
 RelocAddr<_PlayRumble> PlayRumble(0xC59440);
 RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);

@@ -112,16 +112,6 @@ namespace Config {
 
 		if (!ReadDouble("worldChangedWaitTime", options.worldChangedWaitTime)) return false;
 
-		if (!ReadBool("bumpActorsWhenTouched", options.bumpActorsWhenTouched)) return false;
-		if (!ReadBool("exitFurnitureWhenBumped", options.exitFurnitureWhenBumped)) return false;
-		if (!ReadFloat("bumpSpeedThreshold", options.bumpSpeedThreshold)) return false;
-		
-		if (!ReadBool("dontBumpAnimals", options.dontBumpAnimals)) return false;
-		if (!ReadBool("dontBumpFollowers", options.dontBumpFollowers)) return false;
-		if (!ReadInt("bumpMaxRelationshipRank", options.bumpMaxRelationshipRank)) return false;
-
-		if (!ReadDouble("actorBumpCooldownTime", options.actorBumpCooldownTime)) return false;
-
 		if (!ReadBool("ragdollOnGrab", options.ragdollOnGrab)) return false;
 		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;
 		if (!ReadFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) return false;
@@ -156,7 +146,7 @@ namespace Config {
 		if (!ReadFloat("playerVsBipedInteractionImpulseMultiplier", options.playerVsBipedInteractionImpulseMultiplier)) return false;
 
 		if (!ReadBool("stopRagdollNonSelfCollisionForCloseActors", options.stopRagdollNonSelfCollisionForCloseActors)) return false;
-		if (!ReadFloat("ragdollNonSelfCollisionActorMinDistance", options.ragdollNonSelfCollisionActorMinDistance)) return false;
+		if (!ReadFloat("closeActorMinDistance", options.closeActorMinDistance)) return false;
 
 		if (!ReadBool("stopRagdollNonSelfCollisionForActorsWithVehicle", options.stopRagdollNonSelfCollisionForActorsWithVehicle)) return false;
 
@@ -227,6 +217,7 @@ namespace Config {
 
 		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) return false;
 		if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) return false;
+		if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) return false;
 
 		return true;
 	}
