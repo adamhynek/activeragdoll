@@ -309,6 +309,9 @@ extern RelocAddr<_TESObjectREFR_SetRotation> TESObjectREFR_SetRotation;
 typedef void(*_NiAVObject_UpdateNode)(NiAVObject *_this, NiAVObject::ControllerUpdateContext *ctx);
 extern RelocAddr<_NiAVObject_UpdateNode> NiAVObject_UpdateNode;
 
+typedef TESObjectREFR * (*_NiAVObject_GetOwner)(NiAVObject *_this);
+extern RelocAddr<_NiAVObject_GetOwner> NiAVObject_GetOwner;
+
 typedef BGSMaterialType * (*_GetMaterialType)(UInt32 materialId); // materialId is gotten from the bhkShape at offset 0x20
 extern RelocAddr<_GetMaterialType> GetMaterialType;
 
@@ -396,6 +399,12 @@ extern RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGra
 
 typedef void(*_BSAnimationGraphManager_DisableOrEnableSyncOnUpdate)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_DisableOrEnableSyncOnUpdate> BSAnimationGraphManager_DisableOrEnableSyncOnUpdate;
+
+typedef void(*_BSAnimationGraphManager_ResetRagdoll)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_ResetRagdoll> BSAnimationGraphManager_ResetRagdoll;
+
+typedef void(*_BSAnimationGraphManager_SetWorld)(BSAnimationGraphManager *_this, UInt64 *a1);
+extern RelocAddr<_BSAnimationGraphManager_SetWorld> BSAnimationGraphManager_SetWorld;
 
 typedef void(*_NiNode_AddOrRemoveMalleableConstraints)(NiNode *_this, bool a1, bool a2, bool a3);
 extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableConstraints;
@@ -684,3 +693,6 @@ extern RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose;
 
 typedef void(*_FOCollisionListener_TryApplyCollisionDamage)(FOCollisionListener *_this, float separatingSpeed, hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, TESObjectREFR *refrA, TESObjectREFR *refrB);
 extern RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage;
+
+typedef void(*_BSTaskPool_QueueRemoveCollisionFromWorld)(BSTaskPool *_this, NiAVObject *root);
+extern RelocAddr<_BSTaskPool_QueueRemoveCollisionFromWorld> BSTaskPool_QueueRemoveCollisionFromWorld;

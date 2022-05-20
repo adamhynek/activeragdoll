@@ -621,7 +621,7 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 
 bool ShouldBumpActor(Actor *actor)
 {
-	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat()) return false;
+	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat() || Actor_IsInRagdollState(actor)) return false;
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
 	return true;
@@ -1485,12 +1485,12 @@ struct NPCData
 
 		PlayerCharacter *player = *g_thePlayer;
 
-		// These two are to not do aggression if they are in... certain scenes... with the player
+		// These two are to not do aggression if they are in... certain scenes...
 		bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
-		bool isInVehicleAndSoIsPlayer = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle && GetVehicleHandle(player) != *g_invalidRefHandle;
+		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
 		
 		if (isGrabbed || isTouched || isShoved) {
-			if (!Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !sharesPlayerPosition && !isInVehicleAndSoIsPlayer) {
+			if (!Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !sharesPlayerPosition && !isInVehicle) {
 				accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
 				lastGrabbedTouchedTime = g_currentFrameTime;
 			}
@@ -1549,9 +1549,18 @@ struct NPCData
 				state = State::Normal;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
-				if (isShoved) {
+				if (isShoved || ShouldBumpActor(character)) {
 					waitTime = g_currentFrameTime;
-					waitDuration = Config::options.shoveAggressionWaitTime;
+					if (isShoved) {
+						waitDuration = Config::options.shoveAggressionWaitTime;
+					}
+					else {
+						TryBump(character);
+						if (Config::options.stopUsingFurnitureOnHighAggression) {
+							TryExitFurniture(character);
+						}
+						waitDuration = Config::options.aggressionBumpWaitTime;
+					}
 					state = State::VeryMiffedWait;
 				}
 				else {
@@ -1772,6 +1781,8 @@ bool AddRagdollToWorld(Actor *actor)
 		if (GetAnimationGraphManager(actor, animGraphManager)) {
 			BSAnimationGraphManager *manager = animGraphManager.ptr;
 
+			TESObjectCELL *parentCell = actor->parentCell;
+
 			{
 				SimpleLocker lock(&manager->updateLock);
 				for (int i = 0; i < manager->graphs.size; i++) {
@@ -1785,6 +1796,7 @@ bool AddRagdollToWorld(Actor *actor)
 
 						Blender &blender = activeRagdoll->blender;
 						blender.StartBlend(Blender::BlendType::AnimToRagdoll, g_currentFrameTime, Config::options.blendInTime);
+
 						hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
 						blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
 						blender.isFirstBlendFrame = false;
@@ -1792,22 +1804,34 @@ bool AddRagdollToWorld(Actor *actor)
 						activeRagdoll->stateChangedTime = g_currentFrameTime;
 						activeRagdoll->state = RagdollState::BlendIn;
 
-						if (!graph.ptr->world) {
+						if (!graph.ptr->world && parentCell) {
 							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
-							graph.ptr->world = GetHavokWorldFromCell(actor->parentCell);
+							graph.ptr->world = GetHavokWorldFromCell(parentCell);
 							activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
 						}
 					}
 				}
 			}
 
-			bool x = false;
-			BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
+			if (parentCell) {
+				if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(parentCell)) {
+#ifdef _DEBUG
+					if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+						_MESSAGE("%d %s: Add ragdoll to world", *g_currentFrameCounter, name->name);
+					}
+#endif // _DEBUG
 
-			ModifyConstraints(actor);
+					BSWriteLocker lock(&world->worldLock);
 
-			x = false;
-			BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
+					bool x = false;
+					BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
+
+					ModifyConstraints(actor);
+
+					x = false;
+					BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
+				}
+			}
 		}
 	}
 
@@ -1827,6 +1851,13 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	if (hasRagdollInterface) {
 		// TODO: We should not remove the ragdoll from the world if it had the ragdoll added already when we added it (e.g. race allowragdollcollision flag).
 		//       In that case we should also revert the motion type to keyframed since that's what it usually is in this scenario.
+
+#ifdef _DEBUG
+		if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+			_MESSAGE("%d %s: Remove ragdoll from world", *g_currentFrameCounter, name->name);
+		}
+#endif // _DEBUG
+
 		bool x = false;
 		BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
 
@@ -1944,12 +1975,14 @@ float GetSpeedReduction(Actor *actor)
 
 	PlayerCharacter *player = *g_thePlayer;
 
-	float massReduction = 0.f;
-	if (NiPointer<NiNode> root = actor->GetNiNode()) {
-		float mass = NiAVObject_GetMass(root, 0.f);
-		massReduction = powf(mass, Config::options.speedReductionMassExponent) * Config::options.speedReductionMassProportion;
+	float massReduction = Config::options.mediumRaceSpeedReduction;
+	if (TESRace *race = actor->race) {
+		UInt32 raceSize = actor->race->data.unk40;
+		if (raceSize == 0) massReduction = Config::options.smallRaceSpeedReduction;
+		if (raceSize == 2) massReduction = Config::options.largeRaceSpeedReduction;
+		if (raceSize >= 3) massReduction = Config::options.extraLargeRaceSpeedReduction;
 	}
-
+	
 	float healthPercent = std::clamp(GetAVPercentage(actor, 24), 0.f, 1.f);
 	float playerStaminaPercent = std::clamp(GetAVPercentage(player, 26), 0.f, 1.f);
 
@@ -2324,16 +2357,17 @@ void ProcessHavokHitJobsHook()
 	}
 
 	{ // Update higgs info
-		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false); // this one's a nipointer because we need to actually read from it
+		NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
+		NiPointer<bhkRigidBody> leftHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
 		g_rightHand = rightHand;
-		g_leftHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
+		g_leftHand = leftHand;
 
 		NiPointer<bhkRigidBody> rightWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
 		NiPointer<bhkRigidBody> leftWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
 		g_rightWeapon = rightWeapon;
 		g_leftWeapon = leftWeapon;
 
-		// TODO: We don't make held objects or hands keyframed_reporting, so those can't do hits on statics
+		// TODO: We don't make held objects keyframed_reporting, so those can't do hits on statics
 		if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
 			rightWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
 			bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightWeapon);
@@ -2341,6 +2375,15 @@ void ProcessHavokHitJobsHook()
 		if (leftWeapon && leftWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
 			leftWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
 			bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftWeapon);
+		}
+
+		if (rightHand && rightHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+			rightHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+			bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightHand);
+		}
+		if (leftHand && leftHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+			leftHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+			bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftHand);
 		}
 
 		if (rightHand) {
@@ -2519,11 +2562,12 @@ void ProcessHavokHitJobsHook()
 			bool shouldRemoveFromWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
 			bool isAddedToWorld = IsAddedToWorld(actor);
-			bool isActiveActor = g_activeActors.size() > 0 && g_activeActors.count(actor);
+			bool isActiveActor = g_activeActors.count(actor);
+			bool isProcessedActor = isActiveActor || isHittableCharController;
 			bool canAddToWorld = CanAddToWorld(actor);
 			
 			if (shouldAddToWorld) {
-				if (!isAddedToWorld && canAddToWorld) {
+				if ((!isAddedToWorld || !isProcessedActor) && canAddToWorld) {
 					AddRagdollToWorld(actor);
 					if (collisionGroup != 0) {
 						g_activeBipedGroups.insert(collisionGroup);
@@ -3087,6 +3131,26 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 	MovementControllerNPC_Update(movementController);
 }
 
+void ActorProcess_ExitFurniture_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *root)
+{
+	TESObjectREFR *refr = NiAVObject_GetOwner(root);
+	if (g_activeActors.count(static_cast<Actor *>(refr))) return;
+	BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, root);
+}
+
+void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manager, bool *a2, Actor *actor)
+{
+	if (g_activeActors.count(actor)) return;
+	BSAnimationGraphManager_ResetRagdoll(manager, a2);
+}
+
+void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager, UInt64 *a2, Actor *actor)
+{
+	if (g_activeActors.count(actor)) return;
+	BSAnimationGraphManager_SetWorld(manager, a2);
+}
+
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -3110,6 +3174,12 @@ auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
 auto Character_MovementControllerUpdate_HookLoc = RelocAddr<uintptr_t>(0x5E086F);
 
 auto Actor_KillEndHavokHit_HookLoc = RelocAddr<uintptr_t>(0x60C808);
+
+auto ActorProcess_ExitFurniture_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x687FF7);
+auto ActorProcess_ExitFurniture_ResetRagdoll_HookLoc = RelocAddr<uintptr_t>(0x688061);
+auto ActorProcess_EnterFurniture_SetWorld_HookLoc = RelocAddr<uintptr_t>(0x68E344);
+
+auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
 
 
 void PerformHooks(void)
@@ -3180,6 +3250,69 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
 		_MESSAGE("Actor kill end havok hit hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(ActorProcess_ExitFurniture_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(ActorProcess_ExitFurniture_RemoveCollision_Hook));
+		_MESSAGE("ActorProcess TransitionFurnitureState QueueRemoveCollision hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				mov(r8, rdi); // the actor is in rdi
+
+				// Call our hook
+				mov(rax, (uintptr_t)ActorProcess_ExitFurniture_ResetRagdoll_Hook);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("ActorProcess ExitFurniture ResetRagdoll hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				mov(r8, rbp); // the actor is in rdi
+
+				// Call our hook
+				mov(rax, (uintptr_t)ActorProcess_EnterFurniture_SetWorld_Hook);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("ActorProcess EnterFurniture BSAnimationGraphManager::SetWorld hook complete");
 	}
 
 	{

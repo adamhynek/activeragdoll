@@ -206,6 +206,9 @@ struct HitData
 		kBash = 1 << 14,
 		kTimedBash = 1 << 15,
 		kPowerAttack = 1 << 16,
+
+		kOffhand = 1 << 17,
+
 		kMeleeAttack = 1 << 18,
 		kRicochet = 1 << 19,
 		kExplosion = 1 << 20

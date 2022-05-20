@@ -39,9 +39,9 @@ namespace Config {
 		bool stopUsingFurnitureOnHighAggression = true;
 		double aggressionDialogueCooldownTime = 1.8;
 		double aggressionBumpCooldownTime = 1.0;
-		double aggressionBumpWaitTime = 0.3;
+		double aggressionBumpWaitTime = 0.5;
 		double aggressionFurnitureExitCooldownTime = 3.0;
-		double aggressionStopDelay = 0.5;
+		double aggressionStopDelay = 2.0;
 		float aggressionRequiredGrabTimeBump = 0.1f;
 		float aggressionRequiredGrabTimeLow = 0.25f;
 		float aggressionRequiredGrabTimeLowFallback = 1.5f;
@@ -54,11 +54,13 @@ namespace Config {
 		int aggressionDialogueSubtypeHigh = 49; // trespass
 
 		bool doSpeedReduction = true;
-		float maxSpeedReduction = 80.f;
+		float smallRaceSpeedReduction = 25.f;
+		float mediumRaceSpeedReduction = 50.f;
+		float largeRaceSpeedReduction = 70.f;
+		float extraLargeRaceSpeedReduction = 85.f;
+		float maxSpeedReduction = 85.f;
 		float speedReductionHealthInfluence = 0.5f;
-		float speedReductionMassProportion = 0.625f;
-		float speedReductionMassExponent = 1.f;
-		float followerSpeedReductionMultiplier = 0.2f;
+		float followerSpeedReductionMultiplier = 0.25f;
 
 		bool followersSkipStaminaCost = true;
 		bool playSoundOnGrabStaminaDepletion = true;
