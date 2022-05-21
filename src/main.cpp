@@ -621,6 +621,7 @@ inline bool IsHittableCharController(TESObjectREFR *refr)
 
 bool ShouldBumpActor(Actor *actor)
 {
+	if (!Config::options.enableBump) return false;
 	if (Actor_IsRunning(actor) || Actor_IsGhost(actor) || actor->IsInCombat() || Actor_IsInRagdollState(actor)) return false;
 	if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
@@ -634,14 +635,14 @@ bool ShouldShoveActor(Actor *actor)
 	return true;
 }
 
-void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool dontTriggerDialogue = false)
+void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool exitFurniture = false)
 {
 	ActorProcessManager *process = actor->processManager;
 	if (!process) return;
 
 	ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
 	ActorProcess_SetBumpDirection(process, bumpDirection);
-	Actor_GetBumped(actor, *g_thePlayer, isLargeBump, dontTriggerDialogue);
+	Actor_GetBumped(actor, *g_thePlayer, isLargeBump, exitFurniture);
 	ActorProcess_SetBumpDirection(process, 0.f);
 }
 
@@ -655,12 +656,12 @@ std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 std::unordered_map<Actor *, double> g_shovedActors{};
 
-void QueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool dontTriggerDialogue)
+void QueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool exitFurniture)
 {
 	std::unique_lock lock(g_bumpActorsLock);
 	auto it = g_bumpActors.find(actor);
 	if (it == g_bumpActors.end()) {
-		g_bumpActors[actor] = { bumpDirection, isLargeBump, dontTriggerDialogue };
+		g_bumpActors[actor] = { bumpDirection, isLargeBump, exitFurniture };
 	}
 }
 
@@ -1428,7 +1429,6 @@ struct NPCData
 
 	State state = State::Normal;
 	double dialogueTime = 0.0;
-	double furnitureExitTime = 0.0;
 	double bumpTime = 0.0;
 	double lastGrabbedTouchedTime = 0.0;
 	double waitTime = 0.0;
@@ -1449,17 +1449,7 @@ struct NPCData
 		}
 	}
 
-	void TryExitFurniture(Character *character)
-	{
-		if (Actor_IsInRagdollState(character)) return;
-
-		if (g_currentFrameTime - furnitureExitTime > Config::options.aggressionFurnitureExitCooldownTime) {
-			ExitFurniture(character);
-			furnitureExitTime = g_currentFrameTime;
-		}
-	}
-
-	void TryBump(Character *character)
+	void TryBump(Character *character, bool exitFurniture)
 	{
 		if (Actor_IsInRagdollState(character)) return;
 
@@ -1467,7 +1457,7 @@ struct NPCData
 			NiPoint3 actorToPlayer = (*g_thePlayer)->pos - character->pos;
 			float heading = GetHeadingFromVector(actorToPlayer);
 			float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(character, 0xA5)(character, false);
-			QueueBumpActor(character, bumpDirection, false, false);
+			QueueBumpActor(character, bumpDirection, false, exitFurniture);
 
 			bumpTime = g_currentFrameTime;
 		}
@@ -1521,7 +1511,7 @@ struct NPCData
 							waitDuration = Config::options.shoveAggressionWaitTime;
 						}
 						else {
-							TryBump(character);
+							TryBump(character, false);
 							waitDuration = Config::options.aggressionBumpWaitTime;
 						}
 						state = State::SomewhatMiffedWait;
@@ -1555,19 +1545,13 @@ struct NPCData
 						waitDuration = Config::options.shoveAggressionWaitTime;
 					}
 					else {
-						TryBump(character);
-						if (Config::options.stopUsingFurnitureOnHighAggression) {
-							TryExitFurniture(character);
-						}
+						TryBump(character, Config::options.stopUsingFurnitureOnHighAggression);
 						waitDuration = Config::options.aggressionBumpWaitTime;
 					}
 					state = State::VeryMiffedWait;
 				}
 				else {
 					TryTriggerDialogue(character, Config::options.aggressionDialogueSubtypeHigh);
-					if (Config::options.stopUsingFurnitureOnHighAggression) {
-						TryExitFurniture(character);
-					}
 					state = State::VeryMiffed;
 				}
 			}

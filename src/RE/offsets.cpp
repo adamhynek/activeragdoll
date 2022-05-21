@@ -244,6 +244,7 @@ RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_rem
 RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo(0xAA9E10);
 RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_GetBumped> Actor_GetBumped(0x5E4B70);
+RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage(0x985060);
 RelocAddr<_GetHeadingFromVector> GetHeadingFromVector(0xC97030);
 RelocAddr<_ActorProcess_PlayIdle> ActorProcess_PlayIdle(0x654490);
 RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState(0x661A10);

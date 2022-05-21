@@ -34,6 +34,7 @@ namespace Config {
 		double shoveCooldown = 1.5;
 		double collisionCooldownTime = 0.5;
 
+		bool enableBump = true;
 		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
@@ -54,8 +55,8 @@ namespace Config {
 		int aggressionDialogueSubtypeHigh = 49; // trespass
 
 		bool doSpeedReduction = true;
-		float smallRaceSpeedReduction = 25.f;
-		float mediumRaceSpeedReduction = 50.f;
+		float smallRaceSpeedReduction = 35.f;
+		float mediumRaceSpeedReduction = 55.f;
 		float largeRaceSpeedReduction = 70.f;
 		float extraLargeRaceSpeedReduction = 85.f;
 		float maxSpeedReduction = 85.f;
