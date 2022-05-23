@@ -94,6 +94,23 @@ namespace Config {
 		return true;
 	}
 
+	bool ReadFormArray(const std::string &name, std::vector<UInt32> &val)
+	{
+		std::string	data = GetConfigOption("Settings", name.c_str());
+		if (data.empty()) {
+			_WARNING("Failed to read StringSet config option: %s", name.c_str());
+			return false;
+		}
+
+		val.clear(); // first empty the set, since we will be reading into it
+
+		std::set<std::string, std::less<>> stringSet = SplitStringToSet(data, ',');
+		for (const std::string &str : stringSet) {
+			val.push_back(std::stoul(str, nullptr, 16));
+		}
+		return true;
+	}
+
 	bool ReadConfigOptions()
 	{
 		if (!ReadFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) return false;

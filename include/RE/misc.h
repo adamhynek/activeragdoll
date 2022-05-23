@@ -419,7 +419,35 @@ struct TESActionData : ActionInput
 	UInt64 unk58 = 0;
 };
 
+struct PackageLocation
+{
+	union Data
+	{
+		TESForm* object;
+		UInt32 refHandle;
+	};
+	static_assert(sizeof(Data) == 0x8);
+
+	void *vtbl; // 00 
+	UInt8 locType; // 08
+	UInt32 rad; // 0C
+	Data data; // 10
+};
+static_assert(sizeof(PackageLocation) == 0x18);
+
+struct PackageTarget
+{
+	UInt8 targType; // 00
+	UInt64 target; // 08
+	UInt32 value; // 10
+	UInt32 pad14; // 14
+};
+static_assert(sizeof(PackageTarget) == 0x18);
+
+typedef void(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
+typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);
+typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool dontExitFurniture, bool a4);
 typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
 typedef ActorCause * (*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause* a_cause);

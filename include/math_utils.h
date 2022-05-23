@@ -1,5 +1,8 @@
 #pragma once
 
+#define _USE_MATH_DEFINES
+#include <math.h>
+
 #include <algorithm>
 
 #include "skse64/NiObjects.h"
@@ -101,5 +104,8 @@ inline float lerp(float a, float b, float t) { return a * (1.f - t) + b * t; }
 inline double lerp(double a, double b, double t) { return a * (1.0 - t) + b * t; }
 float Determinant33(const NiMatrix33 &m);
 NiPoint3 QuadraticFromPoints(const NiPoint2 &p1, const NiPoint2 &p2, const NiPoint2 &p3);
+inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
+inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }
+inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);

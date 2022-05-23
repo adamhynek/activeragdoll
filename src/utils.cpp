@@ -855,6 +855,62 @@ bool HasKeepOffsetInterface(Actor * actor)
 	return hasInterface;
 }
 
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue)
+{
+	if (Actor_IsGhost(actor)) return;
+
+	ActorProcessManager *process = actor->processManager;
+	if (!process) return;
+
+	MiddleProcess *middleProcess = process->middleProcess;
+	if (!middleProcess) return;
+
+	TESPackage *runOncePackage = middleProcess->unk058.package;
+	if (runOncePackage && runOncePackage->type == 32) return; // already bumped
+
+	if (Actor_HasLargeMovementDelta(actor)) {
+		ActorProcess_ResetBumpWaitTimer(process);
+	}
+
+	Actor_sub_140600400(actor, 1.f);
+
+	if (pauseCurrentDialogue) {
+		get_vfunc<_Actor_PauseCurrentDialogue>(actor, 0x4F)(actor);
+	}
+
+	TESPackage *package = CreatePackageByType(32);
+	package->packageFlags |= 6;
+
+	PackageLocation packageLocation; PackageLocation_CTOR(&packageLocation);
+	PackageLocation_SetNearReference(&packageLocation, actor);
+	TESPackage_SetPackageLocation(package, &packageLocation);
+
+	PackageTarget packageTarget; PackageTarget_CTOR(&packageTarget);
+	TESPackage_SetPackageTarget(package, &packageTarget);
+	PackageTarget_ResetValueByTargetType((PackageTarget *)package->unk40, 0);
+	PackageTarget_SetFromReference((PackageTarget *)package->unk40, bumper);
+
+	TESPackage_sub_140439BE0(package, 0);
+
+	if (TESPackage *currentPackage = process->unk18.package) {
+		TESPackage_CopyFlagsFromOtherPackage(package, currentPackage);
+	}
+
+	get_vfunc<_Actor_PutCreatedPackage>(actor, 0xE1)(actor, package, !exitFurniture, 1);
+
+	if (isLargeBump) {
+		Actor_sub_140600400(actor, 1.f);
+		sub_140654E10(process, 1);
+		ActorProcess_PlayIdle(process, actor, 90, 0, 1, 0, nullptr);
+	}
+
+	if (triggerDialogue) {
+		ActorProcess_TriggerDialogue(process, actor, 7, 98, bumper, 0, 0, 0, 0, 0);
+	}
+
+	sub_140664870(process, 0);
+}
+
 class IsInFactionVisitor : public Actor::FactionVisitor
 {
 public:

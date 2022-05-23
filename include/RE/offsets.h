@@ -388,6 +388,9 @@ extern RelocAddr<_hkMalleableConstraintCinfo_setStrength> hkMalleableConstraintC
 typedef bool(*_Actor_IsInRagdollState)(Actor *_this);
 extern RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState;
 
+typedef bool(*_IAnimationGraphManagerHolder_SetAnimationVariableFloat)(IAnimationGraphManagerHolder *_this, const BSFixedString &variableName, float value);
+extern RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableFloat> IAnimationGraphManagerHolder_SetAnimationVariableFloat;
+
 typedef void(*_BSAnimationGraphManager_HasRagdollInterface)(BSAnimationGraphManager *_this, bool *out);
 extern RelocAddr<_BSAnimationGraphManager_HasRagdollInterface> BSAnimationGraphManager_HasRagdollInterface;
 
@@ -541,8 +544,14 @@ extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool exitFurniture);
 extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
 
+typedef bool(*_Actor_HasLargeMovementDelta)(Actor *_this);
+extern RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta;
+
 typedef TESPackage * (*_Actor_GetCurrentPackage)(UInt64 a1, UInt64 a2, Actor *_this);
 extern RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage;
+
+typedef void(*_Actor_sub_140600400)(Actor *_this, float a2);
+extern RelocAddr<_Actor_sub_140600400> Actor_sub_140600400;
 
 typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);
 extern RelocAddr<_GetHeadingFromVector> GetHeadingFromVector;
@@ -555,6 +564,9 @@ extern RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState;
 
 typedef void(*_ActorProcess_SetBumpDirection)(ActorProcessManager *_this, float direction);
 extern RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection;
+
+typedef void(*_ActorProcess_ResetBumpWaitTimer)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_ResetBumpWaitTimer> ActorProcess_ResetBumpWaitTimer;
 
 typedef void(*_ActorProcess_PushActorAway)(ActorProcessManager *_this, Actor *actor, NiPoint3 &from, float force);
 extern RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway;
@@ -634,7 +646,7 @@ extern RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm;
 typedef void(*_Actor_StopCombatAlarm)(UInt64 a1, UInt64 a2, Actor *actor); // a1, a2 unused
 extern RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm;
 
-typedef void(*_Actor_IsTalking)(Actor *_this);
+typedef bool(*_Actor_IsTalking)(Actor *_this);
 extern RelocAddr<_Actor_IsTalking> Actor_IsTalking;
 
 typedef void(*_BSTaskPool_QueueDestroyTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
@@ -648,6 +660,9 @@ extern RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurre
 
 typedef void(*_ActorProcess_TransitionFurnitureState)(ActorProcessManager *_this, Actor *actor, UInt64 newState, UInt32 &furnitureHandle, UInt32 furnitureMarkerID);
 extern RelocAddr<_ActorProcess_TransitionFurnitureState> ActorProcess_TransitionFurnitureState;
+
+typedef void(*_ActorProcess_SayTopicInfo)(ActorProcessManager *_this, Actor *actor, TESTopic *topic, TESTopicInfo *topicInfo, bool a5, bool a6, bool a7, bool a8);
+extern RelocAddr<_ActorProcess_SayTopicInfo> ActorProcess_SayTopicInfo;
 
 typedef void(*_Actor_SetVehicle)(Actor *_this, UInt32 &handle);
 extern RelocAddr<_Actor_SetVehicle> Actor_SetVehicle;
@@ -699,3 +714,45 @@ extern RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListen
 
 typedef void(*_BSTaskPool_QueueRemoveCollisionFromWorld)(BSTaskPool *_this, NiAVObject *root);
 extern RelocAddr<_BSTaskPool_QueueRemoveCollisionFromWorld> BSTaskPool_QueueRemoveCollisionFromWorld;
+
+typedef float(*_GetRandomNumberInRange)(float min, float max);
+extern RelocAddr<_GetRandomNumberInRange> GetRandomNumberInRange;
+
+typedef TESPackage * (*_CreatePackageByType)(int type);
+extern RelocAddr<_CreatePackageByType> CreatePackageByType;
+
+typedef void(*_PackageLocation_CTOR)(PackageLocation *_this);
+extern RelocAddr<_PackageLocation_CTOR> PackageLocation_CTOR;
+
+typedef void(*_PackageLocation_SetNearReference)(PackageLocation *_this, TESObjectREFR *refr);
+extern RelocAddr<_PackageLocation_SetNearReference> PackageLocation_SetNearReference;
+
+typedef void(*_TESPackage_SetPackageLocation)(TESPackage *_this, PackageLocation *packageLocation);
+extern RelocAddr<_TESPackage_SetPackageLocation> TESPackage_SetPackageLocation;
+
+typedef void(*_PackageTarget_CTOR)(PackageTarget *_this);
+extern RelocAddr<_PackageTarget_CTOR> PackageTarget_CTOR;
+
+typedef void(*_TESPackage_SetPackageTarget)(TESPackage *_this, PackageTarget *packageTarget);
+extern RelocAddr<_TESPackage_SetPackageTarget> TESPackage_SetPackageTarget;
+
+typedef void(*_PackageTarget_ResetValueByTargetType)(PackageTarget *_this, int a2);
+extern RelocAddr<_PackageTarget_ResetValueByTargetType> PackageTarget_ResetValueByTargetType;
+
+typedef void(*_PackageTarget_SetFromReference)(PackageTarget *_this, TESObjectREFR *refr);
+extern RelocAddr<_PackageTarget_SetFromReference> PackageTarget_SetFromReference;
+
+typedef void(*_TESPackage_sub_140439BE0)(TESPackage *_this, UInt64 a2);
+extern RelocAddr<_TESPackage_sub_140439BE0> TESPackage_sub_140439BE0;
+
+typedef void(*_TESPackage_CopyFlagsFromOtherPackage)(TESPackage *_this, TESPackage *other);
+extern RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFromOtherPackage;
+
+typedef void(*_sub_140654E10)(ActorProcessManager *_this, bool a2);
+extern RelocAddr<_sub_140654E10> sub_140654E10;
+
+typedef void(*_ActorProcess_TriggerDialogue)(ActorProcessManager *_this, Actor *actor, int dialogueType, int dialogueSubtype, Actor *target, UInt64 a6, bool a7, bool a8, bool a9, bool a10);
+extern RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue;
+
+typedef void(*_sub_140664870)(ActorProcessManager *_this, int a2);
+extern RelocAddr<_sub_140664870> sub_140664870;

@@ -26,33 +26,53 @@ namespace Config {
 		double worldChangedWaitTime = 0.4;
 
 		bool enableActorShove = true;
+		bool enableShoveFromFurniture = true;
+		bool playShovePhysicsSound = true;
 		float shoveSpeedThreshold = 2.2f;
 		float shoveRumbleIntensity = 0.2f;
 		float shoveRumbleDuration = 0.15f;
 		float shoveAggressionImpact = 2.5f;
-		double shoveAggressionWaitTime = 1.f;
-		double shoveCooldown = 1.5;
-		double collisionCooldownTime = 0.5;
+		double shoveCooldown = 2.0;
+		double collisionCooldownTime = 0.7;
+		std::vector<UInt32> shoveTopicInfos = {
+			0x0006CB2C, // Be careful!
+			0x0006CB2D, // Hey, watch it!
+			0x0006AE39, // What are you doing that for?
+			0x0007038E, // What do you think you're doing?
+			0x0002A460, // Hey! Hands off!
+		};
 
 		bool enableBump = true;
 		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
+		float shoveStaggerMagnitude = 0.25f;
 		double aggressionDialogueCooldownTime = 1.8;
 		double aggressionBumpCooldownTime = 1.0;
-		double aggressionBumpWaitTime = 0.5;
-		double aggressionFurnitureExitCooldownTime = 3.0;
 		double aggressionStopDelay = 2.0;
-		float aggressionRequiredGrabTimeBump = 0.1f;
-		float aggressionRequiredGrabTimeLow = 0.25f;
+		float aggressionRequiredGrabTimeLow = 0.15f;
 		float aggressionRequiredGrabTimeLowFallback = 1.5f;
 		float aggressionRequiredGrabTimeHigh = 3.5f;
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;
 		float aggressionStopCombatAlarmDistance = 1500.f;
 		int aggressionMaxRelationshipRank = 0; // Acquantaince
-		int aggressionDialogueSubtypeLow = 88; // pickpocketTopic
-		int aggressionDialogueSubtypeHigh = 49; // trespass
+		std::vector<UInt32> aggressionLowTopicInfos = {
+			0x0006CB2C, // Be careful!
+			0x0006CB2D, // Hey, watch it!
+			0x0006CB2E, // Don't do that
+			0x0006AE39, // What are you doing that for?
+			0x0006CB30, // Keep your hands to yourself
+			0x000142B7, // Hands off
+			0x0002A460, // Hey! Hands off!
+//			0x000142BB, // Don't even think about it
+		};
+		std::vector<UInt32> aggressionHighTopicInfos = {
+			0x000BABE1, // I'm warning you, back off!
+			0x000D3E92, // Get away from me
+			0x000BABE0, // That's close enough
+			0x0007038E, // What do you think you're doing?
+		};
 
 		bool doSpeedReduction = true;
 		float smallRaceSpeedReduction = 35.f;
