@@ -47,11 +47,13 @@ namespace Config {
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
 		float shoveStaggerMagnitude = 0.25f;
-		double aggressionDialogueCooldownTime = 1.8;
 		double aggressionBumpCooldownTime = 1.0;
 		double aggressionStopDelay = 2.0;
-		float aggressionRequiredGrabTimeLow = 0.15f;
-		float aggressionRequiredGrabTimeLowFallback = 1.5f;
+		double aggressionDialogueInitMaxTime = 0.15f;
+		double aggressionDialogueTimerMaxDeviation = 0.1f;
+		double aggressionDialogueCooldownFallback = 1.8;
+		double aggressionDialogueCooldown = 0.2f;
+		float aggressionRequiredGrabTimeLow = 0.2f;
 		float aggressionRequiredGrabTimeHigh = 3.5f;
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;

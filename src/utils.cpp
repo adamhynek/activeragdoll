@@ -911,6 +911,27 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
 	sub_140664870(process, 0);
 }
 
+TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1, UInt32 exclude2)
+{
+	int numTopics = topicInfoIDs.size();
+	UInt32 formID;
+	int i = 0;
+	do {
+		int random = (int)(GetRandomNumberInRange(0.f, 0.9999f) * numTopics);
+		if (random < 0) random = 0;
+		if (random >= numTopics) random = numTopics - 1;
+		formID = topicInfoIDs[random];
+		++i;
+	} while ((formID == exclude1 || formID == exclude2) && i < 30);
+
+	if (TESForm *form = LookupFormByID(formID)) {
+		if (TESTopicInfo *topicInfo = DYNAMIC_CAST(form, TESForm, TESTopicInfo)) {
+			return topicInfo;
+		}
+	}
+	return nullptr;
+}
+
 class IsInFactionVisitor : public Actor::FactionVisitor
 {
 public:

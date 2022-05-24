@@ -1440,27 +1440,6 @@ void PrePhysicsStepCallback(void *world)
 }
 
 
-TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude)
-{
-	int numTopics = topicInfoIDs.size();
-	UInt32 formID;
-	int i = 0;
-	do {
-		int random = (int)(GetRandomNumberInRange(0.f, 0.9999f) * numTopics);
-		if (random < 0) random = 0;
-		if (random >= numTopics) random = numTopics - 1;
-		formID = topicInfoIDs[random];
-		++i;
-	} while (formID == exclude && i < 100);
-
-	if (TESForm *form = LookupFormByID(formID)) {
-		if (TESTopicInfo *topicInfo = DYNAMIC_CAST(form, TESForm, TESTopicInfo)) {
-			return topicInfo;
-		}
-	}
-	return nullptr;
-}
-
 struct NPCData
 {
 	enum class State
@@ -1480,6 +1459,10 @@ struct NPCData
 	double waitDuration = 0.0;
 	float accumulatedGrabbedTime = 0.f;
 	UInt32 lastSaidTopic = 0;
+	UInt32 secondLastSaidTopic = 0;
+	float lastSaidDialogueDuration = -1.f;
+	float lastVoiceTimer = -1.f;
+	bool isSpeaking = false;
 	bool isGrabbed = false;
 	bool wasGrabbed = false;
 	bool isTouched = false;
@@ -1489,8 +1472,10 @@ struct NPCData
 	{
 		if (Actor_IsInRagdollState(character)) return;
 
-		if (force || g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueCooldownTime) {
-			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopic)) {
+		float dialogueCooldown = lastSaidDialogueDuration != -1.f ? lastSaidDialogueDuration + Config::options.aggressionDialogueCooldown : Config::options.aggressionDialogueCooldownFallback;
+
+		if (force || g_currentFrameTime - dialogueTime > dialogueCooldown) {
+			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopic, secondLastSaidTopic)) {
 #ifdef _DEBUG
 				TESFullName *name = DYNAMIC_CAST(character->baseForm, TESForm, TESFullName);
 				_MESSAGE("%s says: %x", name->name, topicInfo->formID);
@@ -1501,6 +1486,7 @@ struct NPCData
 				}
 				ActorProcess_SayTopicInfo(character->processManager, character, (TESTopic *)topicInfo->unk14, topicInfo, 0, 0, 1, 0);
 
+				secondLastSaidTopic = lastSaidTopic;
 				lastSaidTopic = topicInfo->formID;
 			}
 			dialogueTime = g_currentFrameTime;
@@ -1523,14 +1509,22 @@ struct NPCData
 
 	void StateUpdate(Character *character, bool isShoved)
 	{
+		float voiceTimer = character->unk108;
+		if (!isSpeaking && voiceTimer != -1.f && g_currentFrameTime - dialogueTime <= Config::options.aggressionDialogueInitMaxTime) {
+			// Just started speaking after us making the actor speak
+			lastSaidDialogueDuration = voiceTimer;
+			isSpeaking = true;
+		}
+		else if (isSpeaking && (voiceTimer == -1.f || (lastVoiceTimer != -1.f && fabs(voiceTimer - lastVoiceTimer) > Config::options.aggressionDialogueTimerMaxDeviation))) {
+			// Just stopped speaking or started saying something else
+			isSpeaking = false;
+		}
+
 		float deltaTime = *g_deltaTime;
 
 		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
 		isTouched = g_contactListener.collidedRefs.count(character);
-
-		bool isNewGrab = !wasGrabbed && isGrabbed;
-		bool isNewTouch = !wasTouched && isTouched;
-		bool isNewInteraction = isNewGrab || isNewTouch || isShoved;
+		bool isInteractedWith = isGrabbed || isTouched || isShoved;
 
 		PlayerCharacter *player = *g_thePlayer;
 
@@ -1559,8 +1553,6 @@ struct NPCData
 				if (!isGrabbed && ShouldBumpActor(character)) {
 					TryBump(character, false);
 				}
-				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionLowTopicInfos);
-				isNewInteraction = false;
 				state = State::SomewhatMiffed;
 			}
 		}
@@ -1576,12 +1568,10 @@ struct NPCData
 				if (ShouldBumpActor(character)) {
 					TryBump(character, Config::options.stopUsingFurnitureOnHighAggression, true);
 				}
-				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionHighTopicInfos);
-				isNewInteraction = false;
 				state = State::VeryMiffed;
 			}
-			else if (isNewInteraction) {
-				// They were just re-grabbed - make them say something but not too often
+			else if (isInteractedWith) {
+				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionLowTopicInfos, isShoved);
 			}
 		}
@@ -1600,8 +1590,8 @@ struct NPCData
 					state = State::Assaulted;
 				}
 			}
-			else if (isNewInteraction) {
-				// They were just re-grabbed - make them say something but not too often
+			else if (isInteractedWith) {
+				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionHighTopicInfos, isShoved);
 			}
 		}
@@ -1628,6 +1618,7 @@ struct NPCData
 
 		wasGrabbed = isGrabbed;
 		wasTouched = isTouched;
+		lastVoiceTimer = voiceTimer;
 	}
 };
 
