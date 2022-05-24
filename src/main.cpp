@@ -2123,6 +2123,76 @@ void UpdateSpeedReduction()
 	}
 }
 
+bool UpdateActorShove(Actor *actor)
+{
+	PlayerCharacter *player = *g_thePlayer;
+
+	if (!Config::options.enableActorShove) return false;
+	if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) return false;
+	if (Config::options.disableShoveWhileWeaponsDrawn && player->actorState.IsWeaponDrawn()) return false;
+
+	for (int isLeft = 0; isLeft < 2; ++isLeft) {
+		ControllerVelocityData &velocityData = g_controllerVelocities[isLeft];
+
+		if (velocityData.avgSpeed > Config::options.shoveSpeedThreshold) {
+			if (g_contactListener.handCollidedRefs.count(actor) && ShouldShoveActor(actor)) {
+				if (!g_shovedActors.count(actor)) {
+					float staminaCost = Config::options.shoveStaminaCost;
+					float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
+					if (staminaBeforeHit > 0.f || staminaCost <= 0.f) {
+						// Shove costs no stamina, or we have enough stamina
+						DamageAV(player, 26, -staminaCost);
+
+						if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
+							// Out of stamina after the shove
+							if (ActorProcessManager *process = player->processManager) {
+								float regenRate = Actor_GetActorValueRegenRate(player, 26);
+								ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
+								FlashHudMenuMeter(26);
+							}
+						}
+
+						NiPoint3 shoveDirection = VectorNormalized(velocityData.avgVelocity);
+						StaggerActor(actor, shoveDirection, Config::options.shoveStaggerMagnitude);
+
+						if (Config::options.playShovePhysicsSound) {
+							if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
+								if (NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone]) {
+									PlayPhysicsSound(rigidBody->hkBody->getCollidableRw(), handNode->m_worldTransform.pos, true);
+								}
+							}
+						}
+					}
+					else {
+						// Not enough stamina
+						if (Config::options.playSoundOnShoveNoStamina) {
+							if (BGSSoundDescriptorForm *shoutFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+								PlaySoundAtNode(shoutFailSound, player->GetNiNode(), {});
+							}
+						}
+						FlashHudMenuMeter(26);
+					}
+
+					PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
+					// Ignore future contact points for a bit to make things less janky
+					g_contactListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
+
+					if (g_controllerVelocities[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
+						PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
+						g_contactListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
+					}
+
+					g_shovedActors[actor] = g_currentFrameTime;
+
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
 void ResetObjects()
 {
 	g_npcs.clear();
@@ -2448,42 +2518,7 @@ void ProcessHavokHitJobsHook()
 			Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
 			if (!actor || !actor->GetNiNode()) continue;
 
-			bool didShove = false;
-			if (Config::options.enableActorShove && !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player)) {
-				for (int isLeft = 0; isLeft < 2; ++isLeft) {
-					ControllerVelocityData &velocityData = g_controllerVelocities[isLeft];
-
-					if (velocityData.avgSpeed > Config::options.shoveSpeedThreshold) {
-						if (g_contactListener.handCollidedRefs.count(actor) && ShouldShoveActor(actor)) {
-							if (!g_shovedActors.count(actor)) {
-								NiPoint3 shoveDirection = VectorNormalized(velocityData.avgVelocity);
-								StaggerActor(actor, shoveDirection, Config::options.shoveStaggerMagnitude);
-
-								if (Config::options.playShovePhysicsSound) {
-									if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
-										if (NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone]) {
-											PlayPhysicsSound(rigidBody->hkBody->getCollidableRw(), handNode->m_worldTransform.pos, true);
-										}
-									}
-								}
-
-								PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
-								// Ignore future contact points for a bit to make things less janky
-								g_contactListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
-
-								if (g_controllerVelocities[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
-									PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
-									g_contactListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
-								}
-
-								g_shovedActors[actor] = g_currentFrameTime;
-
-								didShove = true;
-							}
-						}
-					}
-				}
-			}
+			bool didShove = UpdateActorShove(actor);
 
 			TryUpdateNPCState(actor, didShove);
 

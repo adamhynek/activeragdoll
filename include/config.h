@@ -26,9 +26,13 @@ namespace Config {
 		double worldChangedWaitTime = 0.4;
 
 		bool enableActorShove = true;
+		bool disableShoveWhileWeaponsDrawn = true;
 		bool enableShoveFromFurniture = true;
 		bool playShovePhysicsSound = true;
-		float shoveSpeedThreshold = 2.2f;
+		bool playSoundOnShoveNoStamina = true;
+		float shoveStaggerMagnitude = 0.25f;
+		float shoveStaminaCost = 40.f;
+		float shoveSpeedThreshold = 2.5f;
 		float shoveRumbleIntensity = 0.2f;
 		float shoveRumbleDuration = 0.15f;
 		float shoveAggressionImpact = 2.5f;
@@ -46,7 +50,6 @@ namespace Config {
 		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
-		float shoveStaggerMagnitude = 0.25f;
 		double aggressionBumpCooldownTime = 1.0;
 		double aggressionStopDelay = 2.0;
 		double aggressionDialogueInitMaxTime = 0.15f;
