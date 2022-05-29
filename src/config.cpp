@@ -129,11 +129,60 @@ namespace Config {
 
 		if (!ReadDouble("worldChangedWaitTime", options.worldChangedWaitTime)) return false;
 
+		if (!ReadBool("enableActorShove", options.enableActorShove)) return false;
+		if (!ReadBool("disableShoveWhileWeaponsDrawn", options.disableShoveWhileWeaponsDrawn)) return false;
+		if (!ReadBool("enableShoveFromFurniture", options.enableShoveFromFurniture)) return false;
+		if (!ReadBool("playShovePhysicsSound", options.playShovePhysicsSound)) return false;
+		if (!ReadBool("playSoundOnShoveNoStamina", options.playSoundOnShoveNoStamina)) return false;
+		if (!ReadFloat("shoveStaggerMagnitude", options.shoveStaggerMagnitude)) return false;
+		if (!ReadFloat("shoveStaminaCost", options.shoveStaminaCost)) return false;
+		if (!ReadFloat("shoveSpeedThreshold", options.shoveSpeedThreshold)) return false;
+		if (!ReadFloat("shoveRumbleIntensity", options.shoveRumbleIntensity)) return false;
+		if (!ReadFloat("shoveRumbleDuration", options.shoveRumbleDuration)) return false;
+		if (!ReadFloat("shoveAggressionImpact", options.shoveAggressionImpact)) return false;
+		if (!ReadDouble("shoveCooldown", options.shoveCooldown)) return false;
+		if (!ReadDouble("collisionCooldownTime", options.collisionCooldownTime)) return false;
+		if (!ReadFormArray("shoveTopicInfos", options.shoveTopicInfos)) return false;
+
+
+		if (!ReadBool("enableBump", options.enableBump)) return false;
+		if (!ReadBool("doAggression", options.doAggression)) return false;
+		if (!ReadBool("followersSkipAggression", options.followersSkipAggression)) return false;
+		if (!ReadBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) return false;
+		if (!ReadDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) return false;
+		if (!ReadDouble("aggressionStopDelay", options.aggressionStopDelay)) return false;
+		if (!ReadDouble("aggressionDialogueInitMaxTime", options.aggressionDialogueInitMaxTime)) return false;
+		if (!ReadDouble("aggressionDialogueCooldownFallback", options.aggressionDialogueCooldownFallback)) return false;
+		if (!ReadDouble("aggressionDialogueCooldown", options.aggressionDialogueCooldown)) return false;
+		if (!ReadFloat("aggressionRequiredGrabTimeLow", options.aggressionRequiredGrabTimeLow)) return false;
+		if (!ReadFloat("aggressionRequiredGrabTimeHigh", options.aggressionRequiredGrabTimeHigh)) return false;
+		if (!ReadFloat("aggressionRequiredGrabTimeAssault", options.aggressionRequiredGrabTimeAssault)) return false;
+		if (!ReadFloat("aggressionMaxAccumulatedGrabTime", options.aggressionMaxAccumulatedGrabTime)) return false;
+		if (!ReadFloat("aggressionStopCombatAlarmDistance", options.aggressionStopCombatAlarmDistance)) return false;
+		if (!ReadInt("aggressionMaxRelationshipRank", options.aggressionMaxRelationshipRank)) return false;
+		if (!ReadFormArray("aggressionLowTopicInfos", options.aggressionLowTopicInfos)) return false;
+		if (!ReadFormArray("aggressionHighTopicInfos", options.aggressionHighTopicInfos)) return false;
+
+		if (!ReadBool("doSpeedReduction", options.doSpeedReduction)) return false;
+		if (!ReadFloat("smallRaceSpeedReduction", options.smallRaceSpeedReduction)) return false;
+		if (!ReadFloat("mediumRaceSpeedReduction", options.mediumRaceSpeedReduction)) return false;
+		if (!ReadFloat("largeRaceSpeedReduction", options.largeRaceSpeedReduction)) return false;
+		if (!ReadFloat("extraLargeRaceSpeedReduction", options.extraLargeRaceSpeedReduction)) return false;
+		if (!ReadFloat("maxSpeedReduction", options.maxSpeedReduction)) return false;
+		if (!ReadFloat("speedReductionHealthInfluence", options.speedReductionHealthInfluence)) return false;
+		if (!ReadFloat("followerSpeedReductionMultiplier", options.followerSpeedReductionMultiplier)) return false;
+
+		if (!ReadBool("followersSkipStaminaCost", options.followersSkipStaminaCost)) return false;
+		if (!ReadBool("playSoundOnGrabStaminaDepletion", options.playSoundOnGrabStaminaDepletion)) return false;
+		if (!ReadFloat("grabbedActorStaminaCost", options.grabbedActorStaminaCost)) return false;
+		if (!ReadFloat("grabbedActorStaminaCostHealthInfluence", options.grabbedActorStaminaCostHealthInfluence)) return false;
+
 		if (!ReadBool("ragdollOnGrab", options.ragdollOnGrab)) return false;
 		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;
 		if (!ReadFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) return false;
 
 		if (!ReadBool("doKeepOffset", options.doKeepOffset)) return false;
+		if (!ReadBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) return false;
 		if (!ReadDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) return false;
 
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
@@ -167,6 +216,9 @@ namespace Config {
 
 		if (!ReadBool("stopRagdollNonSelfCollisionForActorsWithVehicle", options.stopRagdollNonSelfCollisionForActorsWithVehicle)) return false;
 
+		if (!ReadBool("stopAggressionForCloseActors", options.stopAggressionForCloseActors)) return false;
+		if (!ReadBool("stopAggressionForActorsWithVehicle", options.stopAggressionForActorsWithVehicle)) return false;
+
 		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
 		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
 		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
@@ -177,6 +229,7 @@ namespace Config {
 		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
 		if (!ReadBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) return false;
 		if (!ReadBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) return false;
+		if (!ReadBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) return false;
 		if (!ReadBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) return false;
 		if (!ReadBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) return false;
 		if (!ReadBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) return false;
@@ -227,6 +280,7 @@ namespace Config {
 
 		if (!ReadBool("resizePlayerCharController", options.resizePlayerCharController)) return false;
 		if (!ReadBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) return false;
+		if (!ReadFloat("playerCharControllerBottomRingMaxHeightAdjustment", options.playerCharControllerBottomRingMaxHeightAdjustment)) return false;
 		if (!ReadBool("resizePlayerCapsule", options.resizePlayerCapsule)) return false;
 		if (!ReadBool("centerPlayerCapsule", options.centerPlayerCapsule)) return false;
 		if (!ReadFloat("playerCharControllerRadius", options.playerCharControllerRadius)) return false;
