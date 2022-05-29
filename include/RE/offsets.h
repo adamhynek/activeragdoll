@@ -556,6 +556,18 @@ extern RelocAddr<_Actor_sub_140600400> Actor_sub_140600400;
 typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);
 extern RelocAddr<_GetHeadingFromVector> GetHeadingFromVector;
 
+typedef void(*_ActorProcess_ResetLipSync)(ActorProcessManager *_this, Actor *actor);
+extern RelocAddr<_ActorProcess_ResetLipSync> ActorProcess_ResetLipSync;
+
+typedef void(*_ActorProcess_ClearGreetTopic)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_ClearGreetTopic> ActorProcess_ClearGreetTopic;
+
+typedef void(*_ActorProcess_ClearLookAt2)(ActorProcessManager *_this, bool dontValidateTarget);
+extern RelocAddr<_ActorProcess_ClearLookAt2> ActorProcess_ClearLookAt2;
+
+typedef void(*_ActorProcess_SetLookAt1)(ActorProcessManager *_this, Actor *actor);
+extern RelocAddr<_ActorProcess_SetLookAt1> ActorProcess_SetLookAt1;
+
 typedef void(*_ActorProcess_PlayIdle)(ActorProcessManager *_this, Actor *source, int defaultObject, Actor *target, bool a5, bool a6, TESIdleForm *idle);
 extern RelocAddr<_ActorProcess_PlayIdle> ActorProcess_PlayIdle;
 

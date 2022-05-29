@@ -113,6 +113,8 @@ void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, 
 void ExitFurniture(Actor *actor);
 bool HasKeepOffsetInterface(Actor * actor);
 void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue);
+void Actor_SayToEx(Actor *source, Actor *target, TESTopicInfo *topicInfo);
+inline TESTopic * GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
 TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1 = 0, UInt32 exclude2 = 0);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 bool IsActorUsingFurniture(Actor *actor);

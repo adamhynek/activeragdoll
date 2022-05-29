@@ -50,10 +50,9 @@ namespace Config {
 		bool doAggression = true;
 		bool followersSkipAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
-		double aggressionBumpCooldownTime = 1.0;
+		double aggressionBumpCooldownTime = 2.0;
 		double aggressionStopDelay = 2.0;
-		double aggressionDialogueInitMaxTime = 0.15f;
-		double aggressionDialogueTimerMaxDeviation = 0.1f;
+		double aggressionDialogueInitMaxTime = 0.2f;
 		double aggressionDialogueCooldownFallback = 1.8;
 		double aggressionDialogueCooldown = 0.2f;
 		float aggressionRequiredGrabTimeLow = 0.2f;
@@ -70,6 +69,7 @@ namespace Config {
 			0x0006CB30, // Keep your hands to yourself
 			0x000142B7, // Hands off
 			0x0002A460, // Hey! Hands off!
+			0x000142BA, // Watch what you're doing
 //			0x000142BB, // Don't even think about it
 		};
 		std::vector<UInt32> aggressionHighTopicInfos = {
@@ -86,7 +86,7 @@ namespace Config {
 		float extraLargeRaceSpeedReduction = 85.f;
 		float maxSpeedReduction = 85.f;
 		float speedReductionHealthInfluence = 0.5f;
-		float followerSpeedReductionMultiplier = 0.25f;
+		float followerSpeedReductionMultiplier = 0.4f;
 
 		bool followersSkipStaminaCost = true;
 		bool playSoundOnGrabStaminaDepletion = true;
@@ -196,6 +196,7 @@ namespace Config {
 
 		bool resizePlayerCharController = true;
 		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;
+		float playerCharControllerBottomRingMaxHeightAdjustment = 0.25f; // 0.05f is the max to not clip through Markarth's doors
 		bool resizePlayerCapsule = true;
 		bool centerPlayerCapsule = true;
 		float playerCharControllerRadius = 0.15f;

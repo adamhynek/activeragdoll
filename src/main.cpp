@@ -1458,8 +1458,9 @@ struct NPCData
 	double waitTime = 0.0;
 	double waitDuration = 0.0;
 	float accumulatedGrabbedTime = 0.f;
-	UInt32 lastSaidTopic = 0;
-	UInt32 secondLastSaidTopic = 0;
+	TESTopic *lastSaidTopic = nullptr;
+	UInt32 lastSaidTopicID = 0;
+	UInt32 secondLastSaidTopicID = 0;
 	float lastSaidDialogueDuration = -1.f;
 	float lastVoiceTimer = -1.f;
 	bool isSpeaking = false;
@@ -1472,22 +1473,18 @@ struct NPCData
 	{
 		if (Actor_IsInRagdollState(character)) return;
 
-		float dialogueCooldown = lastSaidDialogueDuration != -1.f ? lastSaidDialogueDuration + Config::options.aggressionDialogueCooldown : Config::options.aggressionDialogueCooldownFallback;
-
-		if (force || g_currentFrameTime - dialogueTime > dialogueCooldown) {
-			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopic, secondLastSaidTopic)) {
+		if (force || (!isSpeaking && g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueInitMaxTime)) {
+			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopicID, secondLastSaidTopicID)) {
 #ifdef _DEBUG
 				TESFullName *name = DYNAMIC_CAST(character->baseForm, TESForm, TESFullName);
 				_MESSAGE("%s says: %x", name->name, topicInfo->formID);
 #endif // _DEBUG
 
-				if (Actor_IsTalking(character)) {
-					get_vfunc<_Actor_PauseCurrentDialogue>(character, 0x4F)(character);
-				}
-				ActorProcess_SayTopicInfo(character->processManager, character, (TESTopic *)topicInfo->unk14, topicInfo, 0, 0, 1, 0);
+				Actor_SayToEx(character, *g_thePlayer, topicInfo);
 
-				secondLastSaidTopic = lastSaidTopic;
-				lastSaidTopic = topicInfo->formID;
+				secondLastSaidTopicID = lastSaidTopicID;
+				lastSaidTopicID = topicInfo->formID;
+				lastSaidTopic = (TESTopic *)topicInfo->unk14;
 			}
 			dialogueTime = g_currentFrameTime;
 		}
@@ -1509,13 +1506,16 @@ struct NPCData
 
 	void StateUpdate(Character *character, bool isShoved)
 	{
+		TESTopic *currentTopic = GetCurrentTopic(character);
 		float voiceTimer = character->unk108;
-		if (!isSpeaking && voiceTimer != -1.f && g_currentFrameTime - dialogueTime <= Config::options.aggressionDialogueInitMaxTime) {
+		float dialogueCooldown = isSpeaking ? lastSaidDialogueDuration + Config::options.aggressionDialogueCooldown : Config::options.aggressionDialogueCooldownFallback;
+
+		if (!isSpeaking && currentTopic == lastSaidTopic && voiceTimer != -1.f) {
 			// Just started speaking after us making the actor speak
 			lastSaidDialogueDuration = voiceTimer;
 			isSpeaking = true;
 		}
-		else if (isSpeaking && (voiceTimer == -1.f || (lastVoiceTimer != -1.f && fabs(voiceTimer - lastVoiceTimer) > Config::options.aggressionDialogueTimerMaxDeviation))) {
+		else if (isSpeaking && (voiceTimer == -1.f || g_currentFrameTime - dialogueTime > dialogueCooldown || currentTopic != lastSaidTopic)) {
 			// Just stopped speaking or started saying something else
 			isSpeaking = false;
 		}
@@ -1550,9 +1550,6 @@ struct NPCData
 				state = State::Hostile;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeLow) {
-				if (!isGrabbed && ShouldBumpActor(character)) {
-					TryBump(character, false);
-				}
 				state = State::SomewhatMiffed;
 			}
 		}
@@ -1565,14 +1562,14 @@ struct NPCData
 				state = State::Normal;
 			}
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
-				if (ShouldBumpActor(character)) {
-					TryBump(character, Config::options.stopUsingFurnitureOnHighAggression, true);
-				}
 				state = State::VeryMiffed;
 			}
 			else if (isInteractedWith) {
 				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionLowTopicInfos, isShoved);
+				if (ShouldBumpActor(character) && !IsActorUsingFurniture(character)) {
+					TryBump(character, false);
+				}
 			}
 		}
 
@@ -1593,6 +1590,9 @@ struct NPCData
 			else if (isInteractedWith) {
 				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionHighTopicInfos, isShoved);
+				if (ShouldBumpActor(character)) {
+					TryBump(character, Config::options.stopUsingFurnitureOnHighAggression);
+				}
 			}
 		}
 
@@ -2327,9 +2327,16 @@ void ProcessHavokHitJobsHook()
 
 						float zOld = bottomRingVert.z - bottomVert.z;
 						float rOld = VectorLength({ bottomRingVert.x, bottomRingVert.y });
+						float oldSlope = zOld / rOld;
 
 						float rNew = Config::options.playerCharControllerRadius;
-						float zNew = rNew * (zOld / rOld);
+						float zNew = rNew * oldSlope;
+						float zAdjustment = zNew - zOld;
+
+						float maxAdjustment = Config::options.playerCharControllerBottomRingMaxHeightAdjustment;
+						zAdjustment = std::clamp(zAdjustment, -maxAdjustment, maxAdjustment);
+						zNew = zOld + zAdjustment;
+
 						float newBottomRingHeight = bottomVert.z + zNew;
 
 						for (int i : {
@@ -2344,7 +2351,7 @@ void ProcessHavokHitJobsHook()
 					// Shrink the two rings of the charcontroller shape by moving the rings' vertices inwards
 					for (int i : {
 						1, 3, 4, 5, 7, 11, 13, 16, // top ring
-							0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+						0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
 					}) {
 						NiPoint3 vert = HkVectorToNiPoint(verts[i]);
 						NiPoint3 newVert = vert;
