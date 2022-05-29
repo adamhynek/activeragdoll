@@ -428,7 +428,7 @@ struct PackageLocation
 	};
 	static_assert(sizeof(Data) == 0x8);
 
-	void *vtbl; // 00 
+	void *vtbl; // 00
 	UInt8 locType; // 08
 	UInt32 rad; // 0C
 	Data data; // 10

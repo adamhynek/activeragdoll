@@ -106,6 +106,7 @@ KnockState GetActorKnockState(Actor *actor);
 inline bool IsReanimating(Actor *actor) { return (actor->actorState.flags08 >> 4) & 1; }
 inline bool IsSwimming(Actor *actor) { return (actor->actorState.flags04 >> 10) & 1; }
 inline bool IsStaggered(Actor *actor) { return (actor->actorState.flags08 >> 13) & 1; }
+inline bool IsSleeping(Actor *actor) { return ((actor->actorState.flags04 >> 14) & 0xF) == 7; }
 bool IsActorGettingUp(Actor *actor);
 float GetAVPercentage(Actor *actor, UInt32 av);
 bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);

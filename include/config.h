@@ -42,7 +42,6 @@ namespace Config {
 			0x0006CB2C, // Be careful!
 			0x0006CB2D, // Hey, watch it!
 			0x0006AE39, // What are you doing that for?
-			0x0007038E, // What do you think you're doing?
 			0x0002A460, // Hey! Hands off!
 		};
 
@@ -62,7 +61,6 @@ namespace Config {
 		float aggressionStopCombatAlarmDistance = 1500.f;
 		int aggressionMaxRelationshipRank = 0; // Acquantaince
 		std::vector<UInt32> aggressionLowTopicInfos = {
-			0x0006CB2C, // Be careful!
 			0x0006CB2D, // Hey, watch it!
 			0x0006CB2E, // Don't do that
 			0x0006AE39, // What are you doing that for?

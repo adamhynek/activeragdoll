@@ -1471,7 +1471,7 @@ struct NPCData
 
 	void TryTriggerDialogue(Character *character, std::vector<UInt32> &topicInfoIDs, bool force = false)
 	{
-		if (Actor_IsInRagdollState(character)) return;
+		if (Actor_IsInRagdollState(character) || IsSleeping(character)) return;
 
 		if (force || (!isSpeaking && g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueInitMaxTime)) {
 			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopicID, secondLastSaidTopicID)) {
@@ -1532,7 +1532,7 @@ struct NPCData
 		bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
 		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
 		
-		if (isGrabbed || isTouched || isShoved) {
+		if (isInteractedWith) {
 			if (!Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !sharesPlayerPosition && !isInVehicle) {
 				accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
 				lastGrabbedTouchedTime = g_currentFrameTime;
