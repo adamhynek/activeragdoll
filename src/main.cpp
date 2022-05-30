@@ -1507,6 +1507,8 @@ struct NPCData
 
 	void StateUpdate(Character *character, bool isShoved)
 	{
+		if (character->IsDead(1)) return;
+
 		TESTopic *currentTopic = GetCurrentTopic(character);
 		float voiceTimer = character->unk108;
 		float dialogueCooldown = isSpeaking ? lastSaidDialogueDuration + Config::options.aggressionDialogueCooldown : Config::options.aggressionDialogueCooldownFallback;
