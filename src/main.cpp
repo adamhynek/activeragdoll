@@ -952,7 +952,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 
-		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC)) {
+		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC || layerA == BGSCollisionLayer::kCollisionLayer_DeadBip) &&
+			(layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC || layerB == BGSCollisionLayer::kCollisionLayer_DeadBip)) {
 			if (Config::options.overrideSoundVelForRagdollCollisions) {
 				// Disable collision sounds for this frame
 				*g_fMinSoundVel = Config::options.ragdollSoundVel;
