@@ -123,6 +123,8 @@ inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
 bool IsInFaction(Actor *actor, TESFaction *faction);
 bool IsCalmed(Actor *actor);
+NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);
+bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle);
 
 constexpr int GetDialogueTypeFromSubtype(int subtype)
 {

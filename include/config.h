@@ -60,6 +60,7 @@ namespace Config {
 		float aggressionRequiredGrabTimeAssault = 7.f;
 		float aggressionMaxAccumulatedGrabTime = 20.f;
 		float aggressionStopCombatAlarmDistance = 1500.f;
+		float aggressionRequiredHandWithinHmdConeHalfAngle = 75.f;
 		int aggressionMaxRelationshipRank = 0; // Acquantaince
 		std::vector<UInt32> aggressionLowTopicInfos = {
 			0x0006CB2D, // Hey, watch it!

@@ -1441,6 +1441,9 @@ void PrePhysicsStepCallback(void *world)
 }
 
 
+bool g_isRightHandAggressivelyPositioned = false;
+bool g_isLeftHandAggressivelyPositioned = false;
+
 struct NPCData
 {
 	enum class State
@@ -1465,10 +1468,6 @@ struct NPCData
 	float lastSaidDialogueDuration = -1.f;
 	float lastVoiceTimer = -1.f;
 	bool isSpeaking = false;
-	bool isGrabbed = false;
-	bool wasGrabbed = false;
-	bool isTouched = false;
-	bool wasTouched = false;
 
 	void TryTriggerDialogue(Character *character, std::vector<UInt32> &topicInfoIDs, bool force = false)
 	{
@@ -1527,8 +1526,8 @@ struct NPCData
 
 		float deltaTime = *g_deltaTime;
 
-		isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-		isTouched = g_contactListener.collidedRefs.count(character);
+		bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
+		bool isTouched = g_contactListener.collidedRefs.count(character) && (g_isRightHandAggressivelyPositioned || g_isLeftHandAggressivelyPositioned);
 		bool isInteractedWith = isGrabbed || isTouched || isShoved;
 
 		PlayerCharacter *player = *g_thePlayer;
@@ -1625,8 +1624,6 @@ struct NPCData
 			}
 		}
 
-		wasGrabbed = isGrabbed;
-		wasTouched = isTouched;
 		lastVoiceTimer = voiceTimer;
 	}
 };
@@ -2527,6 +2524,10 @@ void ProcessHavokHitJobsHook()
 	}
 
 	if (g_currentFrameTime - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
+
+	// Do this before any NPC state updates
+	g_isRightHandAggressivelyPositioned = IsHandWithinConeFromHmd(false, Config::options.aggressionRequiredHandWithinHmdConeHalfAngle);
+	g_isLeftHandAggressivelyPositioned = IsHandWithinConeFromHmd(true, Config::options.aggressionRequiredHandWithinHmdConeHalfAngle);
 
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];

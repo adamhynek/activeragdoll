@@ -160,6 +160,7 @@ namespace Config {
 		if (!ReadFloat("aggressionRequiredGrabTimeAssault", options.aggressionRequiredGrabTimeAssault)) return false;
 		if (!ReadFloat("aggressionMaxAccumulatedGrabTime", options.aggressionMaxAccumulatedGrabTime)) return false;
 		if (!ReadFloat("aggressionStopCombatAlarmDistance", options.aggressionStopCombatAlarmDistance)) return false;
+		if (!ReadFloat("aggressionRequiredHandWithinHmdConeHalfAngle", options.aggressionRequiredHandWithinHmdConeHalfAngle)) return false;
 		if (!ReadInt("aggressionMaxRelationshipRank", options.aggressionMaxRelationshipRank)) return false;
 		if (!ReadFormArray("aggressionLowTopicInfos", options.aggressionLowTopicInfos)) return false;
 		if (!ReadFormArray("aggressionHighTopicInfos", options.aggressionHighTopicInfos)) return false;

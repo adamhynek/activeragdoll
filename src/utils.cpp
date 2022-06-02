@@ -1008,3 +1008,30 @@ bool IsCalmed(Actor *actor)
 	magicTarget.ForEachActiveEffect(visitor);
 	return visitor.m_isCalm;
 }
+
+NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft)
+{
+	PlayerCharacter *player = *g_thePlayer;
+	if (!player->GetNiRootNode(1)) return nullptr;
+
+	return isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+}
+
+bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle)
+{
+	NiPointer<NiAVObject> handNode = GetFirstPersonHandNode(isLeft);
+	if (!handNode) return false;
+
+	NiPoint3 handPos = handNode->m_worldTransform.pos;
+
+	PlayerCharacter *player = *g_thePlayer;
+	NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
+	if (!hmdNode) return false;
+
+	NiPoint3 hmdPos = hmdNode->m_worldTransform.pos;
+	// Skyrim coords: +x: right vector, +y: forward vector, +z: up vector
+	NiPoint3 hmdForward = ForwardVector(hmdNode->m_worldTransform.rot);
+
+	float requiredDotProduct = cosf(halfAngle * 0.0174533f);
+	return DotProduct(VectorNormalized(handPos - hmdPos), hmdForward) >= requiredDotProduct;
+}
