@@ -981,3 +981,30 @@ bool IsInFaction(Actor *actor, TESFaction *faction)
 	actor->VisitFactions(visitor);
 	return visitor.isInFaction;
 }
+
+class IsCalmEffectVisitor : public MagicTarget::ForEachActiveEffectVisitor
+{
+public:
+	bool m_isCalm = false;
+
+	virtual BSContainer::ForEachResult Visit(ActiveEffect* effect)
+	{
+		if (MagicItem::EffectItem *effectItem = effect->effect) {
+			if (EffectSetting *effectSetting = effectItem->mgef) {
+				if (effectSetting->properties.archetype == EffectSetting::Properties::kArchetype_Calm) {
+					m_isCalm = true;
+					return BSContainer::ForEachResult::kAbort;
+				}
+			}
+		}
+		return BSContainer::ForEachResult::kContinue;
+	}
+};
+
+bool IsCalmed(Actor *actor)
+{
+	MagicTarget &magicTarget = actor->magicTarget;
+	IsCalmEffectVisitor visitor{};
+	magicTarget.ForEachActiveEffect(visitor);
+	return visitor.m_isCalm;
+}

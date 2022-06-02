@@ -1508,6 +1508,8 @@ struct NPCData
 	void StateUpdate(Character *character, bool isShoved)
 	{
 		if (character->IsDead(1)) return;
+		if (Config::options.followersSkipAggression && IsTeammate(character)) return;
+		if (RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
 
 		TESTopic *currentTopic = GetCurrentTopic(character);
 		float voiceTimer = character->unk108;
@@ -1534,12 +1536,16 @@ struct NPCData
 		// These two are to not do aggression if they are in... certain scenes...
 		bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
 		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
+		bool isSpecial = sharesPlayerPosition || isInVehicle;
 		
-		if (isInteractedWith) {
-			if (!Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !sharesPlayerPosition && !isInVehicle) {
-				accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
-				lastGrabbedTouchedTime = g_currentFrameTime;
-			}
+		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player);
+		bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
+
+		bool isAggressivelyInteractedWith = isInteractedWith && canPlayerAggress && !isSpecial && !isCalmed;
+
+		if (isAggressivelyInteractedWith) {
+			accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
+			lastGrabbedTouchedTime = g_currentFrameTime;
 		}
 		else if (g_currentFrameTime - lastGrabbedTouchedTime >= Config::options.aggressionStopDelay) {
 			accumulatedGrabbedTime -= deltaTime;
@@ -1567,7 +1573,7 @@ struct NPCData
 			else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
 				state = State::VeryMiffed;
 			}
-			else if (isInteractedWith) {
+			else if (isAggressivelyInteractedWith) {
 				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionLowTopicInfos, isShoved);
 				if (ShouldBumpActor(character) && !IsActorUsingFurniture(character)) {
@@ -1590,7 +1596,7 @@ struct NPCData
 					state = State::Assaulted;
 				}
 			}
-			else if (isInteractedWith) {
+			else if (isAggressivelyInteractedWith) {
 				// Constantly try to say something
 				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionHighTopicInfos, isShoved);
 				if (ShouldBumpActor(character)) {
@@ -1638,9 +1644,6 @@ void TryUpdateNPCState(Actor *actor, bool isShoved)
 		if (!race) return;
 		if (!race->keyword.HasKeyword(g_keyword_actorTypeNPC)) return;
 		if (race->editorId && Config::options.aggressionExcludeRaces.count(std::string_view(race->editorId))) return;
-
-		if (Config::options.followersSkipAggression && IsTeammate(actor)) return;
-		if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
 
 		g_npcs[actor] = NPCData{};
 	}
@@ -1996,6 +1999,8 @@ float GetGrabbedStaminaCost(Actor *actor)
 {
 	if (Config::options.followersSkipStaminaCost && IsTeammate(actor)) return 0.f;
 
+	if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.grabbedstaminaDrainMaxRelationshipRank) return 0.f;
+
 	if (Actor_IsInRagdollState(actor)) {
 		KnockState knockState = GetActorKnockState(actor);
 		bool isKnockedDown = knockState != KnockState::Normal && knockState != KnockState::GetUp; // knocked down and not getting up
@@ -2005,8 +2010,10 @@ float GetGrabbedStaminaCost(Actor *actor)
 		if (!isKnockedDown && !isReanimating) return 0.f;
 	}
 
+	bool isHostile = Actor_IsHostileToActor(actor, *g_thePlayer);
+	float initialCost = isHostile ? Config::options.grabbedActorHostileStaminaCost : Config::options.grabbedActorStaminaCost;
 	float healthPercent = std::clamp(GetAVPercentage(actor, 24), 0.f, 1.f);
-	float cost = Config::options.grabbedActorStaminaCost * (healthPercent * Config::options.grabbedActorStaminaCostHealthInfluence + (1.f - Config::options.grabbedActorStaminaCostHealthInfluence));
+	float cost = initialCost * (healthPercent * Config::options.grabbedActorStaminaCostHealthInfluence + (1.f - Config::options.grabbedActorStaminaCostHealthInfluence));
 
 	return cost;
 }

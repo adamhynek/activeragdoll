@@ -149,6 +149,7 @@ namespace Config {
 		if (!ReadBool("doAggression", options.doAggression)) return false;
 		if (!ReadBool("followersSkipAggression", options.followersSkipAggression)) return false;
 		if (!ReadBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) return false;
+		if (!ReadBool("calmedActorsDontAccumulateAggression", options.calmedActorsDontAccumulateAggression)) return false;
 		if (!ReadDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) return false;
 		if (!ReadDouble("aggressionStopDelay", options.aggressionStopDelay)) return false;
 		if (!ReadDouble("aggressionDialogueInitMaxTime", options.aggressionDialogueInitMaxTime)) return false;
@@ -175,7 +176,9 @@ namespace Config {
 		if (!ReadBool("followersSkipStaminaCost", options.followersSkipStaminaCost)) return false;
 		if (!ReadBool("playSoundOnGrabStaminaDepletion", options.playSoundOnGrabStaminaDepletion)) return false;
 		if (!ReadFloat("grabbedActorStaminaCost", options.grabbedActorStaminaCost)) return false;
+		if (!ReadFloat("grabbedActorHostileStaminaCost", options.grabbedActorHostileStaminaCost)) return false;
 		if (!ReadFloat("grabbedActorStaminaCostHealthInfluence", options.grabbedActorStaminaCostHealthInfluence)) return false;
+		if (!ReadInt("grabbedstaminaDrainMaxRelationshipRank", options.grabbedstaminaDrainMaxRelationshipRank)) return false;
 
 		if (!ReadBool("ragdollOnGrab", options.ragdollOnGrab)) return false;
 		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;

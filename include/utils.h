@@ -122,6 +122,7 @@ bool IsActorUsingFurniture(Actor *actor);
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
 bool IsInFaction(Actor *actor, TESFaction *faction);
+bool IsCalmed(Actor *actor);
 
 constexpr int GetDialogueTypeFromSubtype(int subtype)
 {

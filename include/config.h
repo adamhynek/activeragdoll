@@ -48,6 +48,7 @@ namespace Config {
 		bool enableBump = true;
 		bool doAggression = true;
 		bool followersSkipAggression = true;
+		bool calmedActorsDontAccumulateAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
 		double aggressionBumpCooldownTime = 2.0;
 		double aggressionStopDelay = 2.0;
@@ -88,8 +89,10 @@ namespace Config {
 
 		bool followersSkipStaminaCost = true;
 		bool playSoundOnGrabStaminaDepletion = true;
-		float grabbedActorStaminaCost = 10.f;
+		float grabbedActorStaminaCost = 3.f;
+		float grabbedActorHostileStaminaCost = 10.f;
 		float grabbedActorStaminaCostHealthInfluence = 0.8f;
+		int grabbedstaminaDrainMaxRelationshipRank = 1; // Friend
 
 		bool ragdollOnGrab = false;
 		bool ragdollSmallRacesOnGrab = true;
