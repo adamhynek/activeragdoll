@@ -45,6 +45,7 @@
 #include "higgsinterface001.h"
 #include "main.h"
 #include "blender.h"
+#include "menu_checker.h"
 
 
 // SKSE globals
@@ -744,8 +745,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 	std::map<std::pair<hkpRigidBody *, hkpRigidBody *>, int> activeCollisions{};
 	std::unordered_set<hkpRigidBody *> collidedRigidbodies{};
-	std::unordered_set<TESObjectREFR *> collidedRefs{};
-	std::unordered_set<TESObjectREFR *> handCollidedRefs{};
+	std::unordered_set<TESObjectREFR *> collidedRefs[2]{};
+	std::unordered_set<TESObjectREFR *> handCollidedRefs[2]{};
 
 	struct CooldownData
 	{
@@ -760,6 +761,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
+	}
+
+	inline bool IsCollided(TESObjectREFR *refr)
+	{
+		return collidedRefs[0].count(refr) || collidedRefs[1].count(refr);
 	}
 
 	NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, float impulseMult)
@@ -1190,47 +1196,38 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Clear out any collisions that are no longer active (or that were only removed, since we do events for any removes but only some adds)
 		collidedRigidbodies.clear();
-		collidedRefs.clear();
-		handCollidedRefs.clear();
+		for (int isLeft = 0; isLeft < 2; ++isLeft) {
+			collidedRefs[isLeft].clear();
+			handCollidedRefs[isLeft].clear();
+		}
 		for (auto it = activeCollisions.begin(); it != activeCollisions.end();) {
 			auto[pair, count] = *it;
 			if (count <= 0) {
 				it = activeCollisions.erase(it);
 			}
 			else {
-				auto[bodyA, bodyB] = pair;
-				hkpRigidBody *collidedBody = IsHiggsRigidBody(bodyA) ? bodyB : bodyA;
-				collidedRigidbodies.insert(collidedBody);
-
-				if (TESObjectREFR *ref = GetRefFromCollidable(collidedBody->getCollidable())) {
-					collidedRefs.insert(ref);
-
-					hkpRigidBody *collidingBody = collidedBody == bodyA ? bodyB : bodyA;
-					if (IsHandRigidBody(collidingBody)) {
-						handCollidedRefs.insert(ref);
-					}
-				}
-
 				++it;
 			}
 		}
 
 		// Now fill in the currently collided-with actors based on active collisions
 		for (auto[pair, count] : activeCollisions) {
-			auto[rigidBodyA, rigidBodyB] = pair;
+			auto[bodyA, bodyB] = pair;
+			hkpRigidBody *collidedBody = IsHiggsRigidBody(bodyA) ? bodyB : bodyA;
+			collidedRigidbodies.insert(collidedBody);
 
-			UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-			UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+			if (TESObjectREFR *collidedRef = GetRefFromCollidable(collidedBody->getCollidable())) {
+				hkpRigidBody *collidingBody = collidedBody == bodyA ? bodyB : bodyA;
+				bool isLeft = IsLeftRigidBody(collidingBody);
 
-			hkpRigidBody *hitRigidBody = layerA == g_higgsCollisionLayer ? rigidBodyB : rigidBodyA;
-			hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+				collidedRefs[isLeft].insert(collidedRef);
+				if (IsHandRigidBody(collidingBody)) {
+					handCollidedRefs[isLeft].insert(collidedRef);
+				}
 
-			NiPointer<TESObjectREFR> hitRefr = GetRefFromCollidable(&hitRigidBody->m_collidable);
-			if (hitRefr) {
-				bool isLeft = IsLeftRigidBody(hittingRigidBody);
-				if (hitCooldownTargets[isLeft].count(hitRefr)) {
+				if (hitCooldownTargets[isLeft].count(collidedRef)) {
 					// refr is still collided with, so refresh its hit cooldown
-					hitCooldownTargets[isLeft][hitRefr].stoppedCollidingTime = g_currentFrameTime;
+					hitCooldownTargets[isLeft][collidedRef].stoppedCollidingTime = g_currentFrameTime;
 				}
 			}
 		}
@@ -1443,6 +1440,7 @@ void PrePhysicsStepCallback(void *world)
 
 bool g_isRightHandAggressivelyPositioned = false;
 bool g_isLeftHandAggressivelyPositioned = false;
+bool g_isMenuOpen = false;
 
 struct NPCData
 {
@@ -1527,8 +1525,9 @@ struct NPCData
 		float deltaTime = *g_deltaTime;
 
 		bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-		bool isTouched = g_contactListener.collidedRefs.count(character) && (g_isRightHandAggressivelyPositioned || g_isLeftHandAggressivelyPositioned);
-		bool isInteractedWith = isGrabbed || isTouched || isShoved;
+		bool isTouchedRight = g_contactListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
+		bool isTouchedLeft = g_contactListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
+		bool isInteractedWith = isGrabbed || isTouchedLeft || isTouchedRight || isShoved;
 
 		PlayerCharacter *player = *g_thePlayer;
 
@@ -1537,7 +1536,7 @@ struct NPCData
 		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
 		bool isSpecial = sharesPlayerPosition || isInVehicle;
 		
-		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player);
+		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !g_isMenuOpen;
 		bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
 
 		bool isAggressivelyInteractedWith = isInteractedWith && canPlayerAggress && !isSpecial && !isCalmed;
@@ -1948,7 +1947,10 @@ struct KeepOffsetTask : TaskDelegate
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(source, refr)) {
 			if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-				Actor_KeepOffsetFromActor(actor, target, NiPoint3(0.f, 0.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 50.f);
+				NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+				// < PI -> clockwise, >= PI -> counter-clockwise?
+				//offsetAngle.z = fmodf(g_currentFrameTime, (M_PI * 2));
+				Actor_KeepOffsetFromActor(actor, target, NiPoint3(0.f, 0.f, 0.f), offsetAngle, 150.f, 50.f);
 			}
 		}
 	}
@@ -2142,7 +2144,7 @@ bool UpdateActorShove(Actor *actor)
 		ControllerVelocityData &velocityData = g_controllerVelocities[isLeft];
 
 		if (velocityData.avgSpeed > Config::options.shoveSpeedThreshold) {
-			if (g_contactListener.handCollidedRefs.count(actor) && ShouldShoveActor(actor)) {
+			if (g_contactListener.handCollidedRefs[isLeft].count(actor) && ShouldShoveActor(actor)) {
 				if (!g_shovedActors.count(actor)) {
 					float staminaCost = Config::options.shoveStaminaCost;
 					float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
@@ -2529,6 +2531,8 @@ void ProcessHavokHitJobsHook()
 	g_isRightHandAggressivelyPositioned = IsHandWithinConeFromHmd(false, Config::options.aggressionRequiredHandWithinHmdConeHalfAngle);
 	g_isLeftHandAggressivelyPositioned = IsHandWithinConeFromHmd(true, Config::options.aggressionRequiredHandWithinHmdConeHalfAngle);
 
+	g_isMenuOpen = MenuChecker::isGameStopped();
+
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
 		NiPointer<TESObjectREFR> refr;
@@ -2583,10 +2587,15 @@ void ProcessHavokHitJobsHook()
 									data.lastAttemptTime = g_currentFrameTime;
 								}
 							}
-							else if (!data.success) {
-								// To be sure, do a single additional attempt once we know the interface exists
-								g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
-								data.success = true;
+							else {
+								if (!data.success) {
+									// To be sure, do a single additional attempt once we know the interface exists
+									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+									data.success = true;
+								}
+								else { // KeepOffset interface exists and has succeeded
+									//GetAnimBoneIndex
+								}
 							}
 						}
 					}
@@ -2653,7 +2662,7 @@ void ProcessHavokHitJobsHook()
 							if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
 								(name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
 
-								if (g_contactListener.collidedRefs.count(actor) || isHeld) {
+								if (g_contactListener.IsCollided(actor) || isHeld) {
 									if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
 										g_selfCollidableBipedGroups.insert(collisionGroup);
 										UpdateCollisionFilterOnAllBones(actor);
@@ -3643,6 +3652,10 @@ extern "C" {
 		if (!g_keyword_actorTypeAnimal || !g_keyword_actorTypeNPC) {
 			_ERROR("Failed to get keywords");
 			return;
+		}
+
+		if (MenuManager * menuManager = MenuManager::GetSingleton()) {
+			menuManager->MenuOpenCloseEventDispatcher()->AddEventSink(&MenuChecker::menuEvent);
 		}
 
 		_MESSAGE("Successfully loaded all forms");

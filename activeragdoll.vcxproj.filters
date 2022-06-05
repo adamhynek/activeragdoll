@@ -25,6 +25,9 @@
     <ClCompile Include="src\utils.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\menu_checker.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\RE\offsets.h">
@@ -64,6 +67,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="include\version.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\menu_checker.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>

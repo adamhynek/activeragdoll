@@ -118,7 +118,6 @@ void Actor_SayToEx(Actor *source, Actor *target, TESTopicInfo *topicInfo);
 inline TESTopic * GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
 TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1 = 0, UInt32 exclude2 = 0);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
-bool IsActorUsingFurniture(Actor *actor);
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
 bool IsInFaction(Actor *actor, TESFaction *faction);

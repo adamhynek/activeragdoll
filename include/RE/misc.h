@@ -444,6 +444,47 @@ struct PackageTarget
 };
 static_assert(sizeof(PackageTarget) == 0x18);
 
+struct IMovementPlannerAgent
+{
+	void *vtbl; // 00
+};
+
+struct IMovementSetKeepOffsetFromActor
+{
+	void *vtbl; // 00
+};
+
+struct MovementAgent
+{
+	void *vtbl; // 00
+	UInt32 unk08;
+	IMovementState *movementState; // 10 - points to ActorState of Actor
+};
+
+struct MovementPlannerAgent : MovementAgent
+{
+	IMovementPlannerAgent unk18;
+};
+
+struct MovementPlannerAgentKeepOffset : MovementPlannerAgent
+{
+	struct KeepOffsetData
+	{
+		UInt32 targetHandle; // 00
+		NiPoint3 offset; // 04
+		NiPoint3 angleOffset; // 10
+		float catchUpRadius; // 1C
+		float followRadius; // 20
+	};
+	static_assert(sizeof(KeepOffsetData) == 0x24);
+
+	IMovementSetKeepOffsetFromActor movementSet; // 20
+	MovementControllerNPC *movementController; // 28
+	BSReadWriteLock keepOffsetLock; // 30
+	KeepOffsetData keepOffsetData; // 38
+};
+static_assert(sizeof(MovementPlannerAgentKeepOffset) == 0x60);
+
 typedef void(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);

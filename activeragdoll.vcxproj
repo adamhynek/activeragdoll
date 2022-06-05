@@ -166,6 +166,7 @@
     <ClCompile Include="src\higgsinterface001.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\math_utils.cpp" />
+    <ClCompile Include="src\menu_checker.cpp" />
     <ClCompile Include="src\RE\havok.cpp" />
     <ClCompile Include="src\RE\offsets.cpp" />
     <ClCompile Include="src\utils.cpp" />
@@ -177,6 +178,7 @@
     <ClInclude Include="include\higgsinterface001.h" />
     <ClInclude Include="include\main.h" />
     <ClInclude Include="include\math_utils.h" />
+    <ClInclude Include="include\menu_checker.h" />
     <ClInclude Include="include\RE\havok.h" />
     <ClInclude Include="include\RE\havok_behavior.h" />
     <ClInclude Include="include\RE\misc.h" />
