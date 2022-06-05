@@ -142,6 +142,7 @@ namespace Config {
 		if (!ReadFloat("shoveAggressionImpact", options.shoveAggressionImpact)) return false;
 		if (!ReadDouble("shoveCooldown", options.shoveCooldown)) return false;
 		if (!ReadDouble("collisionCooldownTime", options.collisionCooldownTime)) return false;
+		if (!ReadDouble("shoveWaitForBumpTimeBeforeStagger", options.shoveWaitForBumpTimeBeforeStagger)) return false;
 		if (!ReadFormArray("shoveTopicInfos", options.shoveTopicInfos)) return false;
 
 

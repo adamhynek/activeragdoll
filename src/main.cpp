@@ -649,6 +649,7 @@ void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool
 
 struct BumpRequest
 {
+	NiPoint3 bumpDirectionVec{};
 	float bumpDirection = 0.f;
 	bool isLargeBump = false;
 	bool exitFurniture = false;
@@ -659,13 +660,30 @@ std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 std::unordered_map<Actor *, double> g_shovedActors{};
 
-void QueueBumpActor(Actor *actor, float bumpDirection, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
+std::mutex g_shoveTimesLock;
+struct ShoveData
+{
+	NiPoint3 shoveDirection{};
+	double shovedTime = 0.0;
+};
+std::unordered_map<IAnimationGraphManagerHolder *, ShoveData> g_shoveData{};
+std::mutex g_shoveAnimLock;
+std::unordered_map<IAnimationGraphManagerHolder *, double> g_shoveAnimTimes{};
+
+void QueueBumpActor(Actor *actor, NiPoint3 direction, float bumpDirection, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
 {
 	std::unique_lock lock(g_bumpActorsLock);
 	auto it = g_bumpActors.find(actor);
 	if (it == g_bumpActors.end()) {
-		g_bumpActors[actor] = { bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue };
+		g_bumpActors[actor] = { direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue };
 	}
+}
+
+void QueueBumpActor(Actor *actor, NiPoint3 direction, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
+{
+	float heading = GetHeadingFromVector(-direction);
+	float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
+	QueueBumpActor(actor, direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue);
 }
 
 void StaggerActor(Actor *actor, NiPoint3 direction, float magnitude)
@@ -683,13 +701,6 @@ void StaggerActor(Actor *actor, NiPoint3 direction, float magnitude)
 
 	static BSFixedString staggerStartStr("staggerStart");
 	get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, staggerStartStr);
-}
-
-void QueueLargeBump(Actor *actor, NiPoint3 direction)
-{
-	float heading = GetHeadingFromVector(-direction);
-	float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-	QueueBumpActor(actor, bumpDirection, true, false);
 }
 
 bool ShouldKeepOffset(Actor *actor)
@@ -1493,11 +1504,7 @@ struct NPCData
 		if (Actor_IsInRagdollState(character)) return;
 
 		if (force || g_currentFrameTime - bumpTime > Config::options.aggressionBumpCooldownTime) {
-			NiPoint3 actorToPlayer = (*g_thePlayer)->pos - character->pos;
-			float heading = GetHeadingFromVector(actorToPlayer);
-			float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(character, 0xA5)(character, false);
-			QueueBumpActor(character, bumpDirection, false, exitFurniture, false, false);
-
+			QueueBumpActor(character, character->pos - (*g_thePlayer)->pos, false, exitFurniture, false, false);
 			bumpTime = g_currentFrameTime;
 		}
 	}
@@ -2134,10 +2141,30 @@ void UpdateSpeedReduction()
 
 bool UpdateActorShove(Actor *actor)
 {
-	PlayerCharacter *player = *g_thePlayer;
-
 	if (!Config::options.enableActorShove) return false;
-	if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) return false;
+
+	{
+		std::unique_lock lock(g_shoveTimesLock);
+		if (auto it = g_shoveData.find(&actor->animGraphHolder); it != g_shoveData.end()) {
+			ShoveData &shoveData = it->second;
+			double shovedTime = shoveData.shovedTime;
+			if (g_currentFrameTime - shovedTime > Config::options.shoveWaitForBumpTimeBeforeStagger) {
+				{
+					std::unique_lock lock2(g_shoveAnimLock);
+					auto it2 = g_shoveAnimTimes.find(&actor->animGraphHolder);
+					if (it2 == g_shoveAnimTimes.end() || it2->second < shovedTime) {
+						// Large bump anim didn't play or it played before we shoved them (from a previous shove)
+						StaggerActor(actor, shoveData.shoveDirection, Config::options.shoveStaggerMagnitude);
+					}
+					g_shoveAnimTimes.erase(&actor->animGraphHolder);
+				}
+				g_shoveData.erase(&actor->animGraphHolder);
+			}
+		}
+	}
+
+	PlayerCharacter *player = *g_thePlayer;
+	if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player) || g_isMenuOpen) return false;
 	if (Config::options.disableShoveWhileWeaponsDrawn && player->actorState.IsWeaponDrawn()) return false;
 
 	for (int isLeft = 0; isLeft < 2; ++isLeft) {
@@ -2162,7 +2189,7 @@ bool UpdateActorShove(Actor *actor)
 						}
 
 						NiPoint3 shoveDirection = VectorNormalized(velocityData.avgVelocity);
-						StaggerActor(actor, shoveDirection, Config::options.shoveStaggerMagnitude);
+						QueueBumpActor(actor, shoveDirection, true, false, false, false);
 
 						if (Config::options.playShovePhysicsSound) {
 							if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
@@ -2213,6 +2240,8 @@ void ResetObjects()
 	g_higgsLingeringRigidBodies.clear();
 	g_keepOffsetActors.clear();
 	g_bumpActors.clear();
+	g_shoveData.clear();
+	g_shoveAnimTimes.clear();
 	g_shovedActors.clear();
 	g_contactListener = ContactListener{};
 }
@@ -2580,7 +2609,7 @@ void ProcessHavokHitJobsHook()
 
 									if (Config::options.bumpActorIfKeepOffsetFails) {
 										// Try to get them unstuck by bumping them
-										QueueBumpActor(actor, 0.f, false, false, false, false);
+										QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
 									}
 
 									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
@@ -3184,6 +3213,10 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 		std::unique_lock lock(g_bumpActorsLock);
 		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end()) {
 			BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.exitFurniture, it->second.pauseCurrentDialogue, it->second.triggerDialogue);
+			if (it->second.isLargeBump) {
+				std::unique_lock lock2(g_shoveTimesLock);
+				g_shoveData[&actor->animGraphHolder] = { it->second.bumpDirectionVec, g_currentFrameTime };
+			}
 			g_bumpActors.erase(it);
 		}
 	}
@@ -3638,6 +3671,34 @@ void ShowErrorBoxAndTerminate(const char *errorString)
 	*((int *)0) = 0xDEADBEEF; // crash
 }
 
+// Animation graph hook for detecting if certain animations were played
+_IAnimationGraphManagerHolder_NotifyAnimationGraph g_originalNotifyAnimationGraph = nullptr;
+//static RelocPtr<IAnimationGraphManagerHolder_NotifyAnimationGraph_VFunc> IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x016E2BF8); // PlayerCharacter
+static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x16D7780); // Character
+bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder *_this, const BSFixedString &animationName)
+{
+	bool accepted = g_originalNotifyAnimationGraph(_this, animationName);
+	if (accepted) {
+		// Event was accepted by the graph
+		std::string_view view(animationName.c_str());
+		if (
+			view == "NPC_BumpFromFront" ||
+			view == "NPC_BumpedFromRight" ||
+			view == "NPC_BumpedFromBack" ||
+			view == "NPC_BumpedFromLeft"
+			) {
+			{
+				std::unique_lock lock(g_shoveAnimLock);
+				g_shoveAnimTimes[_this] = g_currentFrameTime;
+			}
+#ifdef _DEBUG
+			_MESSAGE("%p: %s", _this, animationName.c_str());
+#endif // _DEBUG
+		}
+	}
+	return accepted;
+}
+
 extern "C" {
 	void OnDataLoaded()
 	{
@@ -3774,6 +3835,9 @@ extern "C" {
 		}
 		g_vrInterface->RegisterForPoses(g_pluginHandle, 11, WaitPosesCB);
 		g_vrInterface->RegisterForControllerState(g_pluginHandle, 11, ControllerStateCB);
+
+		g_originalNotifyAnimationGraph = *IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
+		SafeWrite64(IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
 
 		g_timer.Start();
 

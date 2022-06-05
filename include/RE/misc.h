@@ -485,7 +485,7 @@ struct MovementPlannerAgentKeepOffset : MovementPlannerAgent
 };
 static_assert(sizeof(MovementPlannerAgentKeepOffset) == 0x60);
 
-typedef void(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
+typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);
 typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool dontExitFurniture, bool a4);

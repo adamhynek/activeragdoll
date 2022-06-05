@@ -38,6 +38,7 @@ namespace Config {
 		float shoveAggressionImpact = 2.5f;
 		double shoveCooldown = 2.0;
 		double collisionCooldownTime = 0.7;
+		double shoveWaitForBumpTimeBeforeStagger = 0.05;
 		std::vector<UInt32> shoveTopicInfos = {
 			0x0006CB2C, // Be careful!
 			0x0006CB2D, // Hey, watch it!
