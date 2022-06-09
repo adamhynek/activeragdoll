@@ -188,6 +188,8 @@ namespace Config {
 
 		if (!ReadBool("doKeepOffset", options.doKeepOffset)) return false;
 		if (!ReadBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) return false;
+		if (!ReadFloat("keepOffsetMinAngleDifference", options.keepOffsetMinAngleDifference)) return false;
+		if (!ReadFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) return false;
 		if (!ReadDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) return false;
 
 		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;

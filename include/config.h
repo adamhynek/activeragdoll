@@ -102,6 +102,8 @@ namespace Config {
 
 		bool doKeepOffset = true;
 		bool bumpActorIfKeepOffsetFails = true;
+		float keepOffsetMinAngleDifference = 0.25f;
+		float keepOffsetAngleDifferenceMultiplier = 0.8f;
 		double keepOffsetRetryInterval = 1.0;
 
 		float collisionDamageMinSpeed = 400.f; // skyrim units

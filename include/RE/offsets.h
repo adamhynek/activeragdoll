@@ -261,6 +261,9 @@ extern RelocAddr<_TESObjectREFR_Activate> TESObjectREFR_Activate;
 typedef bool(*_TESObjectREFR_SetScale)(TESObjectREFR* refr, float scale);
 extern RelocAddr<_TESObjectREFR_SetScale> TESObjectREFR_SetScale;
 
+typedef void(*_TESObjectREFR_GetTransformIncorporatingScale)(TESObjectREFR* _this, NiTransform &out);
+extern RelocAddr<_TESObjectREFR_GetTransformIncorporatingScale> TESObjectREFR_GetTransformIncorporatingScale;
+
 typedef void(*_EffectShader_Play)(VMClassRegistry* registry, UInt32 stackId, TESEffectShader *shader, TESObjectREFR *target, float duration);
 extern RelocAddr<_EffectShader_Play> EffectShader_Play;
 

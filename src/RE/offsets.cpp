@@ -140,6 +140,7 @@ RelocAddr<_ObjectReference_SetActorCause> ObjectReference_SetActorCause(0x9D1830
 RelocAddr<_ObjectReference_Activate> ObjectReference_Activate(0x009CD750);
 RelocAddr<_TESObjectREFR_Activate> TESObjectREFR_Activate(0x2A8300);
 RelocAddr<_TESObjectREFR_SetScale> TESObjectREFR_SetScale(0x29E3E0);
+RelocAddr<_TESObjectREFR_GetTransformIncorporatingScale> TESObjectREFR_GetTransformIncorporatingScale(0x2A5E30);
 RelocAddr<_EffectShader_Play> EffectShader_Play(0x9BCAF0);
 RelocAddr<_EffectShader_Stop> EffectShader_Stop(0x9BCC20);
 RelocAddr<_VisualEffect_Play> VisualEffect_Play(0x9A4E00);

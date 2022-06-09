@@ -1468,8 +1468,6 @@ struct NPCData
 	double dialogueTime = 0.0;
 	double bumpTime = 0.0;
 	double lastGrabbedTouchedTime = 0.0;
-	double waitTime = 0.0;
-	double waitDuration = 0.0;
 	float accumulatedGrabbedTime = 0.f;
 	TESTopic *lastSaidTopic = nullptr;
 	UInt32 lastSaidTopicID = 0;
@@ -1941,11 +1939,15 @@ void EnableGravity(Actor *actor)
 
 struct KeepOffsetTask : TaskDelegate
 {
-	static KeepOffsetTask * Create(UInt32 source, UInt32 target) {
+	static KeepOffsetTask * Create(UInt32 source, UInt32 target, NiPoint3 &offset = NiPoint3(), NiPoint3 &offsetAngle = NiPoint3(), float catchUpRadius = 150.f, float followRadius = 50.f) {
 		KeepOffsetTask * cmd = new KeepOffsetTask;
 		if (cmd) {
 			cmd->source = source;
 			cmd->target = target;
+			cmd->offset = offset;
+			cmd->offsetAngle = offsetAngle;
+			cmd->catchUpRadius = catchUpRadius;
+			cmd->followRadius = followRadius;
 		}
 		return cmd;
 	}
@@ -1954,10 +1956,7 @@ struct KeepOffsetTask : TaskDelegate
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(source, refr)) {
 			if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-				NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-				// < PI -> clockwise, >= PI -> counter-clockwise?
-				//offsetAngle.z = fmodf(g_currentFrameTime, (M_PI * 2));
-				Actor_KeepOffsetFromActor(actor, target, NiPoint3(0.f, 0.f, 0.f), offsetAngle, 150.f, 50.f);
+				Actor_KeepOffsetFromActor(actor, target, offset, offsetAngle, catchUpRadius, followRadius);
 			}
 		}
 	}
@@ -1968,6 +1967,36 @@ struct KeepOffsetTask : TaskDelegate
 
 	UInt32 source;
 	UInt32 target;
+	NiPoint3 offset;
+	NiPoint3 offsetAngle;
+	float catchUpRadius;
+	float followRadius;
+};
+
+struct ClearKeepOffsetTask : TaskDelegate
+{
+	static ClearKeepOffsetTask * Create(UInt32 source) {
+		ClearKeepOffsetTask * cmd = new ClearKeepOffsetTask;
+		if (cmd) {
+			cmd->source = source;
+		}
+		return cmd;
+	}
+
+	virtual void Run() {
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(source, refr)) {
+			if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+				Actor_ClearKeepOffsetFromActor(actor);
+			}
+		}
+	}
+
+	virtual void Dispose() {
+		delete this;
+	}
+
+	UInt32 source;
 };
 
 float g_savedSpeedReduction = 0.f;
@@ -2193,7 +2222,7 @@ bool UpdateActorShove(Actor *actor)
 
 						if (Config::options.playShovePhysicsSound) {
 							if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
-								if (NiPointer<NiAVObject> handNode = isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone]) {
+								if (NiPointer<NiAVObject> handNode = GetFirstPersonHandNode(isLeft)) {
 									PlayPhysicsSound(rigidBody->hkBody->getCollidableRw(), handNode->m_worldTransform.pos, true);
 								}
 							}
@@ -2592,11 +2621,6 @@ void ProcessHavokHitJobsHook()
 						if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
 							// Wasn't grabbed before
 							g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
-
-							// At some point we probably want to do a better job of this and use offsets from the actor itself rather than the player
-							//UInt32 handle = actorHandle;
-							//Actor_KeepOffsetFromActor(actor, handle, NiPoint3(0.f, 100.f, 0.f), NiPoint3(0.f, 0.f, 0.f), 150.f, 0.f);
-
 							g_keepOffsetActors[actor] = { g_currentFrameTime, false };
 						}
 						else {
@@ -2623,7 +2647,31 @@ void ProcessHavokHitJobsHook()
 									data.success = true;
 								}
 								else { // KeepOffset interface exists and has succeeded
-									//GetAnimBoneIndex
+									ForEachRagdollDriver(actor, [actor, player](hkbRagdollDriver *driver) {
+										if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+											NiPoint3 offset = { 0.f, 0.f, 0.f };
+											/*
+											NiPoint3 rootOffsetXY = ragdoll->rootOffset;
+											rootOffsetXY.z = 0.f;
+											if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
+												NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+												NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
+												offset = InverseTransform(refrTransform) * offsetWS;
+											}
+											*/
+
+											NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+											if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
+												// offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+												offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+											}
+
+											UInt32 actorHandle = GetOrCreateRefrHandle(actor);
+											UInt32 playerHandle = GetOrCreateRefrHandle(player);
+											g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
+											//g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
+										}
+									});
 								}
 							}
 						}
@@ -2640,7 +2688,7 @@ void ProcessHavokHitJobsHook()
 			}
 			else {
 				if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
-					Actor_ClearKeepOffsetFromActor(actor);
+					g_taskInterface->AddTask(ClearKeepOffsetTask::Create(GetOrCreateRefrHandle(actor)));
 					g_keepOffsetActors.erase(actor);
 				}
 			}
@@ -2968,15 +3016,22 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 						hkQsTransform poseT;
 						poseT.setMul(worldFromModel, poseData[boneIndex]);
 
-						if (Config::options.doWarp && ragdoll->hasHipBoneTransform) {
+						if (Config::options.doWarp && ragdoll->rootBoneTransform) {
 							hkTransform actualT;
 							rb->getTransform(actualT);
 
-							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->hipBoneTransform.m_translation) * *g_havokWorldScale;
+							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->rootBoneTransform->m_translation) * *g_havokWorldScale;
 							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
-							NiPoint3 posDiff = actualPos - posePos;
+							ragdoll->rootOffset = actualPos - posePos;
 
-							if (VectorLength(posDiff) > Config::options.maxAllowedDistBeforeWarp) {
+							NiPoint3 poseForward = ForwardVector(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
+							NiMatrix33 actualRot; HkMatrixToNiMatrix(actualT.m_rotation, actualRot);
+							NiPoint3 actualForward = ForwardVector(actualRot);
+							float poseAngle = atan2f(poseForward.x, poseForward.y);
+							float actualAngle = atan2f(actualForward.x, actualForward.y);
+							ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
+
+							if (VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp) {
 								if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
 									SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 								}
@@ -3003,8 +3058,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							}
 						}
 
-						ragdoll->hipBoneTransform = poseT;
-						ragdoll->hasHipBoneTransform = true;
+						ragdoll->rootBoneTransform = poseT;
 					}
 				}
 			}

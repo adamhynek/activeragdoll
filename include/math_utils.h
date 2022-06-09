@@ -107,5 +107,10 @@ NiPoint3 QuadraticFromPoints(const NiPoint2 &p1, const NiPoint2 &p2, const NiPoi
 inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
 inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }
+inline float AngleDifference(float angle1, float angle2)
+{
+	float diff = fmodf(angle2 - angle1 + 180.f, 360.f) - 180.f;
+	return diff < -180.f ? diff + 360.f : diff;
+}
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);

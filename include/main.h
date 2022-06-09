@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "skse64/GameReferences.h"
 
 #include "blender.h"
@@ -19,7 +21,9 @@ struct ActiveRagdoll
 	std::vector<hkQsTransform> animPose{};
 	std::vector<hkQsTransform> ragdollPose{};
 	std::vector<float> stress{};
-	hkQsTransform hipBoneTransform{};
+	std::optional<hkQsTransform> rootBoneTransform{};
+	NiPoint3 rootOffset{}; // meters
+	float rootOffsetAngle = 0.f; // radians
 	float avgStress = 0.f;
 	float deltaTime = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
@@ -27,6 +31,5 @@ struct ActiveRagdoll
 	RagdollState state = RagdollState::Idle;
 	KnockState knockState = KnockState::Normal;
 	bool isOn = false;
-	bool hasHipBoneTransform = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 };
