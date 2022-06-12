@@ -93,6 +93,8 @@ extern RelocPtr<float> g_bAlwaysDriveRagdoll;
 
 extern RelocPtr<BGSDefaultObjectManager> g_defaultObjectManager;
 
+extern RelocPtr<UInt32> g_playerHandle;
+
 extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
 
 

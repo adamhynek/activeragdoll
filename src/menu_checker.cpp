@@ -7,7 +7,7 @@ namespace MenuChecker
 		"Console",
 		"Journal Menu"
 	};
-	
+
 	std::vector<std::string> gameStoppingMenus{
 		"BarterMenu",
 		"Book Menu",
@@ -89,11 +89,11 @@ namespace MenuChecker
 
 	// Menu open event functions
 	AllMenuEventHandler menuEvent;
-	
+
 	EventResult AllMenuEventHandler::ReceiveEvent(MenuOpenCloseEvent * evn, EventDispatcher<MenuOpenCloseEvent> * dispatcher)
 	{
 		const char * menuName = evn->menuName.data;
-				
+	
 		if (evn->opening) { // Menu opened
 			if (menuTypes.find(menuName) != menuTypes.end()) {
 				menuTypes[menuName] = true;
@@ -102,7 +102,7 @@ namespace MenuChecker
 		else { // Menu closed
 			if (menuTypes.find(menuName) != menuTypes.end()) {
 				menuTypes[menuName] = false;
-			}			
+			}
 		}
 		return EventResult::kEvent_Continue;
 	}

@@ -174,7 +174,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 
 		// vm decref
 		if (InterlockedExchangeSubtract(((UInt32 *)&registry->unk0004), (UInt32)1) == 1) {
-			get_vfunc< _VMClassRegistry_Destruct>(registry, 0x0)(registry, 1);
+			get_vfunc<_VMClassRegistry_Destruct>(registry, 0x0)(registry, 1);
 		}
 
 		return shouldDispatchHitEvent;
@@ -1511,6 +1511,7 @@ struct NPCData
 	{
 		if (character->IsDead(1)) return;
 		if (Config::options.followersSkipAggression && IsTeammate(character)) return;
+		if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
 		if (RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
 
 		TESTopic *currentTopic = GetCurrentTopic(character);
@@ -1540,7 +1541,7 @@ struct NPCData
 		bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
 		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
 		bool isSpecial = sharesPlayerPosition || isInVehicle;
-		
+
 		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !g_isMenuOpen;
 		bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
 
@@ -2016,7 +2017,7 @@ float GetSpeedReduction(Actor *actor)
 		if (raceSize == 2) massReduction = Config::options.largeRaceSpeedReduction;
 		if (raceSize >= 3) massReduction = Config::options.extraLargeRaceSpeedReduction;
 	}
-	
+
 	float healthPercent = std::clamp(GetAVPercentage(actor, 24), 0.f, 1.f);
 	float playerStaminaPercent = std::clamp(GetAVPercentage(player, 26), 0.f, 1.f);
 
@@ -2620,7 +2621,7 @@ void ProcessHavokHitJobsHook()
 					else if (ShouldKeepOffset(actor)) {
 						if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
 							// Wasn't grabbed before
-							g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+							g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
 							g_keepOffsetActors[actor] = { g_currentFrameTime, false };
 						}
 						else {
@@ -2636,14 +2637,14 @@ void ProcessHavokHitJobsHook()
 										QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
 									}
 
-									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
 									data.lastAttemptTime = g_currentFrameTime;
 								}
 							}
 							else {
 								if (!data.success) {
 									// To be sure, do a single additional attempt once we know the interface exists
-									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), GetOrCreateRefrHandle(player)));
+									g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
 									data.success = true;
 								}
 								else { // KeepOffset interface exists and has succeeded
@@ -2667,7 +2668,7 @@ void ProcessHavokHitJobsHook()
 											}
 
 											UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-											UInt32 playerHandle = GetOrCreateRefrHandle(player);
+											UInt32 playerHandle = *g_playerHandle;
 											g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
 											//g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
 										}

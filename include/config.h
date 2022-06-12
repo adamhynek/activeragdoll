@@ -49,6 +49,7 @@ namespace Config {
 		bool enableBump = true;
 		bool doAggression = true;
 		bool followersSkipAggression = true;
+		bool summonsSkipAggression = true;
 		bool calmedActorsDontAccumulateAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
 		double aggressionBumpCooldownTime = 2.0;

@@ -75,6 +75,7 @@ RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
 RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
 
 RelocPtr<BGSDefaultObjectManager> g_defaultObjectManager(0x01F81D90);
+RelocPtr<UInt32> g_playerHandle(0x2FEB9EC);
 
 RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
 

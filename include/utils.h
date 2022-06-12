@@ -120,6 +120,8 @@ TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 excl
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
+inline UInt32 ActorProcess_GetCommandingActor(ActorProcessManager *process) { return process->middleProcess ? process->middleProcess->unk218 : *g_invalidRefHandle; }
+inline UInt32 GetCommandingActor(Actor *actor) { return actor->processManager ? ActorProcess_GetCommandingActor(actor->processManager) : *g_invalidRefHandle; }
 bool IsInFaction(Actor *actor, TESFaction *faction);
 bool IsCalmed(Actor *actor);
 NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);

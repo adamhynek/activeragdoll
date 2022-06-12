@@ -149,6 +149,8 @@ namespace Config {
 		if (!ReadBool("enableBump", options.enableBump)) return false;
 		if (!ReadBool("doAggression", options.doAggression)) return false;
 		if (!ReadBool("followersSkipAggression", options.followersSkipAggression)) return false;
+		if (!ReadBool("summonsSkipAggression", options.summonsSkipAggression)) return false;
+
 		if (!ReadBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) return false;
 		if (!ReadBool("calmedActorsDontAccumulateAggression", options.calmedActorsDontAccumulateAggression)) return false;
 		if (!ReadDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) return false;
