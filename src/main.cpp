@@ -1349,6 +1349,23 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 		}
 	}
 
+	if (layerA == BGSCollisionLayer::kCollisionLayer_Ground || layerB == BGSCollisionLayer::kCollisionLayer_Ground) {
+		// If the layer is the ground layer, and the group is the player group, then this is actually the linear cast that checks for footsteps,
+		// and we handle this the same way as if it was the player controller
+		UInt16 groupA = filterInfoA >> 16;
+		UInt16 groupB = filterInfoB >> 16;
+		if (layerA == BGSCollisionLayer::kCollisionLayer_Ground && groupA == g_playerCollisionGroup) {
+			filterInfoA &= ~(0x7f); // zero out layer
+			filterInfoA |= (BGSCollisionLayer::kCollisionLayer_CharController & 0x7f); // set layer to charcontroller for the duration of this function
+			layerA = filterInfoA & 0x7f;
+		}
+		if (layerB == BGSCollisionLayer::kCollisionLayer_Ground && groupB == g_playerCollisionGroup) {
+			filterInfoB &= ~(0x7f); // zero out layer
+			filterInfoB |= (BGSCollisionLayer::kCollisionLayer_CharController & 0x7f); // set layer to charcontroller for the duration of this function
+			layerB = filterInfoB & 0x7f;
+		}
+	}
+
 	if (layerA != BGSCollisionLayer::kCollisionLayer_CharController && layerB != BGSCollisionLayer::kCollisionLayer_CharController) {
 		// Neither collidee is a character controller
 		return CollisionFilterComparisonResult::Continue;
