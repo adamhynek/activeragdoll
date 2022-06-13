@@ -256,6 +256,7 @@ namespace Config {
 		if (!ReadBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) return false;
 		if (!ReadBool("disableHitIfSheathed", options.disableHitIfSheathed)) return false;
 		if (!ReadBool("blendWhenGettingUp", options.blendWhenGettingUp)) return false;
+		if (!ReadBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) return false;
 
 		if (!ReadFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) return false;
 		if (!ReadFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) return false;

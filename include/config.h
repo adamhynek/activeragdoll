@@ -168,6 +168,7 @@ namespace Config {
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = false;
 		bool blendWhenGettingUp = false;
+		bool seamlessFurnitureTransition = true;
 		bool disableConstraints = false;
 
 		float hitImpulseBaseStrength = 1.f;

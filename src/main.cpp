@@ -3417,67 +3417,69 @@ void PerformHooks(void)
 		_MESSAGE("Actor kill end havok hit hook complete");
 	}
 
-	{
-		g_branchTrampoline.Write5Call(ActorProcess_ExitFurniture_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(ActorProcess_ExitFurniture_RemoveCollision_Hook));
-		_MESSAGE("ActorProcess TransitionFurnitureState QueueRemoveCollision hook complete");
-	}
+	if (Config::options.seamlessFurnitureTransition) {
+		{
+			g_branchTrampoline.Write5Call(ActorProcess_ExitFurniture_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(ActorProcess_ExitFurniture_RemoveCollision_Hook));
+			_MESSAGE("ActorProcess TransitionFurnitureState QueueRemoveCollision hook complete");
+		}
 
-	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
+		{
+			struct Code : Xbyak::CodeGenerator {
+				Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+				{
+					Xbyak::Label jumpBack;
 
-				mov(r8, rdi); // the actor is in rdi
+					mov(r8, rdi); // the actor is in rdi
 
-				// Call our hook
-				mov(rax, (uintptr_t)ActorProcess_ExitFurniture_ResetRagdoll_Hook);
-				call(rax);
+					// Call our hook
+					mov(rax, (uintptr_t)ActorProcess_ExitFurniture_ResetRagdoll_Hook);
+					call(rax);
 
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
+					// Jump back to whence we came (+ the size of the initial branch instruction)
+					jmp(ptr[rip + jumpBack]);
 
-				L(jumpBack);
-				dq(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr() + 5);
-			}
-		};
+					L(jumpBack);
+					dq(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr() + 5);
+				}
+			};
 
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
+			void * codeBuf = g_localTrampoline.StartAlloc();
+			Code code(codeBuf);
+			g_localTrampoline.EndAlloc(code.getCurr());
 
-		g_branchTrampoline.Write5Branch(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+			g_branchTrampoline.Write5Branch(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
-		_MESSAGE("ActorProcess ExitFurniture ResetRagdoll hook complete");
-	}
+			_MESSAGE("ActorProcess ExitFurniture ResetRagdoll hook complete");
+		}
 
-	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
+		{
+			struct Code : Xbyak::CodeGenerator {
+				Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+				{
+					Xbyak::Label jumpBack;
 
-				mov(r8, rbp); // the actor is in rdi
+					mov(r8, rbp); // the actor is in rdi
 
-				// Call our hook
-				mov(rax, (uintptr_t)ActorProcess_EnterFurniture_SetWorld_Hook);
-				call(rax);
+					// Call our hook
+					mov(rax, (uintptr_t)ActorProcess_EnterFurniture_SetWorld_Hook);
+					call(rax);
 
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
+					// Jump back to whence we came (+ the size of the initial branch instruction)
+					jmp(ptr[rip + jumpBack]);
 
-				L(jumpBack);
-				dq(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr() + 5);
-			}
-		};
+					L(jumpBack);
+					dq(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr() + 5);
+				}
+			};
 
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
+			void * codeBuf = g_localTrampoline.StartAlloc();
+			Code code(codeBuf);
+			g_localTrampoline.EndAlloc(code.getCurr());
 
-		g_branchTrampoline.Write5Branch(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+			g_branchTrampoline.Write5Branch(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
-		_MESSAGE("ActorProcess EnterFurniture BSAnimationGraphManager::SetWorld hook complete");
+			_MESSAGE("ActorProcess EnterFurniture BSAnimationGraphManager::SetWorld hook complete");
+		}
 	}
 
 	{
