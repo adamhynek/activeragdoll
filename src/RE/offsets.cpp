@@ -308,6 +308,7 @@ RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld(0xB4D7C0);
 RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose(0xA27BC0);
 RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage(0x3AC280);
 RelocAddr<_BSTaskPool_QueueRemoveCollisionFromWorld> BSTaskPool_QueueRemoveCollisionFromWorld(0x5CC120);
+RelocAddr<_BSTaskPool_QueueAddHavok> BSTaskPool_QueueAddHavok(0x5CBF90);
 RelocAddr<_GetRandomNumberInRange> GetRandomNumberInRange(0x196550);
 RelocAddr<_CreatePackageByType> CreatePackageByType(0x444410);
 RelocAddr<_PackageLocation_CTOR> PackageLocation_CTOR(0x450C80);

@@ -564,8 +564,8 @@ bhkRigidBody * g_rightHeldObject = nullptr;
 bhkRigidBody * g_leftHeldObject = nullptr;
 TESObjectREFR * g_rightHeldRefr = nullptr;
 TESObjectREFR * g_leftHeldRefr = nullptr;
-UInt16 g_rightHeldCollisionGroup;
-UInt16 g_leftHeldCollisionGroup;
+UInt16 g_rightHeldActorCollisionGroup = 0;
+UInt16 g_leftHeldActorCollisionGroup = 0;
 UInt32 g_higgsCollisionLayer = 56;
 
 UInt16 g_playerCollisionGroup = 0;
@@ -1422,8 +1422,8 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 		if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
 			// Collide with the biped unless we want to explicitly ignore them
 			if (!Config::options.enablePlayerBipedCollision ||
-				(g_rightHeldObject && otherGroup == g_rightHeldCollisionGroup) ||
-				(g_leftHeldObject && otherGroup == g_leftHeldCollisionGroup)) {
+				(g_rightHeldActorCollisionGroup && otherGroup == g_rightHeldActorCollisionGroup) ||
+				(g_leftHeldActorCollisionGroup && otherGroup == g_leftHeldActorCollisionGroup)) {
 				return CollisionFilterComparisonResult::Ignore;
 			}
 
@@ -2609,6 +2609,9 @@ void ProcessHavokHitJobsHook()
 
 	g_isMenuOpen = MenuChecker::isGameStopped();
 
+	UInt16 rightHeldCollisionGroup = 0;
+	UInt16 leftHeldCollisionGroup = 0;
+
 	for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
 		UInt32 actorHandle = processManager->actorsHigh[i];
 		NiPointer<TESObjectREFR> refr;
@@ -2698,10 +2701,10 @@ void ProcessHavokHitJobsHook()
 
 				// When an npc is grabbed, disable collision with them
 				if (actor == g_rightHeldRefr) {
-					g_rightHeldCollisionGroup = collisionGroup;
+					rightHeldCollisionGroup = collisionGroup;
 				}
 				if (actor == g_leftHeldRefr) {
-					g_leftHeldCollisionGroup = collisionGroup;
+					leftHeldCollisionGroup = collisionGroup;
 				}
 			}
 			else {
@@ -2785,6 +2788,9 @@ void ProcessHavokHitJobsHook()
 			}
 		}
 	}
+
+	g_rightHeldActorCollisionGroup = rightHeldCollisionGroup;
+	g_leftHeldActorCollisionGroup = leftHeldCollisionGroup;
 }
 
 void TryForceRigidBodyControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)

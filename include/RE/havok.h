@@ -84,7 +84,7 @@ struct bhkWorld : bhkSerializable
 	virtual void Update(bool unk);  // 32
 	virtual bool CastRay(hkpWorldRayCastInput& input); // 33 - actually takes in an extended hkpWorldRayCastInput that has the raycast output and stuff shoved at the end
 	virtual bool HasSimulationIslands();  // 34
-	virtual void Unk_35(void);  // 35
+	virtual void AddHavok(NiAVObject *node, bool recurse, bool notify, UInt32 collisionGroup, bool ignoreBSXFlags);  // 35
 	virtual void Unk_36(void);  // 36
 
 	RE::hkRefPtr<ahkpWorld> world; // 10
@@ -183,6 +183,20 @@ struct bhkNiCollisionObject : NiCollisionObject
 	virtual void SetMotionType(void) = 0; // 2E
 	virtual void IsFixedOrKeyframed(void); // 2F
 	virtual void Unk_30(void); // 30 - { return 1; }
+
+	struct InitData
+	{
+		bhkWorld *world; // 00
+		bool recurse = true; // 08 - whether to continue downstream of the current node
+		UInt32 unk0C = 0; // 0C
+		UInt32 notify = 1;  // 10 - If first bit is set, set kNotify and kSetLocal. If it isn't, unset kNotify. First bit is unset after first node is processed.
+		UInt32 pad14;
+		UInt32 collisionGroup = 0; // 18 - If set, use it as the initial collision group. If 0, get the next unused group from the bhkCollisionFilter, then set this to that.
+		UInt32 pad1C;
+		UInt32 dontBlend = 0; // 20 - If set, use node pos instead of blended pos for bhkBlendCollisionObject. If 0, use blended pos. After first node is processed, this is incremented.
+		UInt32 pad24;
+		UInt32 resetOnWorldChange = 1; // 28 - If changing worlds: If set, set kReset. If 0, unset kReset.
+	};
 
 	UInt32 flags; // 18 - flag 8 -> use blended pos (for bhkBlendCollisionObject) instead of node pos
 	UInt32 pad1C; // 1C

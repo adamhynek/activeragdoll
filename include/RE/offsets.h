@@ -732,6 +732,9 @@ extern RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListen
 typedef void(*_BSTaskPool_QueueRemoveCollisionFromWorld)(BSTaskPool *_this, NiAVObject *root);
 extern RelocAddr<_BSTaskPool_QueueRemoveCollisionFromWorld> BSTaskPool_QueueRemoveCollisionFromWorld;
 
+typedef void(*_BSTaskPool_QueueAddHavok)(BSTaskPool *_this, NiAVObject *root, bhkWorld *world, UInt32 collisionGroup);
+extern RelocAddr<_BSTaskPool_QueueAddHavok> BSTaskPool_QueueAddHavok;
+
 typedef float(*_GetRandomNumberInRange)(float min, float max);
 extern RelocAddr<_GetRandomNumberInRange> GetRandomNumberInRange;
 
