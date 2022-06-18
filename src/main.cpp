@@ -1290,7 +1290,7 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 
 		const hkpCollidable *collidable = hitBody->getCollidable();
 		UInt32 layer = collidable->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f;
-		if (layer != BGSCollisionLayer::kCollisionLayer_Biped && layer != BGSCollisionLayer::kCollisionLayer_BipedNoCC) return;
+		if (layer != BGSCollisionLayer::kCollisionLayer_Biped) return;
 
 		NiPointer<TESObjectREFR> refr = GetRefFromCollidable(collidable);
 		if (!refr) return;
