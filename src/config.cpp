@@ -20,6 +20,11 @@ static inline double vlibGetSetting(const char * name) {
 namespace Config {
 	// Define extern options
 	Options options;
+	std::map<std::string, float *, std::less<>> floatMap{};
+	std::map<std::string, double *, std::less<>> doubleMap{};
+	std::map<std::string, int *, std::less<>> intMap{};
+	std::map<std::string, bool *, std::less<>> boolMap{};
+	bool g_registrationComplete = false;
 
 	bool ReadFloat(const std::string &name, float &val)
 	{
@@ -111,196 +116,266 @@ namespace Config {
 		return true;
 	}
 
+	bool RegisterFloat(const std::string &name, float &val)
+	{
+		if (!g_registrationComplete) floatMap[name] = &val;
+		return ReadFloat(name, val);
+	}
+
+	bool RegisterDouble(const std::string &name, double &val)
+	{
+		if (!g_registrationComplete) doubleMap[name] = &val;
+		return ReadDouble(name, val);
+	}
+
+	bool RegisterInt(const std::string &name, int &val)
+	{
+		if (!g_registrationComplete) intMap[name] = &val;
+		return ReadInt(name, val);
+	}
+
+	bool RegisterBool(const std::string &name, bool &val)
+	{
+		if (!g_registrationComplete) boolMap[name] = &val;
+		return ReadBool(name, val);
+	}
+
+	bool SetSettingDouble(const std::string_view &name, double val)
+	{
+		if (auto it = doubleMap.find(name); it != doubleMap.end()) {
+			*it->second = val;
+			return true;
+		}
+		if (auto it = floatMap.find(name); it != floatMap.end()) {
+			*it->second = float(val);
+			return true;
+		}
+		if (auto it = intMap.find(name); it != intMap.end()) {
+			*it->second = int(val);
+			return true;
+		}
+		if (auto it = boolMap.find(name); it != boolMap.end()) {
+			*it->second = bool(val);
+			return true;
+		}
+		return false;
+	}
+
+	bool GetSettingDouble(const std::string_view &name, double &out)
+	{
+		if (auto it = doubleMap.find(name); it != doubleMap.end()) {
+			out = *it->second;
+			return true;
+		}
+		if (auto it = floatMap.find(name); it != floatMap.end()) {
+			out = double(*it->second);
+			return true;
+		}
+		if (auto it = intMap.find(name); it != intMap.end()) {
+			out = double(*it->second);
+			return true;
+		}
+		if (auto it = boolMap.find(name); it != boolMap.end()) {
+			out = double(*it->second);
+			return true;
+		}
+		return false;
+	}
+
 	bool ReadConfigOptions()
 	{
-		if (!ReadFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) return false;
-		if (!ReadFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) return false;
+		bool success = true;
 
-		if (!ReadDouble("blendInTime", options.blendInTime)) return false;
+		if (!RegisterFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) success = false;
+		if (!RegisterFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) success = false;
 
-		if (!ReadBool("enableKeyframes", options.enableKeyframes)) return false;
-		if (!ReadDouble("blendInKeyframeTime", options.blendInKeyframeTime)) return false;
+		if (!RegisterDouble("blendInTime", options.blendInTime)) success = false;
 
-		if (!ReadDouble("hitCooldownTimeStoppedColliding", options.hitCooldownTimeStoppedColliding)) return false;
-		if (!ReadDouble("hitCooldownTimeFallback", options.hitCooldownTimeFallback)) return false;
-		if (!ReadDouble("physicsHitRecoveryTime", options.physicsHitRecoveryTime)) return false;
+		if (!RegisterBool("enableKeyframes", options.enableKeyframes)) success = false;
+		if (!RegisterDouble("blendInKeyframeTime", options.blendInKeyframeTime)) success = false;
 
-		if (!ReadDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) return false;
+		if (!RegisterDouble("hitCooldownTimeStoppedColliding", options.hitCooldownTimeStoppedColliding)) success = false;
+		if (!RegisterDouble("hitCooldownTimeFallback", options.hitCooldownTimeFallback)) success = false;
+		if (!RegisterDouble("physicsHitRecoveryTime", options.physicsHitRecoveryTime)) success = false;
 
-		if (!ReadDouble("worldChangedWaitTime", options.worldChangedWaitTime)) return false;
+		if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
 
-		if (!ReadBool("enableActorShove", options.enableActorShove)) return false;
-		if (!ReadBool("disableShoveWhileWeaponsDrawn", options.disableShoveWhileWeaponsDrawn)) return false;
-		if (!ReadBool("enableShoveFromFurniture", options.enableShoveFromFurniture)) return false;
-		if (!ReadBool("playShovePhysicsSound", options.playShovePhysicsSound)) return false;
-		if (!ReadBool("playSoundOnShoveNoStamina", options.playSoundOnShoveNoStamina)) return false;
-		if (!ReadFloat("shoveStaggerMagnitude", options.shoveStaggerMagnitude)) return false;
-		if (!ReadFloat("shoveStaminaCost", options.shoveStaminaCost)) return false;
-		if (!ReadFloat("shoveSpeedThreshold", options.shoveSpeedThreshold)) return false;
-		if (!ReadFloat("shoveRumbleIntensity", options.shoveRumbleIntensity)) return false;
-		if (!ReadFloat("shoveRumbleDuration", options.shoveRumbleDuration)) return false;
-		if (!ReadFloat("shoveAggressionImpact", options.shoveAggressionImpact)) return false;
-		if (!ReadDouble("shoveCooldown", options.shoveCooldown)) return false;
-		if (!ReadDouble("collisionCooldownTime", options.collisionCooldownTime)) return false;
-		if (!ReadDouble("shoveWaitForBumpTimeBeforeStagger", options.shoveWaitForBumpTimeBeforeStagger)) return false;
-		if (!ReadFormArray("shoveTopicInfos", options.shoveTopicInfos)) return false;
+		if (!RegisterDouble("worldChangedWaitTime", options.worldChangedWaitTime)) success = false;
+
+		if (!RegisterBool("enableActorShove", options.enableActorShove)) success = false;
+		if (!RegisterBool("disableShoveWhileWeaponsDrawn", options.disableShoveWhileWeaponsDrawn)) success = false;
+		if (!RegisterBool("enableShoveFromFurniture", options.enableShoveFromFurniture)) success = false;
+		if (!RegisterBool("playShovePhysicsSound", options.playShovePhysicsSound)) success = false;
+		if (!RegisterBool("playSoundOnShoveNoStamina", options.playSoundOnShoveNoStamina)) success = false;
+		if (!RegisterFloat("shoveStaggerMagnitude", options.shoveStaggerMagnitude)) success = false;
+		if (!RegisterFloat("shoveStaminaCost", options.shoveStaminaCost)) success = false;
+		if (!RegisterFloat("shoveSpeedThreshold", options.shoveSpeedThreshold)) success = false;
+		if (!RegisterFloat("shoveRumbleIntensity", options.shoveRumbleIntensity)) success = false;
+		if (!RegisterFloat("shoveRumbleDuration", options.shoveRumbleDuration)) success = false;
+		if (!RegisterFloat("shoveAggressionImpact", options.shoveAggressionImpact)) success = false;
+		if (!RegisterDouble("shoveCooldown", options.shoveCooldown)) success = false;
+		if (!RegisterDouble("collisionCooldownTime", options.collisionCooldownTime)) success = false;
+		if (!RegisterDouble("shoveWaitForBumpTimeBeforeStagger", options.shoveWaitForBumpTimeBeforeStagger)) success = false;
+		if (!ReadFormArray("shoveTopicInfos", options.shoveTopicInfos)) success = false;
 
 
-		if (!ReadBool("enableBump", options.enableBump)) return false;
-		if (!ReadBool("doAggression", options.doAggression)) return false;
-		if (!ReadBool("followersSkipAggression", options.followersSkipAggression)) return false;
-		if (!ReadBool("summonsSkipAggression", options.summonsSkipAggression)) return false;
+		if (!RegisterBool("enableBump", options.enableBump)) success = false;
+		if (!RegisterBool("doAggression", options.doAggression)) success = false;
+		if (!RegisterBool("followersSkipAggression", options.followersSkipAggression)) success = false;
+		if (!RegisterBool("summonsSkipAggression", options.summonsSkipAggression)) success = false;
 
-		if (!ReadBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) return false;
-		if (!ReadBool("calmedActorsDontAccumulateAggression", options.calmedActorsDontAccumulateAggression)) return false;
-		if (!ReadDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) return false;
-		if (!ReadDouble("aggressionStopDelay", options.aggressionStopDelay)) return false;
-		if (!ReadDouble("aggressionDialogueInitMaxTime", options.aggressionDialogueInitMaxTime)) return false;
-		if (!ReadDouble("aggressionDialogueCooldownFallback", options.aggressionDialogueCooldownFallback)) return false;
-		if (!ReadDouble("aggressionDialogueCooldown", options.aggressionDialogueCooldown)) return false;
-		if (!ReadFloat("aggressionRequiredGrabTimeLow", options.aggressionRequiredGrabTimeLow)) return false;
-		if (!ReadFloat("aggressionRequiredGrabTimeHigh", options.aggressionRequiredGrabTimeHigh)) return false;
-		if (!ReadFloat("aggressionRequiredGrabTimeAssault", options.aggressionRequiredGrabTimeAssault)) return false;
-		if (!ReadFloat("aggressionMaxAccumulatedGrabTime", options.aggressionMaxAccumulatedGrabTime)) return false;
-		if (!ReadFloat("aggressionStopCombatAlarmDistance", options.aggressionStopCombatAlarmDistance)) return false;
-		if (!ReadFloat("aggressionRequiredHandWithinHmdConeHalfAngle", options.aggressionRequiredHandWithinHmdConeHalfAngle)) return false;
-		if (!ReadInt("aggressionMaxRelationshipRank", options.aggressionMaxRelationshipRank)) return false;
-		if (!ReadFormArray("aggressionLowTopicInfos", options.aggressionLowTopicInfos)) return false;
-		if (!ReadFormArray("aggressionHighTopicInfos", options.aggressionHighTopicInfos)) return false;
+		if (!RegisterBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) success = false;
+		if (!RegisterBool("calmedActorsDontAccumulateAggression", options.calmedActorsDontAccumulateAggression)) success = false;
+		if (!RegisterDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) success = false;
+		if (!RegisterDouble("aggressionStopDelay", options.aggressionStopDelay)) success = false;
+		if (!RegisterDouble("aggressionDialogueInitMaxTime", options.aggressionDialogueInitMaxTime)) success = false;
+		if (!RegisterDouble("aggressionDialogueCooldownFallback", options.aggressionDialogueCooldownFallback)) success = false;
+		if (!RegisterDouble("aggressionDialogueCooldown", options.aggressionDialogueCooldown)) success = false;
+		if (!RegisterFloat("aggressionRequiredGrabTimeLow", options.aggressionRequiredGrabTimeLow)) success = false;
+		if (!RegisterFloat("aggressionRequiredGrabTimeHigh", options.aggressionRequiredGrabTimeHigh)) success = false;
+		if (!RegisterFloat("aggressionRequiredGrabTimeAssault", options.aggressionRequiredGrabTimeAssault)) success = false;
+		if (!RegisterFloat("aggressionMaxAccumulatedGrabTime", options.aggressionMaxAccumulatedGrabTime)) success = false;
+		if (!RegisterFloat("aggressionStopCombatAlarmDistance", options.aggressionStopCombatAlarmDistance)) success = false;
+		if (!RegisterFloat("aggressionRequiredHandWithinHmdConeHalfAngle", options.aggressionRequiredHandWithinHmdConeHalfAngle)) success = false;
+		if (!RegisterInt("aggressionMaxRelationshipRank", options.aggressionMaxRelationshipRank)) success = false;
+		if (!ReadFormArray("aggressionLowTopicInfos", options.aggressionLowTopicInfos)) success = false;
+		if (!ReadFormArray("aggressionHighTopicInfos", options.aggressionHighTopicInfos)) success = false;
 
-		if (!ReadBool("doSpeedReduction", options.doSpeedReduction)) return false;
-		if (!ReadFloat("smallRaceSpeedReduction", options.smallRaceSpeedReduction)) return false;
-		if (!ReadFloat("mediumRaceSpeedReduction", options.mediumRaceSpeedReduction)) return false;
-		if (!ReadFloat("largeRaceSpeedReduction", options.largeRaceSpeedReduction)) return false;
-		if (!ReadFloat("extraLargeRaceSpeedReduction", options.extraLargeRaceSpeedReduction)) return false;
-		if (!ReadFloat("maxSpeedReduction", options.maxSpeedReduction)) return false;
-		if (!ReadFloat("speedReductionHealthInfluence", options.speedReductionHealthInfluence)) return false;
-		if (!ReadFloat("followerSpeedReductionMultiplier", options.followerSpeedReductionMultiplier)) return false;
+		if (!RegisterBool("doSpeedReduction", options.doSpeedReduction)) success = false;
+		if (!RegisterFloat("smallRaceSpeedReduction", options.smallRaceSpeedReduction)) success = false;
+		if (!RegisterFloat("mediumRaceSpeedReduction", options.mediumRaceSpeedReduction)) success = false;
+		if (!RegisterFloat("largeRaceSpeedReduction", options.largeRaceSpeedReduction)) success = false;
+		if (!RegisterFloat("extraLargeRaceSpeedReduction", options.extraLargeRaceSpeedReduction)) success = false;
+		if (!RegisterFloat("maxSpeedReduction", options.maxSpeedReduction)) success = false;
+		if (!RegisterFloat("speedReductionHealthInfluence", options.speedReductionHealthInfluence)) success = false;
+		if (!RegisterFloat("followerSpeedReductionMultiplier", options.followerSpeedReductionMultiplier)) success = false;
 
-		if (!ReadBool("followersSkipStaminaCost", options.followersSkipStaminaCost)) return false;
-		if (!ReadBool("playSoundOnGrabStaminaDepletion", options.playSoundOnGrabStaminaDepletion)) return false;
-		if (!ReadFloat("grabbedActorStaminaCost", options.grabbedActorStaminaCost)) return false;
-		if (!ReadFloat("grabbedActorHostileStaminaCost", options.grabbedActorHostileStaminaCost)) return false;
-		if (!ReadFloat("grabbedActorStaminaCostHealthInfluence", options.grabbedActorStaminaCostHealthInfluence)) return false;
-		if (!ReadInt("grabbedstaminaDrainMaxRelationshipRank", options.grabbedstaminaDrainMaxRelationshipRank)) return false;
+		if (!RegisterBool("followersSkipStaminaCost", options.followersSkipStaminaCost)) success = false;
+		if (!RegisterBool("playSoundOnGrabStaminaDepletion", options.playSoundOnGrabStaminaDepletion)) success = false;
+		if (!RegisterFloat("grabbedActorStaminaCost", options.grabbedActorStaminaCost)) success = false;
+		if (!RegisterFloat("grabbedActorHostileStaminaCost", options.grabbedActorHostileStaminaCost)) success = false;
+		if (!RegisterFloat("grabbedActorStaminaCostHealthInfluence", options.grabbedActorStaminaCostHealthInfluence)) success = false;
+		if (!RegisterInt("grabbedstaminaDrainMaxRelationshipRank", options.grabbedstaminaDrainMaxRelationshipRank)) success = false;
 
-		if (!ReadBool("ragdollOnGrab", options.ragdollOnGrab)) return false;
-		if (!ReadBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) return false;
-		if (!ReadFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) return false;
+		if (!RegisterBool("ragdollOnGrab", options.ragdollOnGrab)) success = false;
+		if (!RegisterBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) success = false;
+		if (!RegisterFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) success = false;
 
-		if (!ReadBool("doKeepOffset", options.doKeepOffset)) return false;
-		if (!ReadBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) return false;
-		if (!ReadFloat("keepOffsetMinAngleDifference", options.keepOffsetMinAngleDifference)) return false;
-		if (!ReadFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) return false;
-		if (!ReadDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) return false;
+		if (!RegisterBool("doKeepOffset", options.doKeepOffset)) success = false;
+		if (!RegisterBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) success = false;
+		if (!RegisterFloat("keepOffsetMinAngleDifference", options.keepOffsetMinAngleDifference)) success = false;
+		if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
+		if (!RegisterDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) success = false;
 
-		if (!ReadFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) return false;
-		if (!ReadFloat("collisionDamageMinMass", options.collisionDamageMinMass)) return false;
+		if (!RegisterFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) success = false;
+		if (!RegisterFloat("collisionDamageMinMass", options.collisionDamageMinMass)) success = false;
 
-		if (!ReadBool("doWarp", options.doWarp)) return false;
-		if (!ReadFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) return false;
+		if (!RegisterBool("doWarp", options.doWarp)) success = false;
+		if (!RegisterFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) success = false;
 
-		if (!ReadFloat("hierarchyGain", options.hierarchyGain)) return false;
-		if (!ReadFloat("velocityGain", options.velocityGain)) return false;
-		if (!ReadFloat("positionGain", options.positionGain)) return false;
+		if (!RegisterFloat("hierarchyGain", options.hierarchyGain)) success = false;
+		if (!RegisterFloat("velocityGain", options.velocityGain)) success = false;
+		if (!RegisterFloat("positionGain", options.positionGain)) success = false;
 
-		if (!ReadFloat("poweredControllerOnFraction", options.poweredControllerOnFraction)) return false;
+		if (!RegisterFloat("poweredControllerOnFraction", options.poweredControllerOnFraction)) success = false;
 
-		if (!ReadFloat("poweredMaxForce", options.poweredMaxForce)) return false;
-		if (!ReadFloat("poweredTau", options.poweredTau)) return false;
-		if (!ReadFloat("poweredDaming", options.poweredDaming)) return false;
-		if (!ReadFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) return false;
-		if (!ReadFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) return false;
+		if (!RegisterFloat("poweredMaxForce", options.poweredMaxForce)) success = false;
+		if (!RegisterFloat("poweredTau", options.poweredTau)) success = false;
+		if (!RegisterFloat("poweredDaming", options.poweredDaming)) success = false;
+		if (!RegisterFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) success = false;
+		if (!RegisterFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) success = false;
 
-		if (!ReadFloat("ragdollBoneMaxLinearVelocity", options.ragdollBoneMaxLinearVelocity)) return false;
-		if (!ReadFloat("ragdollBoneMaxAngularVelocity", options.ragdollBoneMaxAngularVelocity)) return false;
+		if (!RegisterFloat("ragdollBoneMaxLinearVelocity", options.ragdollBoneMaxLinearVelocity)) success = false;
+		if (!RegisterFloat("ragdollBoneMaxAngularVelocity", options.ragdollBoneMaxAngularVelocity)) success = false;
 
-		if (!ReadBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) return false;
-		if (!ReadFloat("ragdollSoundVel", options.ragdollSoundVel)) return false;
+		if (!RegisterBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) success = false;
+		if (!RegisterFloat("ragdollSoundVel", options.ragdollSoundVel)) success = false;
 
-		if (!ReadFloat("playerVsBipedInteractionImpulseMultiplier", options.playerVsBipedInteractionImpulseMultiplier)) return false;
+		if (!RegisterFloat("playerVsBipedInteractionImpulseMultiplier", options.playerVsBipedInteractionImpulseMultiplier)) success = false;
 
-		if (!ReadBool("stopRagdollNonSelfCollisionForCloseActors", options.stopRagdollNonSelfCollisionForCloseActors)) return false;
-		if (!ReadFloat("closeActorMinDistance", options.closeActorMinDistance)) return false;
+		if (!RegisterBool("stopRagdollNonSelfCollisionForCloseActors", options.stopRagdollNonSelfCollisionForCloseActors)) success = false;
+		if (!RegisterFloat("closeActorMinDistance", options.closeActorMinDistance)) success = false;
 
-		if (!ReadBool("stopRagdollNonSelfCollisionForActorsWithVehicle", options.stopRagdollNonSelfCollisionForActorsWithVehicle)) return false;
+		if (!RegisterBool("stopRagdollNonSelfCollisionForActorsWithVehicle", options.stopRagdollNonSelfCollisionForActorsWithVehicle)) success = false;
 
-		if (!ReadBool("stopAggressionForCloseActors", options.stopAggressionForCloseActors)) return false;
-		if (!ReadBool("stopAggressionForActorsWithVehicle", options.stopAggressionForActorsWithVehicle)) return false;
+		if (!RegisterBool("stopAggressionForCloseActors", options.stopAggressionForCloseActors)) success = false;
+		if (!RegisterBool("stopAggressionForActorsWithVehicle", options.stopAggressionForActorsWithVehicle)) success = false;
 
-		if (!ReadBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) return false;
-		if (!ReadBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) return false;
-		if (!ReadBool("doBipedSelfCollision", options.doBipedSelfCollision)) return false;
-		if (!ReadBool("doBipedSelfCollisionForNPCs", options.doBipedSelfCollisionForNPCs)) return false;
-		if (!ReadBool("doBipedNonSelfCollision", options.doBipedNonSelfCollision)) return false;
-		if (!ReadBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) return false;
-		if (!ReadBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) return false;
-		if (!ReadBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) return false;
-		if (!ReadBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) return false;
-		if (!ReadBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) return false;
-		if (!ReadBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) return false;
-		if (!ReadBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) return false;
-		if (!ReadBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) return false;
-		if (!ReadBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) return false;
-		if (!ReadBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) return false;
-		if (!ReadBool("disableCullingForActiveRagdolls", options.disableCullingForActiveRagdolls)) return false;
-		if (!ReadBool("forceGenerateForActiveRagdolls", options.forceGenerateForActiveRagdolls)) return false;
-		if (!ReadBool("forceAnimationUpdateForActiveActors", options.forceAnimationUpdateForActiveActors)) return false;
-		if (!ReadBool("disableClutterVsCharacterControllerCollisionForActiveActors", options.disableClutterVsCharacterControllerCollisionForActiveActors)) return false;
-		if (!ReadBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) return false;
-		if (!ReadBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) return false;
-		if (!ReadBool("forceAnimPose", options.forceAnimPose)) return false;
-		if (!ReadBool("forceRagdollPose", options.forceRagdollPose)) return false;
-		if (!ReadBool("doBlending", options.doBlending)) return false;
-		if (!ReadBool("applyImpulseOnHit", options.applyImpulseOnHit)) return false;
-		if (!ReadBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) return false;
-		if (!ReadBool("disableHitIfSheathed", options.disableHitIfSheathed)) return false;
-		if (!ReadBool("blendWhenGettingUp", options.blendWhenGettingUp)) return false;
-		if (!ReadBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) return false;
+		if (!RegisterBool("enableBipedBipedCollision", options.enableBipedBipedCollision)) success = false;
+		if (!RegisterBool("enableBipedBipedCollisionNoCC", options.enableBipedBipedCollisionNoCC)) success = false;
+		if (!RegisterBool("doBipedSelfCollision", options.doBipedSelfCollision)) success = false;
+		if (!RegisterBool("doBipedSelfCollisionForNPCs", options.doBipedSelfCollisionForNPCs)) success = false;
+		if (!RegisterBool("doBipedNonSelfCollision", options.doBipedNonSelfCollision)) success = false;
+		if (!RegisterBool("enableBipedDeadBipCollision", options.enableBipedDeadBipCollision)) success = false;
+		if (!RegisterBool("enablePlayerBipedCollision", options.enablePlayerBipedCollision)) success = false;
+		if (!RegisterBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) success = false;
+		if (!RegisterBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) success = false;
+		if (!RegisterBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) success = false;
+		if (!RegisterBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) success = false;
+		if (!RegisterBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) success = false;
+		if (!RegisterBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) success = false;
+		if (!RegisterBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) success = false;
+		if (!RegisterBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) success = false;
+		if (!RegisterBool("disableCullingForActiveRagdolls", options.disableCullingForActiveRagdolls)) success = false;
+		if (!RegisterBool("forceGenerateForActiveRagdolls", options.forceGenerateForActiveRagdolls)) success = false;
+		if (!RegisterBool("forceAnimationUpdateForActiveActors", options.forceAnimationUpdateForActiveActors)) success = false;
+		if (!RegisterBool("disableClutterVsCharacterControllerCollisionForActiveActors", options.disableClutterVsCharacterControllerCollisionForActiveActors)) success = false;
+		if (!RegisterBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) success = false;
+		if (!RegisterBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) success = false;
+		if (!RegisterBool("forceAnimPose", options.forceAnimPose)) success = false;
+		if (!RegisterBool("forceRagdollPose", options.forceRagdollPose)) success = false;
+		if (!RegisterBool("doBlending", options.doBlending)) success = false;
+		if (!RegisterBool("applyImpulseOnHit", options.applyImpulseOnHit)) success = false;
+		if (!RegisterBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) success = false;
+		if (!RegisterBool("disableHitIfSheathed", options.disableHitIfSheathed)) success = false;
+		if (!RegisterBool("blendWhenGettingUp", options.blendWhenGettingUp)) success = false;
+		if (!RegisterBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) success = false;
 
-		if (!ReadFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) return false;
-		if (!ReadFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) return false;
-		if (!ReadFloat("hitImpulseMassExponent", options.hitImpulseMassExponent)) return false;
+		if (!RegisterFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) success = false;
+		if (!RegisterFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) success = false;
+		if (!RegisterFloat("hitImpulseMassExponent", options.hitImpulseMassExponent)) success = false;
 
-		if (!ReadFloat("hitImpulseMinStrength", options.hitImpulseMinStrength)) return false;
-		if (!ReadFloat("hitImpulseMaxStrength", options.hitImpulseMaxStrength)) return false;
-		if (!ReadFloat("hitImpulseMaxVelocity", options.hitImpulseMaxVelocity)) return false;
+		if (!RegisterFloat("hitImpulseMinStrength", options.hitImpulseMinStrength)) success = false;
+		if (!RegisterFloat("hitImpulseMaxStrength", options.hitImpulseMaxStrength)) success = false;
+		if (!RegisterFloat("hitImpulseMaxVelocity", options.hitImpulseMaxVelocity)) success = false;
 
-		if (!ReadFloat("hitImpulseDownwardsMultiplier", options.hitImpulseDownwardsMultiplier)) return false;
+		if (!RegisterFloat("hitImpulseDownwardsMultiplier", options.hitImpulseDownwardsMultiplier)) success = false;
 
-		if (!ReadFloat("hitSwingSpeedThreshold", options.hitSwingSpeedThreshold)) return false;
-		if (!ReadFloat("hitSwingImpulseMult", options.hitSwingImpulseMult)) return false;
+		if (!RegisterFloat("hitSwingSpeedThreshold", options.hitSwingSpeedThreshold)) success = false;
+		if (!RegisterFloat("hitSwingImpulseMult", options.hitSwingImpulseMult)) success = false;
 
-		if (!ReadFloat("hitStabDirectionThreshold", options.hitStabDirectionThreshold)) return false;
-		if (!ReadFloat("hitStabSpeedThreshold", options.hitStabSpeedThreshold)) return false;
-		if (!ReadFloat("hitStabImpulseMult", options.hitStabImpulseMult)) return false;
+		if (!RegisterFloat("hitStabDirectionThreshold", options.hitStabDirectionThreshold)) success = false;
+		if (!RegisterFloat("hitStabSpeedThreshold", options.hitStabSpeedThreshold)) success = false;
+		if (!RegisterFloat("hitStabImpulseMult", options.hitStabImpulseMult)) success = false;
 
-		if (!ReadFloat("hitPunchDirectionThreshold", options.hitPunchDirectionThreshold)) return false;
-		if (!ReadFloat("hitPunchSpeedThreshold", options.hitPunchSpeedThreshold)) return false;
-		if (!ReadFloat("hitPunchImpulseMult", options.hitPunchImpulseMult)) return false;
+		if (!RegisterFloat("hitPunchDirectionThreshold", options.hitPunchDirectionThreshold)) success = false;
+		if (!RegisterFloat("hitPunchSpeedThreshold", options.hitPunchSpeedThreshold)) success = false;
+		if (!RegisterFloat("hitPunchImpulseMult", options.hitPunchImpulseMult)) success = false;
 
-		if (!ReadFloat("hitRequiredHandSpeedRoomspace", options.hitRequiredHandSpeedRoomspace)) return false;
+		if (!RegisterFloat("hitRequiredHandSpeedRoomspace", options.hitRequiredHandSpeedRoomspace)) success = false;
 
-		if (!ReadFloat("hitImpulseDecayMult1", options.hitImpulseDecayMult1)) return false;
-		if (!ReadFloat("hitImpulseDecayMult2", options.hitImpulseDecayMult2)) return false;
-		if (!ReadFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) return false;
+		if (!RegisterFloat("hitImpulseDecayMult1", options.hitImpulseDecayMult1)) success = false;
+		if (!RegisterFloat("hitImpulseDecayMult2", options.hitImpulseDecayMult2)) success = false;
+		if (!RegisterFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) success = false;
 
-		if (!ReadFloat("meleeSwingLinearVelocityThreshold", options.meleeSwingLinearVelocityThreshold)) return false;
-		if (!ReadFloat("shieldSwingLinearVelocityThreshold", options.shieldSwingLinearVelocityThreshold)) return false;
+		if (!RegisterFloat("meleeSwingLinearVelocityThreshold", options.meleeSwingLinearVelocityThreshold)) success = false;
+		if (!RegisterFloat("shieldSwingLinearVelocityThreshold", options.shieldSwingLinearVelocityThreshold)) success = false;
 
-		if (!ReadBool("resizePlayerCharController", options.resizePlayerCharController)) return false;
-		if (!ReadBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) return false;
-		if (!ReadFloat("playerCharControllerBottomRingMaxHeightAdjustment", options.playerCharControllerBottomRingMaxHeightAdjustment)) return false;
-		if (!ReadBool("resizePlayerCapsule", options.resizePlayerCapsule)) return false;
-		if (!ReadBool("centerPlayerCapsule", options.centerPlayerCapsule)) return false;
-		if (!ReadFloat("playerCharControllerRadius", options.playerCharControllerRadius)) return false;
-		if (!ReadFloat("playerCapsuleRadius", options.playerCapsuleRadius)) return false;
+		if (!RegisterBool("resizePlayerCharController", options.resizePlayerCharController)) success = false;
+		if (!RegisterBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) success = false;
+		if (!RegisterFloat("playerCharControllerBottomRingMaxHeightAdjustment", options.playerCharControllerBottomRingMaxHeightAdjustment)) success = false;
+		if (!RegisterBool("resizePlayerCapsule", options.resizePlayerCapsule)) success = false;
+		if (!RegisterBool("centerPlayerCapsule", options.centerPlayerCapsule)) success = false;
+		if (!RegisterFloat("playerCharControllerRadius", options.playerCharControllerRadius)) success = false;
+		if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
 
-		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) return false;
-		if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) return false;
-		if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) return false;
+		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
+		if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
+		if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;
 
-		return true;
+		g_registrationComplete = true;
+
+		return success;
 	}
 
 	bool ReloadIfModified()

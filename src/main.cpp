@@ -3886,7 +3886,7 @@ extern "C" {
 			_MESSAGE("Successfully read config parameters");
 		}
 		else {
-			_WARNING("[WARNING] Failed to read config options. Using defaults instead.");
+			_WARNING("[WARNING] Failed to read some config options. Using defaults instead.");
 		}
 
 		_MESSAGE("Registering for SKSE messages");

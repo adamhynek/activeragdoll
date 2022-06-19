@@ -215,9 +215,17 @@ namespace Config {
 	};
 	extern Options options; // global object containing options
 
+	extern std::map<std::string, float *, std::less<>> floatMap;
+	extern std::map<std::string, double *, std::less<>> doubleMap;
+	extern std::map<std::string, int *, std::less<>> intMap;
+	extern std::map<std::string, bool *, std::less<>> boolMap;
+
 
 	// Fills Options struct from INI file
 	bool ReadConfigOptions();
+
+	bool SetSettingDouble(const std::string_view &name, double val);
+	bool GetSettingDouble(const std::string_view &name, double &out);
 
 	bool ReloadIfModified();
 
