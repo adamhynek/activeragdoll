@@ -46,6 +46,7 @@
 #include "main.h"
 #include "blender.h"
 #include "menu_checker.h"
+#include "pluginapi.h"
 
 
 // SKSE globals
@@ -1504,7 +1505,7 @@ struct NPCData
 				_MESSAGE("%s says: %x", name->name, topicInfo->formID);
 #endif // _DEBUG
 
-				Actor_SayToEx(character, *g_thePlayer, topicInfo);
+				Actor_SayToEx(character, *g_thePlayer, (TESTopic *)topicInfo->unk14, topicInfo);
 
 				secondLastSaidTopicID = lastSaidTopicID;
 				lastSaidTopicID = topicInfo->formID;
@@ -1718,6 +1719,11 @@ bool CanAddToWorld(Actor *actor)
 		if (name && Config::options.excludeRaces.count(std::string_view(name))) {
 			return false;
 		}
+	}
+
+	{
+		std::scoped_lock lock(g_interface001.ignoredActorsLock);
+		if (g_interface001.ignoredActors.count(actor)) return false;
 	}
 
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
@@ -2625,6 +2631,14 @@ void ProcessHavokHitJobsHook()
 
 #ifdef _DEBUG
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+			/*if (std::string_view(name->name) == "Faendal") {
+				if (fmod(g_currentFrameTime, 10.0) < 5.0) {
+					g_interface001.AddIgnoredActor(actor);
+				}
+				else {
+					g_interface001.RemoveIgnoredActor(actor);
+				}
+			}*/
 #endif // _DEBUG
 
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
@@ -2729,10 +2743,20 @@ void ProcessHavokHitJobsHook()
 					AddRagdollToWorld(actor);
 					if (collisionGroup != 0) {
 						g_activeBipedGroups.insert(collisionGroup);
+						if (isHittableCharController) {
+							g_hittableCharControllerGroups.erase(collisionGroup);
+						}
 					}
 				}
 
 				if (!canAddToWorld) {
+					if (isActiveActor) {
+						// Someone in range went from having a ragdoll or not being excluded, to not having a ragdoll or being excluded
+						RemoveRagdollFromWorld(actor);
+						g_activeBipedGroups.erase(collisionGroup);
+						isActiveActor = false;
+					}
+
 					// There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
 					// In this case, we need to register collisions against their charcontroller.
 					if (collisionGroup != 0) {
@@ -2889,12 +2913,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 	ragdoll->knockState = knockState;
-
-	/*TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-	if (std::string(name->name) == "Faendal") {
-		hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-		PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(worldFromModel.m_translation))), "worldfrommodel");
-	}*/
 
 	if (Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
 

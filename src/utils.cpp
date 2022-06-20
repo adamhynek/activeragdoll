@@ -911,7 +911,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
 	sub_140664870(process, 0);
 }
 
-void Actor_SayToEx(Actor *source, Actor *target, TESTopicInfo *topicInfo)
+void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo)
 {
 	ActorProcessManager *sourceProcess = source->processManager;
 	if (!sourceProcess) return;
@@ -934,7 +934,7 @@ void Actor_SayToEx(Actor *source, Actor *target, TESTopicInfo *topicInfo)
 	ActorProcess_SetLookAt1(sourceProcess, target);
 
 	source->unk0F8 = targetHandle; // dialogueItemTarget
-	ActorProcess_SayTopicInfo(sourceProcess, source, (TESTopic *)topicInfo->unk14, topicInfo, 0, 0, 1, 1);
+	ActorProcess_SayTopicInfo(sourceProcess, source, topic, topicInfo, 0, 0, 1, 1);
 }
 
 TESTopicInfo * GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1, UInt32 exclude2)
