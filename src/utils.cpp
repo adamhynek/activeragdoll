@@ -812,7 +812,7 @@ bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action)
 	return get_vfunc<_TESActionData_Process>(&input, 5)(&input);
 }
 
-void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue)
+void TriggerDialogueByType(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue)
 {
 	int dialogueType = GetDialogueTypeFromSubtype(dialogueSubtype);
 	UpdateDialogue(nullptr, source, target, dialogueType, dialogueSubtype, interruptDialogue, nullptr);

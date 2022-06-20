@@ -110,7 +110,7 @@ inline bool IsSleeping(Actor *actor) { return ((actor->actorState.flags04 >> 14)
 bool IsActorGettingUp(Actor *actor);
 float GetAVPercentage(Actor *actor, UInt32 av);
 bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
-void TriggerDialogue(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
+void TriggerDialogueByType(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
 void ExitFurniture(Actor *actor);
 bool HasKeepOffsetInterface(Actor * actor);
 void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue);

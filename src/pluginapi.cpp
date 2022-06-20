@@ -24,7 +24,7 @@ void * GetApi(unsigned int revisionNumber) {
 }
 
 // Handles skse mod messages requesting to fetch API functions from PLANCK
-void ModMessageHandler(SKSEMessagingInterface::Message * message) {
+void PlanckPluginAPI::ModMessageHandler(SKSEMessagingInterface::Message * message) {
 	if (message->type == PlanckMessage::kMessage_GetInterface) {
 		PlanckMessage * planckMessage = (PlanckMessage*)message->data;
 		planckMessage->GetApiFunction = GetApi;
@@ -40,13 +40,11 @@ unsigned int PlanckInterface001::GetBuildNumber() {
 	return planckBuildNumber;
 }
 
-bool PlanckInterface001::GetSettingDouble(const std::string_view &name, double &out)
-{
+bool PlanckInterface001::GetSettingDouble(const std::string_view &name, double &out) {
 	return Config::GetSettingDouble(name, out);
 }
 
-bool PlanckInterface001::SetSettingDouble(const std::string &name, double val)
-{
+bool PlanckInterface001::SetSettingDouble(const std::string &name, double val) {
 	return Config::SetSettingDouble(name, val);
 }
 
@@ -58,4 +56,34 @@ void PlanckInterface001::AddIgnoredActor(Actor *actor) {
 void PlanckInterface001::RemoveIgnoredActor(Actor *actor) {
 	std::scoped_lock lock(ignoredActorsLock);
 	ignoredActors.erase(actor);
+}
+
+void PlanckInterface001::AddAggressionIgnoredActor(Actor *actor) {
+	std::scoped_lock lock(aggressionIgnoredActorsLock);
+	aggressionIgnoredActors.insert(actor);
+}
+
+void PlanckInterface001::RemoveAggressionIgnoredActor(Actor *actor) {
+	std::scoped_lock lock(aggressionIgnoredActorsLock);
+	aggressionIgnoredActors.erase(actor);
+}
+
+void PlanckInterface001::SetAggressionLowTopic(Actor *actor, TESTopic *topic) {
+	std::scoped_lock lock(aggressionTopicsLock);
+	if (topic) {
+		lowAggressionTopics[actor] = topic;
+	}
+	else {
+		lowAggressionTopics.erase(actor);
+	}
+}
+
+void PlanckInterface001::SetAggressionHighTopic(Actor *actor, TESTopic *topic) {
+	std::scoped_lock lock(aggressionTopicsLock);
+	if (topic) {
+		highAggressionTopics[actor] = topic;
+	}
+	else {
+		highAggressionTopics.erase(actor);
+	}
 }

@@ -274,7 +274,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	}
 
 	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
-	TriggerDialogue(source, target, dialogueSubtype, false);
+	TriggerDialogueByType(source, target, dialogueSubtype, false);
 
 	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack)) {
 		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), isOffhand ? 45 : 49, 2);
@@ -1494,25 +1494,56 @@ struct NPCData
 	float lastVoiceTimer = -1.f;
 	bool isSpeaking = false;
 
-	void TryTriggerDialogue(Character *character, std::vector<UInt32> &topicInfoIDs, bool force = false)
+	void TriggerDialogue(Character *character, TESTopic *topic, TESTopicInfo *topicInfo)
+	{
+		Actor_SayToEx(character, *g_thePlayer, topic, topicInfo);
+
+		if (topicInfo) {
+			secondLastSaidTopicID = lastSaidTopicID;
+			lastSaidTopicID = topicInfo->formID;
+		}
+
+		lastSaidTopic = topic;
+	}
+
+	void TryTriggerDialogue(Character *character, bool high, bool isShoved)
 	{
 		if (Actor_IsInRagdollState(character) || IsSleeping(character)) return;
 
-		if (force || (!isSpeaking && g_currentFrameTime - dialogueTime > Config::options.aggressionDialogueInitMaxTime)) {
-			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopicID, secondLastSaidTopicID)) {
-#ifdef _DEBUG
-				TESFullName *name = DYNAMIC_CAST(character->baseForm, TESForm, TESFullName);
-				_MESSAGE("%s says: %x", name->name, topicInfo->formID);
-#endif // _DEBUG
-
-				Actor_SayToEx(character, *g_thePlayer, (TESTopic *)topicInfo->unk14, topicInfo);
-
-				secondLastSaidTopicID = lastSaidTopicID;
-				lastSaidTopicID = topicInfo->formID;
-				lastSaidTopic = (TESTopic *)topicInfo->unk14;
+		if (isShoved) {
+			if (TESTopicInfo *topicInfo = GetRandomTopicInfo(Config::options.shoveTopicInfos, lastSaidTopicID, secondLastSaidTopicID)) {
+				TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
 			}
 			dialogueTime = g_currentFrameTime;
+			return;
 		}
+
+		if (isSpeaking || g_currentFrameTime - dialogueTime <= Config::options.aggressionDialogueInitMaxTime) return;
+
+		{
+			std::scoped_lock lock(g_interface001.aggressionTopicsLock);
+			std::unordered_map<Actor *, TESTopic *> &topics = high ? g_interface001.highAggressionTopics : g_interface001.lowAggressionTopics;
+			if (auto it = topics.find(character); it != topics.end()) {
+				// First, check if this specific actor has an assigned topic
+				TriggerDialogue(character, it->second, nullptr);
+				dialogueTime = g_currentFrameTime;
+				return;
+			}
+			else if (auto it = topics.find(nullptr); it != topics.end()) {
+				// If the specific actor does not have an assigned topic, see if there is a general topic set for all actors
+				TriggerDialogue(character, it->second, nullptr);
+				dialogueTime = g_currentFrameTime;
+				return;
+			}
+		}
+
+		// There are no assigned topics, so use our topic info sets
+		std::vector<UInt32> &topicInfoIDs = high ? Config::options.aggressionHighTopicInfos : Config::options.aggressionLowTopicInfos;
+		if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopicID, secondLastSaidTopicID)) {
+			TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
+		}
+
+		dialogueTime = g_currentFrameTime;
 	}
 
 	void TryBump(Character *character, bool exitFurniture, bool force = false)
@@ -1597,7 +1628,7 @@ struct NPCData
 			}
 			else if (isAggressivelyInteractedWith) {
 				// Constantly try to say something
-				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionLowTopicInfos, isShoved);
+				TryTriggerDialogue(character, false, isShoved);
 				if (ShouldBumpActor(character) && !IsActorUsingFurniture(character)) {
 					TryBump(character, false);
 				}
@@ -1620,7 +1651,7 @@ struct NPCData
 			}
 			else if (isAggressivelyInteractedWith) {
 				// Constantly try to say something
-				TryTriggerDialogue(character, isShoved ? Config::options.shoveTopicInfos : Config::options.aggressionHighTopicInfos, isShoved);
+				TryTriggerDialogue(character, true, isShoved);
 				if (ShouldBumpActor(character)) {
 					TryBump(character, Config::options.stopUsingFurnitureOnHighAggression);
 				}
@@ -2632,6 +2663,8 @@ void ProcessHavokHitJobsHook()
 #ifdef _DEBUG
 			TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 			/*if (std::string_view(name->name) == "Faendal") {
+				g_interface001.SetAggressionLowTopic(actor, (TESTopic*)LookupFormByID(0x000142B5));
+				g_interface001.SetAggressionLowTopic(nullptr, (TESTopic*)LookupFormByID(0x000142B2));
 				if (fmod(g_currentFrameTime, 10.0) < 5.0) {
 					g_interface001.AddIgnoredActor(actor);
 				}
