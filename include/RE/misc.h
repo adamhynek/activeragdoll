@@ -239,7 +239,7 @@ struct HitData
 	float                    pushBack;                // 74
 	float                    reflectedDamage;         // 78
 	float                    criticalDamageMult;      // 7C
-	Flag                     flags;                   // 80
+	UInt32                   flags;                   // 80
 	std::uint32_t            equipIndex;              // 84
 	std::uint32_t            material;                // 88
 	std::uint32_t            damageLimb;              // 8C

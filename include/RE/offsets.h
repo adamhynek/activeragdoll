@@ -699,6 +699,9 @@ extern RelocAddr<_HitData_populate> HitData_populate;
 typedef void(*_HitData_PopulateFromPhysicalHit)(HitData *_this, Actor *src, Actor *target, float damage, bhkCharacterController::CollisionEvent &collisionEvent);
 extern RelocAddr<_HitData_PopulateFromPhysicalHit> HitData_PopulateFromPhysicalHit;
 
+typedef void(*_ScriptEventSourceHolder_DispatchHitEvenFromHitData)(EventDispatcherList *_this, Actor **hitTarget, Actor **hitSource, UInt32 sourceFormID, UInt32 projectileFormID, HitData *hitData);
+extern RelocAddr<_ScriptEventSourceHolder_DispatchHitEvenFromHitData> ScriptEventSourceHolder_DispatchHitEvenFromHitData;
+
 typedef float(*_CalculatePhysicsDamage)(float mass, float speed);
 extern RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage;
 

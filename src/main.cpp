@@ -218,7 +218,18 @@ void Hit()
 }
 */
 
-void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, bool isOffhand, bool isPowerAttack)
+bool g_isInPlanckHit = false;
+struct PlanckHitData
+{
+	NiPoint3 position;
+	NiPoint3 velocity;
+	NiAVObject *node = nullptr;
+	const char *nodeName = nullptr;
+	bool isLeft;
+};
+PlanckHitData g_lastHitData;
+
+void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, hkpRigidBody *hitRigidBody, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -301,7 +312,19 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)source->baseForm);
 	Actor_SetActionValue(source, soundAmount);
 
+	// Set last hit data to be read from at the time that the hit event is fired
+	g_lastHitData = {};
+	if (NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable())) {
+		g_lastHitData.node = hitNode;
+		g_lastHitData.nodeName = hitNode->m_name;
+	}
+	g_lastHitData.position = hitPosition;
+	g_lastHitData.velocity = hitVelocity;
+	g_lastHitData.isLeft = isLeft;
+
+	g_isInPlanckHit = true;
 	Character_HitTarget(source, target, nullptr, isOffhand);
+	g_isInPlanckHit = false;
 
 	Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
 
@@ -855,7 +878,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
-			HitActor(player, hitChar, weapon, attackData, isOffhand, isPowerAttack);
+			HitActor(player, hitChar, weapon, attackData, hitRigidBody, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
 
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
@@ -3372,6 +3395,32 @@ void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager,
 	BSAnimationGraphManager_SetWorld(manager, a2);
 }
 
+void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr, Actor *targetRefr, InventoryEntryData *weapon, bool isOffhand)
+{
+	HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+	if (g_isInPlanckHit) {
+		hitData->flags |= (1 << 30); // set an unused bit
+	}
+}
+
+void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(EventDispatcher<TESHitEvent> *dispatcher, TESHitEvent *hitEvent, HitData *hitData)
+{
+	if (hitData->flags >> 30 & 1) {
+		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
+		extendedHitEvent.position = g_lastHitData.position;
+		extendedHitEvent.velocity = g_lastHitData.velocity;
+		extendedHitEvent.node = g_lastHitData.node;
+		extendedHitEvent.nodeName = g_lastHitData.nodeName;
+		extendedHitEvent.hitData = hitData;
+		extendedHitEvent.isLeft = g_lastHitData.isLeft;
+		extendedHitEvent.flags |= (1 << 5); // set an unused bit
+
+		dispatcher->SendEvent(&extendedHitEvent);
+	}
+	else {
+		dispatcher->SendEvent(hitEvent);
+	}
+}
 
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
@@ -3402,6 +3451,10 @@ auto ActorProcess_ExitFurniture_ResetRagdoll_HookLoc = RelocAddr<uintptr_t>(0x68
 auto ActorProcess_EnterFurniture_SetWorld_HookLoc = RelocAddr<uintptr_t>(0x68E344);
 
 auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
+
+auto Character_HitTarget_HitData_Populate_HookLoc = RelocAddr<uintptr_t>(0x631CA7);
+auto Actor_GetHit_DispatchHitEventFromHitData_HookLoc = RelocAddr<uintptr_t>(0x62F3DA);
+auto ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc = RelocAddr<uintptr_t>(0x636742);
 
 
 void PerformHooks(void)
@@ -3472,6 +3525,40 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
 		_MESSAGE("Actor kill end havok hit hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(Character_HitTarget_HitData_Populate_HookLoc.GetUIntPtr(), uintptr_t(Character_HitTarget_HitData_Populate_Hook));
+		_MESSAGE("Character_HitTarget_HitData_Populate hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack;
+
+				mov(r8, ptr[rsp + 0x88]); // the HitData is at rsp + 0x88
+
+				// Call our hook
+				mov(rax, (uintptr_t)ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook);
+				call(rax);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(jumpBack);
+				dq(ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc.GetUIntPtr() + 5);
+			}
+		};
+
+		void * codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write5Branch(ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent hook complete");
 	}
 
 	if (Config::options.seamlessFurnitureTransition) {

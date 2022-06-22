@@ -297,6 +297,7 @@ RelocAddr<_HitData_ctor> HitData_ctor(0x76D000);
 RelocAddr<_HitData_dtor> HitData_dtor(0x76D0F0);
 RelocAddr<_HitData_populate> HitData_populate(0x76D400);
 RelocAddr<_HitData_PopulateFromPhysicalHit> HitData_PopulateFromPhysicalHit(0x76DAF0);
+RelocAddr<_ScriptEventSourceHolder_DispatchHitEvenFromHitData> ScriptEventSourceHolder_DispatchHitEvenFromHitData(0x6366A0);
 RelocAddr<_CalculatePhysicsDamage> CalculatePhysicsDamage(0x3B5540);
 RelocAddr<_Actor_GetHit> Actor_GetHit(0x62F270);
 RelocAddr<_Actor_EndHavokHit> Actor_EndHavokHit(0x75B390);

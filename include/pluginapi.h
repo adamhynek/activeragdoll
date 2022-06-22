@@ -42,6 +42,16 @@ namespace PlanckPluginAPI {
 		std::unordered_map<Actor *, TESTopic *> lowAggressionTopics;
 		std::unordered_map<Actor *, TESTopic *> highAggressionTopics;
 	};
+
+	struct PlanckHitEvent : TESHitEvent
+	{
+		NiPoint3 position;
+		NiPoint3 velocity;
+		NiAVObject *node;
+		const char *nodeName;
+		void *hitData; // HitData
+		bool isLeft;
+	};
 }
 
 extern PlanckPluginAPI::PlanckInterface001 g_interface001;
