@@ -44,7 +44,7 @@ namespace PlanckPluginAPI {
 		// Gets the PLANCK build number
 		virtual unsigned int GetBuildNumber() = 0;
 
-		// Read or modify any of planck's ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
+		// Read or modify any of planck's numeric ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
 		// Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
 		virtual bool GetSettingDouble(const std::string_view &name, double &out) = 0;
 		virtual bool SetSettingDouble(const std::string &name, double val) = 0;

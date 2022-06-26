@@ -1576,9 +1576,18 @@ struct NPCData
 	void StateUpdate(Character *character, bool isShoved)
 	{
 		if (character->IsDead(1)) return;
-		if (Config::options.followersSkipAggression && IsTeammate(character)) return;
 		if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
-		if (RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank) return;
+		if ((Config::options.followersSkipAggression && IsTeammate(character)) ||
+			(RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank))
+		{
+			// Still do some dialogue when shoved even if it won't grow aggression for them
+			if (isShoved && !Actor_IsInRagdollState(character) && !IsSleeping(character)) {
+				if (TESTopicInfo *topicInfo = GetRandomTopicInfo(Config::options.shoveTopicInfos, lastSaidTopicID, secondLastSaidTopicID)) {
+					TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
+				}
+			}
+			return;
+		}
 
 		TESTopic *currentTopic = GetCurrentTopic(character);
 		float voiceTimer = character->unk108;
