@@ -8,13 +8,43 @@ namespace PlanckPluginAPI {
 	// This should only be called after SKSE sends kMessage_PostPostLoad to your plugin
 	struct IPlanckInterface001 * GetPlanckInterface001(const PluginHandle & pluginHandle, SKSEMessagingInterface * messagingInterface);
 
+	struct PlanckHitData
+	{
+		// The position of the hit.
+		NiPoint3 position;
+		// The velocity of your weapon at the point of impact.
+		NiPoint3 velocity;
+		// The node that was hit.
+		// Note: This can not necessarily be safely accessed if the node was deleted between when the hit was detected and the hit event is fired.
+		NiAVObject *node = nullptr;
+		// The name of the node that was hit.
+		const char *nodeName = nullptr;
+		// Whether the hit was with the left or right hand's weapon.
+		bool isLeft;
+	};
+
+	struct PlanckHitEvent : TESHitEvent
+	{
+		enum
+		{
+			// If this flag is set on a hit event, then it is a PlanckHitEvent
+			kFlag_IsPlanckHit = (1 << 5)
+		};
+
+		// Extended hit information added by planck
+		PlanckHitData extendedHitData;
+
+		// The HitData of the hit, containing the damage dealt, etc.
+		void *hitData;
+	};
+
 	// This object provides access to PLANCK's mod support API
 	struct IPlanckInterface001
 	{
 		// Gets the PLANCK build number
 		virtual unsigned int GetBuildNumber() = 0;
 
-		// Read or modify any of planck's ini settings.
+		// Read or modify any of planck's ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
 		// Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
 		virtual bool GetSettingDouble(const std::string_view &name, double &out) = 0;
 		virtual bool SetSettingDouble(const std::string &name, double val) = 0;
@@ -34,6 +64,9 @@ namespace PlanckPluginAPI {
 		// Set the topic used by the given npc when interacted with for more than aggressionRequiredGrabTimeHigh seconds by planck's aggression system.
 		// Pass a null actor to replace the default. Pass a null topic to revert a previously set topic.
 		virtual void SetAggressionHighTopic(Actor *actor, TESTopic *topic) = 0;
+
+		// Get the extended hit info of the last melee hit that planck provides
+		virtual PlanckHitData GetLastHitData() = 0;
 	};
 }
 

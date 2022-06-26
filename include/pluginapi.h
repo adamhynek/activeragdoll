@@ -32,6 +32,10 @@ namespace PlanckPluginAPI {
 		virtual void SetAggressionLowTopic(Actor *actor, TESTopic *topic);
 		virtual void SetAggressionHighTopic(Actor *actor, TESTopic *topic);
 
+		virtual PlanckHitData GetLastHitData();
+
+		PlanckHitData lastHitData;
+
 		std::mutex ignoredActorsLock;
 		std::unordered_set<Actor *> ignoredActors;
 
@@ -41,16 +45,6 @@ namespace PlanckPluginAPI {
 		std::mutex aggressionTopicsLock;
 		std::unordered_map<Actor *, TESTopic *> lowAggressionTopics;
 		std::unordered_map<Actor *, TESTopic *> highAggressionTopics;
-	};
-
-	struct PlanckHitEvent : TESHitEvent
-	{
-		NiPoint3 position;
-		NiPoint3 velocity;
-		NiAVObject *node;
-		const char *nodeName;
-		void *hitData; // HitData
-		bool isLeft;
 	};
 }
 

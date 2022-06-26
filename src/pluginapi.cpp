@@ -87,3 +87,8 @@ void PlanckInterface001::SetAggressionHighTopic(Actor *actor, TESTopic *topic) {
 		highAggressionTopics.erase(actor);
 	}
 }
+
+PlanckHitData PlanckInterface001::GetLastHitData()
+{
+	return lastHitData;
+}

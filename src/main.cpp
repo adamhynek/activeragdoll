@@ -219,15 +219,6 @@ void Hit()
 */
 
 bool g_isInPlanckHit = false;
-struct PlanckHitData
-{
-	NiPoint3 position;
-	NiPoint3 velocity;
-	NiAVObject *node = nullptr;
-	const char *nodeName = nullptr;
-	bool isLeft;
-};
-PlanckHitData g_lastHitData;
 
 void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, hkpRigidBody *hitRigidBody, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
 {
@@ -313,14 +304,15 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	Actor_SetActionValue(source, soundAmount);
 
 	// Set last hit data to be read from at the time that the hit event is fired
-	g_lastHitData = {};
+	PlanckPluginAPI::PlanckHitData &lastHitData = g_interface001.lastHitData;
+	lastHitData = {};
 	if (NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable())) {
-		g_lastHitData.node = hitNode;
-		g_lastHitData.nodeName = hitNode->m_name;
+		lastHitData.node = hitNode;
+		lastHitData.nodeName = hitNode->m_name;
 	}
-	g_lastHitData.position = hitPosition;
-	g_lastHitData.velocity = hitVelocity;
-	g_lastHitData.isLeft = isLeft;
+	lastHitData.position = hitPosition;
+	lastHitData.velocity = hitVelocity;
+	lastHitData.isLeft = isLeft;
 
 	g_isInPlanckHit = true;
 	Character_HitTarget(source, target, nullptr, isOffhand);
@@ -3399,7 +3391,8 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
 {
 	HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
 	if (g_isInPlanckHit) {
-		hitData->flags |= (1 << 30); // set an unused bit
+		// Set an unused bit to signify this hit will have additional info from planck
+		hitData->flags |= (1 << 30);
 	}
 }
 
@@ -3407,13 +3400,9 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 {
 	if (hitData->flags >> 30 & 1) {
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
-		extendedHitEvent.position = g_lastHitData.position;
-		extendedHitEvent.velocity = g_lastHitData.velocity;
-		extendedHitEvent.node = g_lastHitData.node;
-		extendedHitEvent.nodeName = g_lastHitData.nodeName;
+		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
 		extendedHitEvent.hitData = hitData;
-		extendedHitEvent.isLeft = g_lastHitData.isLeft;
-		extendedHitEvent.flags |= (1 << 5); // set an unused bit
+		extendedHitEvent.flags |= PlanckPluginAPI::PlanckHitEvent::kFlag_IsPlanckHit; // set an unused bit
 
 		dispatcher->SendEvent(&extendedHitEvent);
 	}
