@@ -167,6 +167,7 @@
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\math_utils.cpp" />
     <ClCompile Include="src\menu_checker.cpp" />
+    <ClCompile Include="src\papyrusapi.cpp" />
     <ClCompile Include="src\planckinterface001.cpp" />
     <ClCompile Include="src\pluginapi.cpp" />
     <ClCompile Include="src\RE\havok.cpp" />
@@ -181,6 +182,7 @@
     <ClInclude Include="include\main.h" />
     <ClInclude Include="include\math_utils.h" />
     <ClInclude Include="include\menu_checker.h" />
+    <ClInclude Include="include\papyrusapi.h" />
     <ClInclude Include="include\planckinterface001.h" />
     <ClInclude Include="include\pluginapi.h" />
     <ClInclude Include="include\RE\havok.h" />

@@ -47,6 +47,7 @@
 #include "blender.h"
 #include "menu_checker.h"
 #include "pluginapi.h"
+#include "papyrusapi.h"
 
 
 // SKSE globals
@@ -56,6 +57,7 @@ static SKSEMessagingInterface *g_messaging = nullptr;
 SKSEVRInterface *g_vrInterface = nullptr;
 SKSETrampolineInterface *g_trampoline = nullptr;
 SKSETaskInterface *g_taskInterface = nullptr;
+SKSEPapyrusInterface *g_papyrus = nullptr;
 
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
@@ -4042,6 +4044,15 @@ extern "C" {
 		}
 		g_vrInterface->RegisterForPoses(g_pluginHandle, 11, WaitPosesCB);
 		g_vrInterface->RegisterForControllerState(g_pluginHandle, 11, ControllerStateCB);
+
+		g_papyrus = (SKSEPapyrusInterface *)skse->QueryInterface(kInterface_Papyrus);
+		if (!g_papyrus) {
+			ShowErrorBoxAndLog("[CRITICAL] Couldn't get Papyrus interface");
+			return false;
+		}
+		if (g_papyrus->Register(PapyrusAPI::RegisterPapyrusFuncs)) {
+			_MESSAGE("Successfully registered papyrus functions");
+		}
 
 		g_originalNotifyAnimationGraph = *IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
 		SafeWrite64(IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));

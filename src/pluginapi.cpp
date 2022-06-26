@@ -90,5 +90,5 @@ void PlanckInterface001::SetAggressionHighTopic(Actor *actor, TESTopic *topic) {
 
 PlanckHitData PlanckInterface001::GetLastHitData()
 {
-	return lastHitData;
+	return lastHitData; // deliberate copy
 }
