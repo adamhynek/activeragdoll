@@ -281,7 +281,10 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	TriggerDialogueByType(source, target, dialogueSubtype, false);
 
 	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack)) {
-		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), isOffhand ? 45 : 49, 2);
+		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), isOffhand ? 45 : 49, 2); // 45 and 49 are kActionLeftAttack and kActionRightAttack
+		if (BGSAction *powerAttackAction = (BGSAction *)g_defaultObjectManager->objects[isOffhand ? 69 : 70]) { // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
+			SendAction(source, target, powerAttackAction);
+		}
 		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&source->magicTarget, 4)(&source->magicTarget)) {
 			float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&source->actorValueOwner, attackData);
 			if (staminaCost > 0.f) {
