@@ -53,6 +53,7 @@ struct VRMeleeData
 		kDown = 1,
 		kLeft = 3,
 		kRight = 4,
+		kForward = 5, // unimplemented ?
 		kUp = 6
 	};
 
@@ -401,6 +402,13 @@ struct CharacterCollisionHandler
 
 struct ActionInput
 {
+	/*
+	virtual ~ActionInput(); // 00
+	virtual ActorState * GetSourceActorState(); // 01 - { return 0; }
+	virtual void Unk02(); // 02 - { return 0; }
+	virtual struct BGSAnimationSequencer * GetSourceSequencer(); // 03 - { return 0; }
+	*/
+
 	void *vtbl; // 00
 	NiPointer<TESObjectREFR> source; // 08
 	NiPointer<TESObjectREFR> target; // 10
@@ -410,14 +418,27 @@ struct ActionInput
 
 struct TESActionData : ActionInput
 {
-	BSFixedString unk28{};
+	/*
+	// Override
+	virtual ActorState * GetSourceActorState(); // 01
+	virtual void Unk02(); // 02 - { return 0; }
+	virtual struct BGSAnimationSequencer * GetSourceSequencer(); // 03
+
+	// Add
+	virtual TESActionData * Copy(); // 04
+	virtual bool Process(); // 05
+	*/
+
+	BSFixedString attackDataEvent{}; // 28
 	BSFixedString unk30{};
-	UInt64 unk38 = 0;
+	UInt32 unk38 = 0; // 2 if attackDataEvent starts with "NA_"
+	UInt32 unk3C = 0;
 	UInt64 unk40 = 0;
-	UInt64 unk48 = 0;
+	UInt64 unk48 = 0; // TESIdleForm ?
 	UInt64 unk50 = 0;
 	UInt64 unk58 = 0;
 };
+static_assert(sizeof(TESActionData) == 0x60);
 
 struct PackageLocation
 {
@@ -486,6 +507,7 @@ struct MovementPlannerAgentKeepOffset : MovementPlannerAgent
 static_assert(sizeof(MovementPlannerAgentKeepOffset) == 0x60);
 
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
+typedef void(*_Actor_UpdateAnimation)(Actor *_this, float deltaTime);
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
 typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);
 typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool dontExitFurniture, bool a4);
@@ -496,3 +518,4 @@ typedef bool(*_MagicTarget_IsInvulnerable)(MagicTarget *_this);
 typedef void(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32 modifier, UInt64 actorValue, float value);
 typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UInt32 unk);
 typedef bool(*_TESActionData_Process)(TESActionData *_this);
+typedef bool(*_HitFrameHandler_Handle)(void *_this, Actor *actor, BSFixedString *side); // side == "Left" when offhand, "" when main hand

@@ -64,6 +64,7 @@ RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
+RelocAddr<void *> PlayerCharacter_vtbl(0x16E2230);
 RelocAddr<void *> hkCharControllerShape_vtbl(0x1838E78);
 RelocAddr<void *> TESActionData_vtbl(0x15BF5D8);
 

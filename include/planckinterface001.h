@@ -25,18 +25,15 @@ namespace PlanckPluginAPI {
 
 	struct PlanckHitEvent : TESHitEvent
 	{
-		enum
-		{
-			// If this flag is set on a hit event, then it is a PlanckHitEvent
-			kFlag_IsPlanckHit = (1 << 5)
-		};
-
 		// Extended hit information added by planck
 		PlanckHitData extendedHitData;
 
 		// The HitData of the hit, containing the damage dealt, etc.
 		void *hitData;
 	};
+
+	constexpr UInt32 hitEventMagicNumber = 0x59914000;
+	inline bool IsPlanckHit(TESHitEvent *evn) { return (evn->flags & 0xFFFFFF00) == hitEventMagicNumber; } // magic
 
 	// This object provides access to PLANCK's mod support API
 	struct IPlanckInterface001
@@ -65,8 +62,15 @@ namespace PlanckPluginAPI {
 		// Pass a null actor to replace the default. Pass a null topic to revert a previously set topic.
 		virtual void SetAggressionHighTopic(Actor *actor, TESTopic *topic) = 0;
 
-		// Get the extended hit info of the last melee hit that planck provides
+		// These actors will not have their ragdoll collide with other actors' ragdolls.
+		virtual void AddRagdollCollisionIgnoredActor(Actor *actor) = 0;
+		virtual void RemoveRagdollCollisionIgnoredActor(Actor *actor) = 0;
+
+		// Get the extended hit info of the last melee hit that planck provides.
 		virtual PlanckHitData GetLastHitData() = 0;
+
+		// The current hit event being dispatched. Can be used to check if the dispatched event is a planck hit event. This is ONLY valid while executing a hit event.
+		virtual TESHitEvent * GetCurrentHitEvent() = 0;
 	};
 }
 

@@ -32,9 +32,16 @@ namespace PlanckPluginAPI {
 		virtual void SetAggressionLowTopic(Actor *actor, TESTopic *topic);
 		virtual void SetAggressionHighTopic(Actor *actor, TESTopic *topic);
 
+		virtual void AddRagdollCollisionIgnoredActor(Actor *actor);
+		virtual void RemoveRagdollCollisionIgnoredActor(Actor *actor);
+
 		virtual PlanckHitData GetLastHitData();
+		virtual TESHitEvent * GetCurrentHitEvent();
+
+		bool IsRagdollCollisionIgnored(TESObjectREFR *actor);
 
 		PlanckHitData lastHitData;
+		TESHitEvent *currentHitEvent = nullptr;
 
 		std::mutex ignoredActorsLock;
 		std::unordered_set<Actor *> ignoredActors;
@@ -45,6 +52,9 @@ namespace PlanckPluginAPI {
 		std::mutex aggressionTopicsLock;
 		std::unordered_map<Actor *, TESTopic *> lowAggressionTopics;
 		std::unordered_map<Actor *, TESTopic *> highAggressionTopics;
+
+		std::mutex ragdollCollisionIgnoredActorsLock;
+		std::unordered_set<TESObjectREFR *> ragdollCollisionIgnoredActors;
 	};
 }
 

@@ -83,6 +83,7 @@ extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
+extern RelocAddr<void *> PlayerCharacter_vtbl;
 extern RelocAddr<void *> hkCharControllerShape_vtbl;
 extern RelocAddr<void *> TESActionData_vtbl;
 

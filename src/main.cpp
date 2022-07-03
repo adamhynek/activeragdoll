@@ -693,7 +693,7 @@ std::unordered_map<IAnimationGraphManagerHolder *, double> g_shoveAnimTimes{};
 
 void QueueBumpActor(Actor *actor, NiPoint3 direction, float bumpDirection, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
 {
-	std::unique_lock lock(g_bumpActorsLock);
+	std::scoped_lock lock(g_bumpActorsLock);
 	auto it = g_bumpActors.find(actor);
 	if (it == g_bumpActors.end()) {
 		g_bumpActors[actor] = { direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue };
@@ -997,29 +997,33 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				*g_fMinSoundVel = Config::options.ragdollSoundVel;
 			}
 
-			if (Config::options.stopRagdollNonSelfCollisionForCloseActors) {
+			UInt16 groupA = rigidBodyA->getCollidable()->m_broadPhaseHandle.m_collisionFilterInfo >> 16;
+			UInt16 groupB = rigidBodyB->getCollidable()->m_broadPhaseHandle.m_collisionFilterInfo >> 16;
+
+			if (groupA != groupB) {
 				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
 					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 						if (refrA != refrB) {
-							if (VectorLength(refrA->pos - refrB->pos) < Config::options.closeActorMinDistance) {
-								// Disable collision between bipeds whose references are roughly in the same position
+							if (g_interface001.IsRagdollCollisionIgnored(refrA) || g_interface001.IsRagdollCollisionIgnored(refrB)) {
 								evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 								return;
 							}
-						}
-					}
-				}
-			}
 
-			if (Config::options.stopRagdollNonSelfCollisionForActorsWithVehicle) {
-				if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
-					if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
-						if (refrA != refrB) {
-							if (Actor *actorA = DYNAMIC_CAST(refrA, TESObjectREFR, Actor)) {
-								if (Actor *actorB = DYNAMIC_CAST(refrB, TESObjectREFR, Actor)) {
-									if (GetVehicleHandle(actorA) != *g_invalidRefHandle && GetVehicleHandle(actorB) != *g_invalidRefHandle) {
-										evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-										return;
+							if (Config::options.stopRagdollNonSelfCollisionForCloseActors) {
+								if (VectorLength(refrA->pos - refrB->pos) < Config::options.closeActorMinDistance) {
+									// Disable collision between bipeds whose references are roughly in the same position
+									evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+									return;
+								}
+							}
+
+							if (Config::options.stopRagdollNonSelfCollisionForActorsWithVehicle) {
+								if (Actor *actorA = DYNAMIC_CAST(refrA, TESObjectREFR, Actor)) {
+									if (Actor *actorB = DYNAMIC_CAST(refrB, TESObjectREFR, Actor)) {
+										if (GetVehicleHandle(actorA) != *g_invalidRefHandle && GetVehicleHandle(actorB) != *g_invalidRefHandle) {
+											evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+											return;
+										}
 									}
 								}
 							}
@@ -2257,13 +2261,13 @@ bool UpdateActorShove(Actor *actor)
 	if (!Config::options.enableActorShove) return false;
 
 	{
-		std::unique_lock lock(g_shoveTimesLock);
+		std::scoped_lock lock(g_shoveTimesLock);
 		if (auto it = g_shoveData.find(&actor->animGraphHolder); it != g_shoveData.end()) {
 			ShoveData &shoveData = it->second;
 			double shovedTime = shoveData.shovedTime;
 			if (g_currentFrameTime - shovedTime > Config::options.shoveWaitForBumpTimeBeforeStagger) {
 				{
-					std::unique_lock lock2(g_shoveAnimLock);
+					std::scoped_lock lock2(g_shoveAnimLock);
 					auto it2 = g_shoveAnimTimes.find(&actor->animGraphHolder);
 					if (it2 == g_shoveAnimTimes.end() || it2->second < shovedTime) {
 						// Large bump anim didn't play or it played before we shoved them (from a previous shove)
@@ -3368,11 +3372,11 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 
 	// Do movement jobs here
 	{
-		std::unique_lock lock(g_bumpActorsLock);
+		std::scoped_lock lock(g_bumpActorsLock);
 		if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end()) {
 			BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.exitFurniture, it->second.pauseCurrentDialogue, it->second.triggerDialogue);
 			if (it->second.isLargeBump) {
-				std::unique_lock lock2(g_shoveTimesLock);
+				std::scoped_lock lock2(g_shoveTimesLock);
 				g_shoveData[&actor->animGraphHolder] = { it->second.bumpDirectionVec, g_currentFrameTime };
 			}
 			g_bumpActors.erase(it);
@@ -3385,7 +3389,7 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
 void ActorProcess_ExitFurniture_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *root)
 {
 	TESObjectREFR *refr = NiAVObject_GetOwner(root);
-	if (g_activeActors.count(static_cast<Actor *>(refr))) return;
+	if (g_activeActors.count(static_cast<Actor*>(refr))) return;
 	BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, root);
 }
 
@@ -3416,9 +3420,12 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
 		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
 		extendedHitEvent.hitData = hitData;
-		extendedHitEvent.flags |= PlanckPluginAPI::PlanckHitEvent::kFlag_IsPlanckHit; // set an unused bit
+		extendedHitEvent.flags &= ~(0xFFFFFF00); // zero out top 3 bytes
+		extendedHitEvent.flags |= PlanckPluginAPI::hitEventMagicNumber; // hopefully this never occurs randomly...
 
+		g_interface001.currentHitEvent = &extendedHitEvent;
 		dispatcher->SendEvent(&extendedHitEvent);
+		g_interface001.currentHitEvent = nullptr;
 	}
 	else {
 		dispatcher->SendEvent(hitEvent);
@@ -3909,7 +3916,7 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
 			view == "NPC_BumpedFromLeft"
 			) {
 			{
-				std::unique_lock lock(g_shoveAnimLock);
+				std::scoped_lock lock(g_shoveAnimLock);
 				g_shoveAnimTimes[_this] = g_currentFrameTime;
 			}
 #ifdef _DEBUG

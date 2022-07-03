@@ -6,7 +6,7 @@ namespace PapyrusAPI
 	float PapyrusGetSetting(StaticFunctionTag *base, BSFixedString name) {
 		double out;
 		bool success = g_interface001.GetSettingDouble(name.c_str(), out);
-		return success ? out : -3.14159f;
+		return success ? out : -2.71828f;
 	}
 
 	bool PapyrusSetSetting(StaticFunctionTag *base, BSFixedString name, float val) {
@@ -37,6 +37,14 @@ namespace PapyrusAPI
 		g_interface001.SetAggressionHighTopic(actor, topic);
 	}
 
+	void PapyrusAddRagdollCollisionIgnoredActor(StaticFunctionTag *base, Actor *actor) {
+		g_interface001.AddRagdollCollisionIgnoredActor(actor);
+	}
+
+	void PapyrusRemoveRagdollCollisionIgnoredActor(StaticFunctionTag *base, Actor *actor) {
+		g_interface001.RemoveRagdollCollisionIgnoredActor(actor);
+	}
+
 	BSFixedString PapyrusGetLastHitNodeName(StaticFunctionTag *base) {
 		return g_interface001.GetLastHitData().nodeName;
 	}
@@ -53,6 +61,9 @@ namespace PapyrusAPI
 
 		registry->RegisterFunction(new NativeFunction2<StaticFunctionTag, void, Actor *, TESTopic *>("SetAggressionLowTopic", "PLANCK", PapyrusSetAggressionLowTopic, registry));
 		registry->RegisterFunction(new NativeFunction2<StaticFunctionTag, void, Actor *, TESTopic *>("SetAggressionHighTopic", "PLANCK", PapyrusSetAggressionHighTopic, registry));
+
+		registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, Actor *>("AddRagdollCollisionIgnoredActor", "PLANCK", PapyrusAddRagdollCollisionIgnoredActor, registry));
+		registry->RegisterFunction(new NativeFunction1<StaticFunctionTag, void, Actor *>("RemoveRagdollCollisionIgnoredActor", "PLANCK", PapyrusRemoveRagdollCollisionIgnoredActor, registry));
 
 		registry->RegisterFunction(new NativeFunction0<StaticFunctionTag, BSFixedString>("GetLastHitNodeName", "PLANCK", PapyrusGetLastHitNodeName, registry));
 

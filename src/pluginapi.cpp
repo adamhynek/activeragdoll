@@ -88,7 +88,26 @@ void PlanckInterface001::SetAggressionHighTopic(Actor *actor, TESTopic *topic) {
 	}
 }
 
+void PlanckInterface001::AddRagdollCollisionIgnoredActor(Actor *actor) {
+	std::scoped_lock lock(ragdollCollisionIgnoredActorsLock);
+	ragdollCollisionIgnoredActors.insert(actor);
+}
+
+void PlanckInterface001::RemoveRagdollCollisionIgnoredActor(Actor *actor) {
+	std::scoped_lock lock(ragdollCollisionIgnoredActorsLock);
+	ragdollCollisionIgnoredActors.erase(actor);
+}
+
+bool PlanckInterface001::IsRagdollCollisionIgnored(TESObjectREFR *actor) {
+	std::scoped_lock lock(ragdollCollisionIgnoredActorsLock);
+	return ragdollCollisionIgnoredActors.find(actor) != ragdollCollisionIgnoredActors.end();
+}
+
 PlanckHitData PlanckInterface001::GetLastHitData()
 {
 	return lastHitData; // deliberate copy
+}
+
+TESHitEvent * PlanckInterface001::GetCurrentHitEvent() {
+	return currentHitEvent;
 }
