@@ -220,6 +220,8 @@ void Hit()
 }
 */
 
+bool g_overrideAnimRate = false;
+
 bool g_isInPlanckHit = false;
 
 void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, hkpRigidBody *hitRigidBody, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
@@ -822,7 +824,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		return impulse;
 	}
 
-	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 position, float impulseMult)
+	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
 	{
 		UInt32 targetHandle = GetOrCreateRefrHandle(actor);
 		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
@@ -3417,6 +3419,8 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
 void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(EventDispatcher<TESHitEvent> *dispatcher, TESHitEvent *hitEvent, HitData *hitData)
 {
 	if (hitData->flags >> 30 & 1) {
+		g_overrideAnimRate = true; // essentially skip the power attack animation
+
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
 		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
 		extendedHitEvent.hitData = hitData;
@@ -3901,8 +3905,8 @@ void ShowErrorBoxAndTerminate(const char *errorString)
 
 // Animation graph hook for detecting if certain animations were played
 _IAnimationGraphManagerHolder_NotifyAnimationGraph g_originalNotifyAnimationGraph = nullptr;
-//static RelocPtr<IAnimationGraphManagerHolder_NotifyAnimationGraph_VFunc> IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x016E2BF8); // PlayerCharacter
-static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x16D7780); // Character
+static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x016E2BF8); // PlayerCharacter
+static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x16D7780); // Character
 bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder *_this, const BSFixedString &animationName)
 {
 	bool accepted = g_originalNotifyAnimationGraph(_this, animationName);
@@ -3919,12 +3923,36 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
 				std::scoped_lock lock(g_shoveAnimLock);
 				g_shoveAnimTimes[_this] = g_currentFrameTime;
 			}
-#ifdef _DEBUG
-			_MESSAGE("%p: %s", _this, animationName.c_str());
-#endif // _DEBUG
 		}
+#ifdef _DEBUG
+		_MESSAGE("%p: %s", _this, animationName.c_str());
+#endif // _DEBUG
 	}
 	return accepted;
+}
+
+// PlayerCharacter::UpdateAnimation hook for altering the player's animation rate
+_Actor_UpdateAnimation g_originalPCUpdateAnimation = nullptr;
+static RelocPtr<_Actor_UpdateAnimation> PlayerCharacter_UpdateAnimation_vtbl(0x16E2618); // 0x16E2230 + 0x7D * 8
+void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
+{
+	if (g_overrideAnimRate) {
+		g_overrideAnimRate = false;
+		deltaTime = 10000.f;
+	}
+	g_originalPCUpdateAnimation(_this, deltaTime);
+}
+
+// HitFrameHandler::Handle hook for disabling animation-driven power attack hits for the player
+_HitFrameHandler_Handle g_originalHitFrameHandlerHandle = nullptr;
+static RelocPtr<_HitFrameHandler_Handle> HitFrameHandler_Handle_vtbl(0x16F5148); // 0x16F5140 + 8
+bool HitFrameHandler_Handle_Hook(void *_this, Actor *actor, BSFixedString *side)
+{
+	if (actor == *g_thePlayer) {
+		// Ignore hitframe power attack hits for the player
+		return false;
+	}
+	return g_originalHitFrameHandlerHandle(_this, actor, side);
 }
 
 extern "C" {
@@ -4073,8 +4101,15 @@ extern "C" {
 			_MESSAGE("Successfully registered papyrus functions");
 		}
 
-		g_originalNotifyAnimationGraph = *IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
-		SafeWrite64(IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+		g_originalNotifyAnimationGraph = *Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
+		SafeWrite64(Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+		//SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+
+		g_originalPCUpdateAnimation = *PlayerCharacter_UpdateAnimation_vtbl;
+		SafeWrite64(PlayerCharacter_UpdateAnimation_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_UpdateAnimation_Hook));
+
+		g_originalHitFrameHandlerHandle = *HitFrameHandler_Handle_vtbl;
+		SafeWrite64(HitFrameHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(HitFrameHandler_Handle_Hook));
 
 		g_timer.Start();
 
