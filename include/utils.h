@@ -126,6 +126,11 @@ bool IsInFaction(Actor *actor, TESFaction *faction);
 bool IsCalmed(Actor *actor);
 NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);
 bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle);
+inline UInt32 GetEnabledInputs() { return UInt32(InputManager::GetSingleton()->unk138); }
+inline bool AreCombatControlsEnabled() { return GetEnabledInputs() & UInt32(EnabledInputs::fighting); }
+
+constexpr UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
+constexpr UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
 
 constexpr int GetDialogueTypeFromSubtype(int subtype)
 {

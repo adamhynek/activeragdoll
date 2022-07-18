@@ -556,6 +556,9 @@ extern RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta;
 typedef TESPackage * (*_Actor_GetCurrentPackage)(UInt64 a1, UInt64 a2, Actor *_this);
 extern RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage;
 
+typedef TESPackage* (*_Actor_DoCombatSpellApply)(Actor *_this, SpellItem *spell, TESObjectREFR *target);
+extern RelocAddr<_Actor_DoCombatSpellApply> Actor_DoCombatSpellApply;
+
 typedef void(*_Actor_sub_140600400)(Actor *_this, float a2);
 extern RelocAddr<_Actor_sub_140600400> Actor_sub_140600400;
 
@@ -610,7 +613,7 @@ extern RelocAddr<_Actor_IsRunning> Actor_IsRunning;
 typedef bool(*_Character_CanHit)(Character *_this, Actor *target);
 extern RelocAddr<_Character_CanHit> Character_CanHit;
 
-typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isUsingMotionControllers, bool isOffhand, bool isPowerAttack, BGSAttackData **attackDataOut);
+typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isLeft, bool isOffhand, bool isPowerAttack, BGSAttackData **attackDataOut);
 extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData;
 
 typedef bool(*_ActorProcess_IncrementAttackCounter)(ActorProcessManager *_this, int incCount);
@@ -772,6 +775,9 @@ extern RelocAddr<_TESPackage_sub_140439BE0> TESPackage_sub_140439BE0;
 typedef void(*_TESPackage_CopyFlagsFromOtherPackage)(TESPackage *_this, TESPackage *other);
 extern RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFromOtherPackage;
 
+typedef void(*_VRMeleeData_ComputeAngularVelocities)(VRMeleeData *_this, const NiPoint3 &hmdPos, float &outVelocityX, float &outVelocityY);
+extern RelocAddr<_VRMeleeData_ComputeAngularVelocities> VRMeleeData_ComputeAngularVelocities;
+
 typedef void(*_sub_140654E10)(ActorProcessManager *_this, bool a2);
 extern RelocAddr<_sub_140654E10> sub_140654E10;
 
@@ -780,3 +786,16 @@ extern RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue;
 
 typedef void(*_sub_140664870)(ActorProcessManager *_this, int a2);
 extern RelocAddr<_sub_140664870> sub_140664870;
+
+typedef void * (*_sub_1406EE920)(void);
+extern RelocAddr<_sub_1406EE920> sub_1406EE920;
+
+
+struct UnkSwingData
+{
+	TESObjectWEAP *weapon; // 00
+	UInt64 unk08 = -2;
+};
+
+typedef void(*_sub_1406EC5C0)(void *a1, UnkSwingData *a2);
+extern RelocAddr<_sub_1406EC5C0> sub_1406EC5C0;

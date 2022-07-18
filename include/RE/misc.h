@@ -57,6 +57,32 @@ struct VRMeleeData
 		kUp = 6
 	};
 
+	static inline SwingDirection GetSwingDirectionFromAngularVelocities(float velocityX, float velocityY)
+	{
+		if (fabs(velocityX) > fabs(velocityY)) {
+			// Horizontal swing axis dominates
+			if (velocityX > 0.f) {
+				// Positive x -> swinging right
+				return SwingDirection::kRight;
+			}
+			else {
+				// Swinging left
+				return SwingDirection::kLeft;
+			}
+		}
+		else {
+			// Vertical swing axis dominates
+			if (velocityY > 0.f) {
+				// Positive y -> swinging down
+				return SwingDirection::kDown;
+			}
+			else {
+				// Swinging up
+				return SwingDirection::kUp;
+			}
+		}
+	}
+
 	UInt64 unk00; // something to do with cooldown multipliers
 	UInt64 unk08;
 	NiPointer<bhkWorld> world; // 10
@@ -431,11 +457,12 @@ struct TESActionData : ActionInput
 
 	BSFixedString attackDataEvent{}; // 28
 	BSFixedString unk30{};
-	UInt32 unk38 = 0; // 2 if attackDataEvent starts with "NA_"
+	UInt32 unk38 = 0; // 2 if attackDataEvent starts with "NA_". -1 if no idle.
 	UInt32 unk3C = 0;
 	UInt64 unk40 = 0;
-	UInt64 unk48 = 0; // TESIdleForm ?
-	UInt64 unk50 = 0;
+	TESIdleForm *idle = 0; // 48
+	UInt32 idleIndex = 0; // 50
+	UInt32 unk54 = 0;
 	UInt64 unk58 = 0;
 };
 static_assert(sizeof(TESActionData) == 0x60);
@@ -506,9 +533,19 @@ struct MovementPlannerAgentKeepOffset : MovementPlannerAgent
 };
 static_assert(sizeof(MovementPlannerAgentKeepOffset) == 0x60);
 
-typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName);
+enum class EnabledInputs : UInt32
+{
+	looking = 1 << 1,
+	fighting = 1 << 6,
+	sneaking = 1 << 7,
+	menu = 1 << 8,
+};
+
+typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName); // 01
+typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, SInt32& a_out); // 11
+typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, bool& a_out); // 12
 typedef void(*_Actor_UpdateAnimation)(Actor *_this, float deltaTime);
-typedef void(*_Actor_WeaponSwingCallback)(Actor *_this);
+typedef void(*_Actor_WeaponSwingCallback)(Actor *_this); // F1
 typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);
 typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool dontExitFurniture, bool a4);
 typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
