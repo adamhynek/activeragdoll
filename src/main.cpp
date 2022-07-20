@@ -134,7 +134,7 @@ void TrySwingPowerAttack(bool isLeft, bool isOffhand)
 	}*/
 
 	// Do this again after the above func overwrote the attackData
-	//PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
+	PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
 
 	if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
 		DeductSwingStamina(staminaCost);
@@ -281,7 +281,7 @@ void Hit()
 }
 */
 
-bool g_overrideAnimRate = false;
+int g_numSkipAnimationFrames = 0;
 
 bool g_isInPlanckHit = false;
 
@@ -376,13 +376,6 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	lastHitData.position = hitPosition;
 	lastHitData.velocity = hitVelocity;
 	lastHitData.isLeft = isLeft;
-
-	/*{
-		IAnimationGraphManagerHolder* animGraphHolder = &(*g_thePlayer)->animGraphHolder;
-		bool bAllowRotation;
-		get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(animGraphHolder, 0x12)(animGraphHolder, BSFixedString("bAllowRotation"), bAllowRotation);
-		_MESSAGE("bAllowRotation: %d", bAllowRotation);
-	}*/
 
 	g_isInPlanckHit = true;
 	Character_HitTarget(source, target, nullptr, isOffhand);
@@ -2441,14 +2434,9 @@ struct SwingHandler
 	};
 
 	bool isLeft;
-
 	SwingState swingState = SwingState::None;
 	float lastSwingSpeed = 0.f;
-
-	double swingCooldown = 0.0;
-
-	float swingLinearVelocityThreshold = 3.5f; // m/s
-	double swingCooldownConfig = 1.0;
+	float swingCooldown = 0.0;
 
 	SwingHandler(bool isLeft) : isLeft(isLeft) {}
 
@@ -2469,17 +2457,16 @@ struct SwingHandler
 		NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::kNode_HmdNode];
 		if (!hmdNode) return;
 
-		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
-
 		float angularVelocityX, angularVelocityY;
 		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_worldTransform.pos, angularVelocityX, angularVelocityY);
 		float angularSpeed = sqrtf(angularVelocityX * angularVelocityX + angularVelocityY * angularVelocityY) / deltaTime;
 
+		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
 		float speed = velocityData.avgSpeed;
 
 		if (swingState == SwingState::None) {
 			if (swingCooldown <= 0.f) {
-				if (speed > swingLinearVelocityThreshold) {
+				if (speed > Config::options.swingLinearVelocityThreshold) {
 					swingState = SwingState::Swing;
 				}
 			}
@@ -2495,7 +2482,6 @@ struct SwingHandler
 					TrySwingPowerAttack(isLeft, isOffhand); // this also sets the attackData
 				}
 				else {
-					/*
 					BGSAttackData* attackData = nullptr;
 					PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
 
@@ -2503,12 +2489,11 @@ struct SwingHandler
 					// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
 					// This needs to happen after setting the attackData
 					PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
-					*/
 				}
 				SwingWeapon(GetEquippedWeapon(player, isOffhand), isOffhand);
 
-				//g_overrideAnimRate = true; // skip the animation
-				swingCooldown = swingCooldownConfig;
+				g_numSkipAnimationFrames = 2; // skip the animation
+				swingCooldown = Config::options.swingCooldown;
 
 				swingState = SwingState::None;
 			}
@@ -2523,14 +2508,7 @@ SwingHandler g_leftSwingHandler{ true };
 void PlayerCharacter_UpdateWeaponSwing_Hook(PlayerCharacter *player, float deltaTime)
 {
 	/*
-	UpdateWeaponSwing()
-	{
-		set attackdata (based on swing direction!)
-		PlayerControls_sub_140705530() which sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
-		// this is why IsPowerAttacking() doesn't work! It's because the above call resets the last attack data to a regular attack
-	}
-
-	// Called after the regular hit (from PlayerControls_sub_140705530) to unset the attack data
+	// Called after the regular hit to unset the attack data
 	AttackStopHandler::Handle()
 	{
 		ActorProcess::UnsetAttackData()
@@ -2557,13 +2535,6 @@ void ProcessHavokHitJobsHook()
 	if (!processManager) return;
 
 	g_currentFrameTime = GetTime();
-
-	/*{
-		IAnimationGraphManagerHolder* animGraphHolder = &player->animGraphHolder;
-		SInt32 iState_NPCPowerAttacking;
-		get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableInt>(animGraphHolder, 0x11)(animGraphHolder, BSFixedString("iState_NPCPowerAttacking"), iState_NPCPowerAttacking);
-		_MESSAGE("%d", iState_NPCPowerAttacking);
-	}*/
 
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
@@ -3601,7 +3572,7 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
 void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(EventDispatcher<TESHitEvent> *dispatcher, TESHitEvent *hitEvent, HitData *hitData)
 {
 	if (hitData->flags >> 30 & 1) {
-		g_overrideAnimRate = true; // essentially skip the power attack animation
+		g_numSkipAnimationFrames = 1; // essentially skip the power attack animation
 
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
 		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
@@ -3616,6 +3587,38 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 	else {
 		dispatcher->SendEvent(hitEvent);
 	}
+}
+
+bool WeaponRightSwingHandler_Handle_Hook(void* _this, Actor* actor)
+{
+	if (actor == *g_thePlayer) {
+		_MESSAGE("%d WeaponRightSwing", *g_currentFrameCounter);
+		// Don't do the weapon swing sound for the player
+
+		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
+
+		get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
+
+		return false;
+	}
+	return true;
+}
+
+bool WeaponLeftSwingHandler_Handle_Hook(void* _this, Actor* actor)
+{
+	if (actor == *g_thePlayer) {
+		_MESSAGE("%d WeaponLeftSwing", *g_currentFrameCounter);
+		// Don't do the weapon swing sound for the player
+
+		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
+
+		get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
+
+		return false;
+	}
+	return true;
 }
 
 
@@ -3762,6 +3765,92 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent hook complete");
+	}
+
+	{ // SKSE hooks the swing handlers and calls the native function directly instead of nicely through vtable chaining, so I need to do these manual hooks.
+		struct Code : Xbyak::CodeGenerator {
+			Code(void* buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack, skip;
+
+				// Save Actor * argument and align the stack
+				push(rdx);
+
+				// Call our hook
+				mov(rax, (uintptr_t)WeaponRightSwingHandler_Handle_Hook);
+				call(rax);
+
+				pop(rdx);
+
+				// Return immediately if our hook returns false, otherwise continue the function
+				test(rax, rax);
+				jz(skip);
+
+				// Original code
+				push(rbx);
+				sub(rsp, 0x20);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(skip);
+				ret();
+
+				L(jumpBack);
+				dq(WeaponRightSwingHandler_Handle.GetUIntPtr() + 6);
+			}
+		};
+
+		void* codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write6Branch(WeaponRightSwingHandler_Handle.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("WeaponRightSwingHandler::Handle hook complete");
+	}
+
+	{
+		struct Code : Xbyak::CodeGenerator {
+			Code(void* buf) : Xbyak::CodeGenerator(256, buf)
+			{
+				Xbyak::Label jumpBack, skip;
+
+				// Save Actor * argument and align the stack
+				push(rdx);
+
+				// Call our hook
+				mov(rax, (uintptr_t)WeaponLeftSwingHandler_Handle_Hook);
+				call(rax);
+
+				pop(rdx);
+
+				// Return immediately if our hook returns false, otherwise continue the function
+				test(rax, rax);
+				jz(skip);
+
+				// Original code
+				push(rbx);
+				sub(rsp, 0x20);
+
+				// Jump back to whence we came (+ the size of the initial branch instruction)
+				jmp(ptr[rip + jumpBack]);
+
+				L(skip);
+				ret();
+
+				L(jumpBack);
+				dq(WeaponLeftSwingHandler_Handle.GetUIntPtr() + 6);
+			}
+		};
+
+		void* codeBuf = g_localTrampoline.StartAlloc();
+		Code code(codeBuf);
+		g_localTrampoline.EndAlloc(code.getCurr());
+
+		g_branchTrampoline.Write6Branch(WeaponLeftSwingHandler_Handle.GetUIntPtr(), uintptr_t(code.getCode()));
+
+		_MESSAGE("WeaponLeftSwingHandler::Handle hook complete");
 	}
 
 	if (Config::options.seamlessFurnitureTransition) {
@@ -4125,8 +4214,8 @@ _Actor_UpdateAnimation g_originalPCUpdateAnimation = nullptr;
 static RelocPtr<_Actor_UpdateAnimation> PlayerCharacter_UpdateAnimation_vtbl(0x16E2618); // 0x16E2230 + 0x7D * 8
 void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
 {
-	if (g_overrideAnimRate) {
-		g_overrideAnimRate = false;
+	if (g_numSkipAnimationFrames > 0) {
+		--g_numSkipAnimationFrames;
 		deltaTime = 10000.f;
 	}
 	g_originalPCUpdateAnimation(_this, deltaTime);
@@ -4138,19 +4227,40 @@ static RelocPtr<_HitFrameHandler_Handle> HitFrameHandler_Handle_vtbl(0x16F5148);
 bool HitFrameHandler_Handle_Hook(void *_this, Actor *actor, BSFixedString *side)
 {
 	if (actor == *g_thePlayer) {
+		_MESSAGE("%d HitFrame", *g_currentFrameCounter);
 		// Ignore hitframe power attack hits for the player
-		return false;
+
+		if ((actor->actorState.flags04 & 0xF0000000) != 0x20000000) { // meleeAttackState != kSwing
+			return false;
+		}
+
+		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 |= 0x30000000u; // attackState = kHit
+		return true;
 	}
 	return g_originalHitFrameHandlerHandle(_this, actor, side);
 }
 
+_AttackStopHandler_Handle g_originalAttackStopHandlerHandle = nullptr;
+static RelocPtr<_AttackStopHandler_Handle> AttackStopHandler_Handle_vtbl(0x16F4FF8); // 0x16F4FF0 + 8
+bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
+{
+	if (actor == *g_thePlayer) {
+		_MESSAGE("%d AttackStop", *g_currentFrameCounter);
+		// No changes... yet.
+		if (ActorProcessManager* process = actor->processManager) {
+			ActorProcess_UnsetAttackData(process);
+		}
+		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		return true;
+	}
+	return g_originalAttackStopHandlerHandle(_this, actor);
+}
+
+
 extern "C" {
 	void OnDataLoaded()
 	{
-		// With redone hit detection, these only affect weapon swing sounds/noise and stuff like the bloodskal blade
-		*g_fMeleeLinearVelocityThreshold = Config::options.meleeSwingLinearVelocityThreshold;
-		*g_fShieldLinearVelocityThreshold = Config::options.shieldSwingLinearVelocityThreshold;
-
 		g_savedMinSoundVel = *g_fMinSoundVel;
 
 		g_keyword_actorTypeAnimal = papyrusKeyword::GetKeyword(nullptr, BSFixedString("ActorTypeAnimal"));
@@ -4299,6 +4409,9 @@ extern "C" {
 
 		g_originalHitFrameHandlerHandle = *HitFrameHandler_Handle_vtbl;
 		SafeWrite64(HitFrameHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(HitFrameHandler_Handle_Hook));
+
+		g_originalAttackStopHandlerHandle = *AttackStopHandler_Handle_vtbl;
+		SafeWrite64(AttackStopHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(AttackStopHandler_Handle_Hook));
 
 		g_timer.Start();
 

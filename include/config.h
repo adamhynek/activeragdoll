@@ -198,8 +198,8 @@ namespace Config {
 		float hitImpulseDecayMult2 = 0.125f;
 		float hitImpulseDecayMult3 = 0.075f;
 
-		float meleeSwingLinearVelocityThreshold = 3.f;
-		float shieldSwingLinearVelocityThreshold = 3.f;
+		float swingLinearVelocityThreshold = 3.f;
+		float swingCooldown = 0.5f;
 
 		bool resizePlayerCharController = true;
 		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;

@@ -619,6 +619,9 @@ extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_Update
 typedef bool(*_ActorProcess_IncrementAttackCounter)(ActorProcessManager *_this, int incCount);
 extern RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter;
 
+typedef bool(*_ActorProcess_UnsetAttackData)(ActorProcessManager* _this);
+extern RelocAddr<_ActorProcess_UnsetAttackData> ActorProcess_UnsetAttackData;
+
 typedef int(*_TESObjectWEAP_GetSoundAmount)(TESObjectWEAP *_this);
 extern RelocAddr<_TESObjectWEAP_GetSoundAmount> TESObjectWEAP_GetSoundAmount;
 
@@ -777,6 +780,12 @@ extern RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFrom
 
 typedef void(*_VRMeleeData_ComputeAngularVelocities)(VRMeleeData *_this, const NiPoint3 &hmdPos, float &outVelocityX, float &outVelocityY);
 extern RelocAddr<_VRMeleeData_ComputeAngularVelocities> VRMeleeData_ComputeAngularVelocities;
+
+typedef bool(*_WeaponSwingHandler_Handle)(void* _this, Actor* actor);
+extern RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle;
+
+typedef bool(*_WeaponSwingHandler_Handle)(void* _this, Actor* actor);
+extern RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle;
 
 typedef void(*_sub_140654E10)(ActorProcessManager *_this, bool a2);
 extern RelocAddr<_sub_140654E10> sub_140654E10;

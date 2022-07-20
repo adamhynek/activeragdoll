@@ -271,6 +271,7 @@ RelocAddr<_Actor_IsRunning> Actor_IsRunning(0x5D9770);
 RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);
 RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData(0x6B9F30);
 RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter(0x65A090);
+RelocAddr<_ActorProcess_UnsetAttackData> ActorProcess_UnsetAttackData(0x664710);
 RelocAddr<_TESObjectWEAP_GetSoundAmount> TESObjectWEAP_GetSoundAmount(0x246360);
 RelocAddr<_Actor_SetActionValue> Actor_SetActionValue(0x602C00);
 RelocAddr<_TESNPC_GetSoundAmount> TESNPC_GetSoundAmount(0x375AE0);
@@ -324,6 +325,8 @@ RelocAddr<_PackageTarget_SetFromReference> PackageTarget_SetFromReference(0x4532
 RelocAddr<_TESPackage_sub_140439BE0> TESPackage_sub_140439BE0(0x449730);
 RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFromOtherPackage(0x4447E0);
 RelocAddr<_VRMeleeData_ComputeAngularVelocities> VRMeleeData_ComputeAngularVelocities(0x6B45C0);
+RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle(0x74B340);
+RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle(0x74B3D0);
 RelocAddr<_sub_140654E10> sub_140654E10(0x654E10);
 RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue(0x6580B0);
 RelocAddr<_sub_140664870> sub_140664870(0x664870);

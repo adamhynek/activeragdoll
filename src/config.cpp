@@ -358,8 +358,8 @@ namespace Config {
 		if (!RegisterFloat("hitImpulseDecayMult2", options.hitImpulseDecayMult2)) success = false;
 		if (!RegisterFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) success = false;
 
-		if (!RegisterFloat("meleeSwingLinearVelocityThreshold", options.meleeSwingLinearVelocityThreshold)) success = false;
-		if (!RegisterFloat("shieldSwingLinearVelocityThreshold", options.shieldSwingLinearVelocityThreshold)) success = false;
+		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
+		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
 
 		if (!RegisterBool("resizePlayerCharController", options.resizePlayerCharController)) success = false;
 		if (!RegisterBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) success = false;
