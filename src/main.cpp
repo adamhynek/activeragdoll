@@ -170,6 +170,7 @@ void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true,
 		}
 	}
 
+	// Reads from last attackData
 	get_vfunc<_Actor_WeaponSwingCallback>(player, 0xF1)(player);
 
 	if (ActorProcessManager *process = player->processManager) {
@@ -383,7 +384,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 
 	Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
 
-	source->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+	source->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 }
 
 bool HitRefr(Character *source, TESObjectREFR *target, TESForm *weapon, hkpRigidBody *hitBody, bool isLeft, bool isOffhand)
@@ -3595,7 +3596,7 @@ bool WeaponRightSwingHandler_Handle_Hook(void* _this, Actor* actor)
 		_MESSAGE("%d WeaponRightSwing", *g_currentFrameCounter);
 		// Don't do the weapon swing sound for the player
 
-		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
 
 		get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
@@ -3611,7 +3612,7 @@ bool WeaponLeftSwingHandler_Handle_Hook(void* _this, Actor* actor)
 		_MESSAGE("%d WeaponLeftSwing", *g_currentFrameCounter);
 		// Don't do the weapon swing sound for the player
 
-		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
 
 		get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
@@ -4234,7 +4235,7 @@ bool HitFrameHandler_Handle_Hook(void *_this, Actor *actor, BSFixedString *side)
 			return false;
 		}
 
-		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		actor->actorState.flags04 |= 0x30000000u; // attackState = kHit
 		return true;
 	}
@@ -4251,7 +4252,7 @@ bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
 		if (ActorProcessManager* process = actor->processManager) {
 			ActorProcess_UnsetAttackData(process);
 		}
-		actor->actorState.flags08 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		return true;
 	}
 	return g_originalAttackStopHandlerHandle(_this, actor);
