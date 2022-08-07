@@ -316,7 +316,7 @@ struct ActorCause
 };
 static_assert(sizeof(ActorCause) == 0x18);
 
-struct BSFadeNodeCuller
+struct BSFadeNodeCuller // extends NiCullingProcess
 {
 	struct Plane
 	{

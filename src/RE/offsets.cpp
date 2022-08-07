@@ -289,6 +289,7 @@ RelocAddr<_Actor_GetDetectionCalculatedValue> Actor_GetDetectionCalculatedValue(
 RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm(0x986530);
 RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm(0x987A70);
 RelocAddr<_Actor_IsTalking> Actor_IsTalking(0x5DA8F0);
+RelocAddr<_Actor_EvaluatePackage> Actor_EvaluatePackage(0x5E3990);
 RelocAddr<_BSTaskPool_QueueDestroyTask> BSTaskPool_QueueDestroyTask(0x5CB4F0);
 RelocAddr<_PlayRumble> PlayRumble(0xC59440);
 RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);

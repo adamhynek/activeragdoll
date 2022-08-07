@@ -86,106 +86,6 @@ NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool i
 	return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
 }
 
-void DeductSwingStamina(float staminaCost)
-{
-	PlayerCharacter* player = *g_thePlayer;
-
-	float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
-
-	DamageAV(player, 26, -staminaCost);
-
-	if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
-		// Out of stamina after the swing
-		if (ActorProcessManager* process = player->processManager) {
-			float regenRate = Actor_GetActorValueRegenRate(player, 26);
-			ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
-			FlashHudMenuMeter(26);
-		}
-	}
-}
-
-void TrySwingPowerAttack(bool isLeft, bool isOffhand)
-{
-	PlayerCharacter* player = *g_thePlayer;
-
-	BGSAttackData* attackData = nullptr;
-	PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
-	if (!attackData) return;
-
-	float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
-	float currentStamina = player->actorValueOwner.GetCurrent(26);
-	if (staminaCost > 0.f && currentStamina <= 0.f) {
-		// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
-		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-		FlashHudMenuMeter(26);
-		return;
-	}
-
-	// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
-	// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
-	// This needs to happen after setting the attackData
-	PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
-
-	/*if (BGSAction* powerAttackAction = (BGSAction*)g_defaultObjectManager->objects[GetPowerAttackActionId(isOffhand)]) {
-		// This sets the attack data to the power attack data again after the above call set it to the regular attack
-		// This notifies the anim graph with the corresponding power attack action based on movement direction
-		//SendAction(player, target, powerAttackAction);
-		SendAction(player, nullptr, powerAttackAction);
-	}*/
-
-	// Do this again after the above func overwrote the attackData
-	PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
-
-	if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
-		DeductSwingStamina(staminaCost);
-	}
-	
-	if (SpellItem* attackSpell = attackData->data.attackSpell) {
-		Actor_DoCombatSpellApply(player, attackSpell, nullptr);
-	}
-
-	get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&player->animGraphHolder, 0x1)(&player->animGraphHolder, attackData->event);
-
-	*((UInt8*)player + 0x12D7) |= 0x1C;
-}
-
-void SwingWeapon(TESObjectWEAP *weapon, bool isLeft, bool setAttackState = true, bool playSound = true)
-{
-	PlayerCharacter *player = *g_thePlayer;
-
-	if (setAttackState) {
-		player->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
-		player->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
-	}
-
-	if (playSound) {
-		if (weapon) {
-			if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
-				if (BGSSoundDescriptorForm* sound = weapon->attackFailSound) {
-					if (NiPointer<NiAVObject> node = GetWeaponCollisionOffsetNode(weapon, isLeft)) {
-						PlaySoundAtNode(sound, node, {});
-					}
-				}
-			}
-		}
-	}
-
-	// Reads from last attackData
-	get_vfunc<_Actor_WeaponSwingCallback>(player, 0xF1)(player);
-
-	if (ActorProcessManager *process = player->processManager) {
-		ActorProcess_IncrementAttackCounter(process, 1);
-	}
-
-	// Make noise
-	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)player->baseForm);
-	Actor_SetActionValue(player, soundAmount);
-
-	if (player->unk158) {
-		CombatController_sub_14050DEC0((void *)player->unk158);
-	}
-}
-
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
 struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
 {
@@ -248,45 +148,11 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 	return false;
 }
 
-/*
-void Hit()
-{
-	BGSAttackData *attackData = nullptr;
-	PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-
-	// set hit pos / velocity
-
-	if (hitCharacter && !isGhost && Character_CanHit(player, target)) {
-
-	}
-	else {
-		if (hitRefr) {
-			// DispatchHitEvents();
-		}
-
-		if (g_bPlayVRMeleeWorldImpactSounds) {
-			// play impact effect sound
-		}
-
-		if (hitRefr) {
-			if (IsMotionTypeMoveable()) {
-				hitRefr->SetActorCause(player->GetActorCause());
-			}
-			BSTaskPool_QueueDestroyTask(hitRefr);
-		}
-
-		PlayRumble();
-	}
-
-	ApplyImpulse();
-}
-*/
-
 int g_numSkipAnimationFrames = 0;
 
 bool g_isInPlanckHit = false;
 
-void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAttackData *attackData, hkpRigidBody *hitRigidBody, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
+void HitActor(Character *source, Character *target, TESForm *weaponForm, hkpRigidBody *hitRigidBody, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm *offhandObj = source->GetEquippedObject(true);
@@ -330,9 +196,10 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 		source->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
 	}
 
-	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack) && isShield) {
+	if (isPowerAttack && isShield) {
 		// power bash
 		if (BGSAction *blockAnticipateAction = (BGSAction *)g_defaultObjectManager->objects[74]) {
+			// TODO: Is this still okay?
 			SendAction(source, target, blockAnticipateAction);
 		}
 		PlayerCharacter *player = *g_thePlayer;
@@ -341,31 +208,30 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 		}
 	}
 
+	// Do combat dialogue here (after the swing) in addition to during the swing, as this will handle bash dialogue.
 	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
 	TriggerDialogueByType(source, target, dialogueSubtype, false);
 
-	if (attackData && attackData->data.flags & UInt32(BGSAttackData::AttackData::AttackFlag::kPowerAttack)) {
-		// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
-		// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
-		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+	if (isPowerAttack) {
+		// TODO: Should we really still be doing this when it's a power bash not a regular power attack?
+
+		_MESSAGE("%d Detect hit power attack", *g_currentFrameCounter);
+		// We already did this in the swing
+		//PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
 
 		if (BGSAction *powerAttackAction = (BGSAction *)g_defaultObjectManager->objects[GetPowerAttackActionId(isOffhand)]) {
+			// TODO: Need to figure out a way to support the animation conditions, which was previously done through this SendAction call
+			//       (since we don't want to do an anim here other than in the swing) (but supposedly Power Attack VR does already work with the current planck version which doesn't include this SendAction call ???)
 			// This sets the attack data to the power attack data again after the above call set it to the regular attack
 			// This notifies the anim graph with the corresponding power attack action based on movement direction
-			SendAction(source, target, powerAttackAction);
+			//SendAction(source, target, powerAttackAction);
 		}
 
-		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&source->magicTarget, 4)(&source->magicTarget)) {
-			float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&source->actorValueOwner, attackData);
-			if (staminaCost > 0.f) {
-				DeductSwingStamina(staminaCost);
-			}
-		}
+		//g_numSkipAnimationFrames = 2;
 	}
-
-	// Make noise
-	int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC *)source->baseForm);
-	Actor_SetActionValue(source, soundAmount);
+	else {
+		_MESSAGE("%d Detect hit", *g_currentFrameCounter);
+	}
 
 	// Set last hit data to be read from at the time that the hit event is fired
 	PlanckPluginAPI::PlanckHitData &lastHitData = g_interface001.lastHitData;
@@ -379,7 +245,7 @@ void HitActor(Character *source, Character *target, TESForm *weaponForm, BGSAtta
 	lastHitData.isLeft = isLeft;
 
 	g_isInPlanckHit = true;
-	Character_HitTarget(source, target, nullptr, isOffhand);
+	Character_HitTarget(source, target, nullptr, isOffhand); // Populates HitData and so relies on attackState/attackData
 	g_isInPlanckHit = false;
 
 	Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
@@ -817,6 +683,210 @@ bool ShouldRagdollOnGrab(Actor *actor)
 }
 
 
+struct SwingHandler
+{
+	enum class SwingState
+	{
+		None,
+		Swing,
+	};
+
+	bool isLeft;
+	SwingState swingState = SwingState::None;
+	float lastSwingSpeed = 0.f;
+	bool wasLastSwingPowerAttack = false;
+	float swingCooldown = 0.f;
+	float lastDeltaTime = 1.f;
+
+	SwingHandler(bool isLeft) : isLeft(isLeft) {}
+
+	inline bool IsSwingCoolingDown()
+	{
+		return swingCooldown > 0.f;
+	}
+
+	void DeductSwingStamina(float staminaCost)
+	{
+		PlayerCharacter* player = *g_thePlayer;
+
+		float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
+
+		DamageAV(player, 26, -staminaCost);
+
+		if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
+			// Out of stamina after the swing
+			if (ActorProcessManager* process = player->processManager) {
+				float regenRate = Actor_GetActorValueRegenRate(player, 26);
+				ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
+				FlashHudMenuMeter(26);
+			}
+		}
+	}
+
+	// Return true if power attack succeeded, false if regular attack
+	bool TrySwingPowerAttack(bool isLeft, bool isOffhand)
+	{
+		PlayerCharacter* player = *g_thePlayer;
+
+		BGSAttackData* attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
+		if (!attackData) return false;
+
+		float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
+		float currentStamina = player->actorValueOwner.GetCurrent(26);
+		if (staminaCost > 0.f && currentStamina <= 0.f) {
+			// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
+			PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
+			// Now do a regular attack (overwrites the attack data too)
+			PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+			FlashHudMenuMeter(26);
+			return false;
+		}
+
+		// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
+		// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
+		// This needs to happen after setting the attackData
+		PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+
+		/*if (BGSAction* powerAttackAction = (BGSAction*)g_defaultObjectManager->objects[GetPowerAttackActionId(isOffhand)]) {
+			// This sets the attack data to the power attack data again after the above call set it to the regular attack
+			// This notifies the anim graph with the corresponding power attack action based on movement direction
+			//SendAction(player, target, powerAttackAction);
+			SendAction(player, nullptr, powerAttackAction);
+		}*/
+
+		// Do this again after the above func overwrote the attackData
+		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
+
+		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
+			DeductSwingStamina(staminaCost);
+		}
+
+		if (SpellItem* attackSpell = attackData->data.attackSpell) {
+			Actor_DoCombatSpellApply(player, attackSpell, nullptr);
+		}
+
+		get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&player->animGraphHolder, 0x1)(&player->animGraphHolder, attackData->event);
+
+		*((UInt8*)player + 0x12D7) |= 0x1C;
+
+		return true;
+	}
+
+	void SwingWeapon(TESObjectWEAP* weapon, bool isLeft, bool playSound = true)
+	{
+		PlayerCharacter* player = *g_thePlayer;
+
+		player->actorState.flags04 &= 0xFFFFFFFu; // zero out meleeAttackState
+		player->actorState.flags04 |= 0x20000000u; // meleeAttackState = kSwing
+
+		if (playSound) {
+			if (weapon) {
+				if (weapon->type() < TESObjectWEAP::GameData::kType_Bow) { // not bow, staff, or crossbow
+					if (BGSSoundDescriptorForm* sound = weapon->attackFailSound) {
+						if (NiPointer<NiAVObject> node = GetWeaponCollisionOffsetNode(weapon, isLeft)) {
+							PlaySoundAtNode(sound, node, {});
+						}
+					}
+				}
+			}
+		}
+
+		get_vfunc<_Actor_WeaponSwingCallback>(player, 0xF1)(player); // Reads from last attackData and applies kApplyWeaponSwingSpell entrypoint (which could read from attackState)
+
+		if (ActorProcessManager* process = player->processManager) {
+			ActorProcess_IncrementAttackCounter(process, 1);
+		}
+
+		// Make noise
+		int soundAmount = weapon ? TESObjectWEAP_GetSoundAmount(weapon) : TESNPC_GetSoundAmount((TESNPC*)player->baseForm);
+		Actor_SetActionValue(player, soundAmount);
+
+		if (player->unk158) {
+			CombatController_sub_14050DEC0((void*)player->unk158);
+		}
+
+		player->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
+	}
+
+	void Swing()
+	{
+		bool isOffhand = isLeft != *g_leftHandedMode;
+
+		PlayerCharacter* player = *g_thePlayer;
+
+		NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::kNode_HmdNode];
+		ASSERT_STR(hmdNode, "Hmd node is null");
+
+		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+
+		float angularVelocityX, angularVelocityY;
+		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_worldTransform.pos, angularVelocityX, angularVelocityY);
+		float angularSpeed = sqrtf(angularVelocityX * angularVelocityX + angularVelocityY * angularVelocityY) / lastDeltaTime;
+
+		meleeData->swingDirection = VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocityX, angularVelocityY);
+
+		if (bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld) {
+			bool success = TrySwingPowerAttack(isLeft, isOffhand); // this also sets the attackData
+			wasLastSwingPowerAttack = success;
+		}
+		else {
+			//BGSAttackData* attackData = nullptr;
+			//PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
+
+			// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
+			// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
+			PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+			wasLastSwingPowerAttack = false;
+		}
+
+		SwingWeapon(GetEquippedWeapon(player, isOffhand), isOffhand); // Reads from last attackData
+
+		g_numSkipAnimationFrames = 2; // skip the animation
+		swingCooldown = Config::options.swingCooldown;
+
+		swingState = SwingState::None;
+	}
+
+	void UpdateWeaponSwing(float deltaTime)
+	{
+		lastDeltaTime = deltaTime;
+		swingCooldown -= deltaTime;
+
+		PlayerCharacter *player = *g_thePlayer;
+
+		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
+		if (!meleeData->collisionNode) return;
+		if (!player->actorState.IsWeaponDrawn()) return;
+
+		if (!AreCombatControlsEnabled()) return;
+		if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) return;
+
+		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
+		float speed = velocityData.avgSpeed;
+
+		if (swingState == SwingState::None) {
+			if (swingCooldown <= 0.f) {
+				if (speed > Config::options.swingLinearVelocityThreshold) {
+					swingState = SwingState::Swing;
+				}
+			}
+		}
+
+		if (swingState == SwingState::Swing) {
+			if (speed < lastSwingSpeed) {
+				// We are past the peak of the swing
+				Swing();
+			}
+		}
+
+		lastSwingSpeed = speed;
+	}
+};
+SwingHandler g_rightSwingHandler{ false };
+SwingHandler g_leftSwingHandler{ true };
+
+
 float g_savedMinSoundVel;
 
 struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
@@ -906,23 +976,21 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
 
-		bool isPowerAttack = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
+		SwingHandler& swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+		if (!swingHandler.IsSwingCoolingDown()) {
+			// There was no recent swing, so perform one now
+			// TODO: What if the weapon swing handler from the anim messes with our attackState / attackData during the hit processing?
+			swingHandler.Swing();
+		}
 
-		// Set attack data
-		BGSAttackData *attackData = nullptr;
+		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
+		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+
+		// TODO: If we didn't trigger a swing animation here, what will unset the attack data? (no attackstop handler in this case).
+		//       Should we just unset it immediately after dispatching the hit event (which happens in a task, not directly in the collision handler, though it does appear to occur in the same frame)?
+		BGSAttackData* attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
 		if (!attackData) return;
-
-		if (isPowerAttack) {
-			float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
-			float currentStamina = player->actorValueOwner.GetCurrent(26);
-			if (staminaCost > 0.f && currentStamina <= 0.f) {
-				// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
-				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-				FlashHudMenuMeter(26);
-				isPowerAttack = false;
-			}
-		}
 
 		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
 		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
@@ -935,17 +1003,19 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
-			HitActor(player, hitChar, weapon, attackData, hitRigidBody, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
+			HitActor(player, hitChar, weapon, hitRigidBody, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
 
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
 			if (Config::options.applyImpulseOnHit) {
+				// TODO: Higher impulse for power attacks?
 				ApplyHitImpulse(hitChar, hitRigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
 			}
 		}
 		else {
 			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
+				// TODO: Play VFX and sound?
 				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 			}
 
@@ -2136,6 +2206,7 @@ struct ClearKeepOffsetTask : TaskDelegate
 		if (LookupREFRByHandle(source, refr)) {
 			if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
 				Actor_ClearKeepOffsetFromActor(actor);
+				Actor_EvaluatePackage(actor, false, false);
 			}
 		}
 	}
@@ -2379,8 +2450,8 @@ bool UpdateActorShove(Actor *actor)
 					else {
 						// Not enough stamina
 						if (Config::options.playSoundOnShoveNoStamina) {
-							if (BGSSoundDescriptorForm *shoutFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
-								PlaySoundAtNode(shoutFailSound, player->GetNiNode(), {});
+							if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+								PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 							}
 						}
 						FlashHudMenuMeter(26);
@@ -2426,97 +2497,8 @@ void ResetObjects()
 double g_worldChangedTime = 0.0;
 
 
-struct SwingHandler
-{
-	enum class SwingState
-	{
-		None,
-		Swing,
-	};
-
-	bool isLeft;
-	SwingState swingState = SwingState::None;
-	float lastSwingSpeed = 0.f;
-	float swingCooldown = 0.0;
-
-	SwingHandler(bool isLeft) : isLeft(isLeft) {}
-
-	void UpdateWeaponSwing(float deltaTime)
-	{
-		swingCooldown -= deltaTime;
-
-		bool isOffhand = isLeft != *g_leftHandedMode;
-		PlayerCharacter* player = *g_thePlayer;
-
-		VRMeleeData* meleeData = GetVRMeleeData(isLeft);
-		if (!meleeData->collisionNode) return;
-		if (!player->actorState.IsWeaponDrawn()) return;
-
-		if (!AreCombatControlsEnabled()) return;
-		if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) return;
-
-		NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::kNode_HmdNode];
-		if (!hmdNode) return;
-
-		float angularVelocityX, angularVelocityY;
-		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_worldTransform.pos, angularVelocityX, angularVelocityY);
-		float angularSpeed = sqrtf(angularVelocityX * angularVelocityX + angularVelocityY * angularVelocityY) / deltaTime;
-
-		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
-		float speed = velocityData.avgSpeed;
-
-		if (swingState == SwingState::None) {
-			if (swingCooldown <= 0.f) {
-				if (speed > Config::options.swingLinearVelocityThreshold) {
-					swingState = SwingState::Swing;
-				}
-			}
-		}
-
-		if (swingState == SwingState::Swing) {
-			if (speed < lastSwingSpeed) {
-				// We are past the peak of the swing
-
-				meleeData->swingDirection = VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocityX, angularVelocityY);
-
-				if (bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld) {
-					TrySwingPowerAttack(isLeft, isOffhand); // this also sets the attackData
-				}
-				else {
-					BGSAttackData* attackData = nullptr;
-					PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-
-					// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
-					// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
-					// This needs to happen after setting the attackData
-					PlayerControls_sub_140705530(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
-				}
-				SwingWeapon(GetEquippedWeapon(player, isOffhand), isOffhand);
-
-				g_numSkipAnimationFrames = 2; // skip the animation
-				swingCooldown = Config::options.swingCooldown;
-
-				swingState = SwingState::None;
-			}
-		}
-
-		lastSwingSpeed = speed;
-	}
-};
-SwingHandler g_rightSwingHandler{ false };
-SwingHandler g_leftSwingHandler{ true };
-
 void PlayerCharacter_UpdateWeaponSwing_Hook(PlayerCharacter *player, float deltaTime)
 {
-	/*
-	// Called after the regular hit to unset the attack data
-	AttackStopHandler::Handle()
-	{
-		ActorProcess::UnsetAttackData()
-		unset meleeAttackState
-	}
-	*/
-
 	g_rightSwingHandler.UpdateWeaponSwing(deltaTime);
 	g_leftSwingHandler.UpdateWeaponSwing(deltaTime);
 }
@@ -2540,6 +2522,13 @@ void ProcessHavokHitJobsHook()
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
 		g_playerCollisionGroup = filterInfo >> 16;
+	}
+
+	{
+		IAnimationGraphManagerHolder* animGraphHolder = &(*g_thePlayer)->animGraphHolder;
+		bool bAllowRotation;
+		get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(animGraphHolder, 0x12)(animGraphHolder, BSFixedString("bAllowRotation"), bAllowRotation);
+		PrintToFile(std::to_string(bAllowRotation), "bAllowRotation.txt");
 	}
 
 	if (world != g_contactListener.world) {
@@ -2796,7 +2785,7 @@ void ProcessHavokHitJobsHook()
 
 	UpdateHiggsDrop();
 
-	// Do this after we've update higgs things
+	// Do this after we've updated higgs things
 	UpdateSpeedReduction();
 
 	RunDelayedJobs(g_currentFrameTime);
@@ -3573,7 +3562,8 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
 void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(EventDispatcher<TESHitEvent> *dispatcher, TESHitEvent *hitEvent, HitData *hitData)
 {
 	if (hitData->flags >> 30 & 1) {
-		g_numSkipAnimationFrames = 1; // essentially skip the power attack animation
+		_MESSAGE("%d Dispatch hit", *g_currentFrameCounter);
+		//g_numSkipAnimationFrames = 1; // essentially skip the power attack animation
 
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
 		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
@@ -3590,12 +3580,16 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 	}
 }
 
+// Return true to let the base game run its code, false to return immediately
 bool WeaponRightSwingHandler_Handle_Hook(void* _this, Actor* actor)
 {
 	if (actor == *g_thePlayer) {
 		_MESSAGE("%d WeaponRightSwing", *g_currentFrameCounter);
 		// Don't do the weapon swing sound for the player
 
+		return false;
+
+		// OLD
 		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
 
@@ -3606,12 +3600,16 @@ bool WeaponRightSwingHandler_Handle_Hook(void* _this, Actor* actor)
 	return true;
 }
 
+// Return true to let the base game run its code, false to return immediately
 bool WeaponLeftSwingHandler_Handle_Hook(void* _this, Actor* actor)
 {
 	if (actor == *g_thePlayer) {
 		_MESSAGE("%d WeaponLeftSwing", *g_currentFrameCounter);
 		// Don't do the weapon swing sound for the player
 
+		return false;
+
+		// OLD
 		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 		actor->actorState.flags04 |= 0x20000000u; // attackState = kSwing
 
@@ -3620,6 +3618,49 @@ bool WeaponLeftSwingHandler_Handle_Hook(void* _this, Actor* actor)
 		return false;
 	}
 	return true;
+}
+
+// HitFrameHandler::Handle hook for disabling animation-driven power attack hits for the player
+_HitFrameHandler_Handle g_originalHitFrameHandlerHandle = nullptr;
+static RelocPtr<_HitFrameHandler_Handle> HitFrameHandler_Handle_vtbl(0x16F5148); // 0x16F5140 + 8
+bool HitFrameHandler_Handle_Hook(void* _this, Actor* actor, BSFixedString* side) // side == "Left" when offhand, "" when main hand
+{
+	if (actor == *g_thePlayer) {
+		_MESSAGE("%d HitFrame", *g_currentFrameCounter);
+		// Ignore hitframe power attack hits for the player
+
+		static std::string left("Left");
+		bool isLeft = left == side->c_str();
+
+		SwingHandler& swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+		return swingHandler.IsSwingCoolingDown(); // swing happened recently
+
+		// OLD
+		if ((actor->actorState.flags04 & 0xF0000000) != 0x20000000) { // meleeAttackState != kSwing
+			return false;
+		}
+
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
+		actor->actorState.flags04 |= 0x30000000u; // attackState = kHit
+		return true;
+	}
+	return g_originalHitFrameHandlerHandle(_this, actor, side);
+}
+
+_AttackStopHandler_Handle g_originalAttackStopHandlerHandle = nullptr;
+static RelocPtr<_AttackStopHandler_Handle> AttackStopHandler_Handle_vtbl(0x16F4FF8); // 0x16F4FF0 + 8
+bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
+{
+	if (actor == *g_thePlayer) {
+		_MESSAGE("%d AttackStop", *g_currentFrameCounter);
+		// No changes... yet.
+		if (ActorProcessManager* process = actor->processManager) {
+			ActorProcess_UnsetAttackData(process);
+		}
+		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
+		return true;
+	}
+	return g_originalAttackStopHandlerHandle(_this, actor);
 }
 
 
@@ -3777,9 +3818,13 @@ void PerformHooks(void)
 				// Save Actor * argument and align the stack
 				push(rdx);
 
+				sub(rsp, 0x20); // 0x20 bytes for scratch space
+
 				// Call our hook
 				mov(rax, (uintptr_t)WeaponRightSwingHandler_Handle_Hook);
 				call(rax);
+
+				add(rsp, 0x20);
 
 				pop(rdx);
 
@@ -3820,9 +3865,13 @@ void PerformHooks(void)
 				// Save Actor * argument and align the stack
 				push(rdx);
 
+				sub(rsp, 0x20); // 0x20 bytes for scratch space
+
 				// Call our hook
 				mov(rax, (uintptr_t)WeaponLeftSwingHandler_Handle_Hook);
 				call(rax);
+
+				add(rsp, 0x20);
 
 				pop(rdx);
 
@@ -4222,40 +4271,13 @@ void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
 	g_originalPCUpdateAnimation(_this, deltaTime);
 }
 
-// HitFrameHandler::Handle hook for disabling animation-driven power attack hits for the player
-_HitFrameHandler_Handle g_originalHitFrameHandlerHandle = nullptr;
-static RelocPtr<_HitFrameHandler_Handle> HitFrameHandler_Handle_vtbl(0x16F5148); // 0x16F5140 + 8
-bool HitFrameHandler_Handle_Hook(void *_this, Actor *actor, BSFixedString *side)
+// PlayerCharacter.animGraphHolder::GetAnimationVariableBool hook
+_IAnimationGraphManagerHolder_GetAnimationVariableBool g_originalPCGetAnimationVariableBool = nullptr;
+static RelocPtr<_IAnimationGraphManagerHolder_GetAnimationVariableBool> PlayerCharacter_GetAnimationVariableBool_vtbl(0x16E2C80); // 0x16E2BF0 + 0x12 * 8
+bool PlayerCharacter_GetAnimationVariableBool_Hook(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, bool& a_out)
 {
-	if (actor == *g_thePlayer) {
-		_MESSAGE("%d HitFrame", *g_currentFrameCounter);
-		// Ignore hitframe power attack hits for the player
-
-		if ((actor->actorState.flags04 & 0xF0000000) != 0x20000000) { // meleeAttackState != kSwing
-			return false;
-		}
-
-		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
-		actor->actorState.flags04 |= 0x30000000u; // attackState = kHit
-		return true;
-	}
-	return g_originalHitFrameHandlerHandle(_this, actor, side);
-}
-
-_AttackStopHandler_Handle g_originalAttackStopHandlerHandle = nullptr;
-static RelocPtr<_AttackStopHandler_Handle> AttackStopHandler_Handle_vtbl(0x16F4FF8); // 0x16F4FF0 + 8
-bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
-{
-	if (actor == *g_thePlayer) {
-		_MESSAGE("%d AttackStop", *g_currentFrameCounter);
-		// No changes... yet.
-		if (ActorProcessManager* process = actor->processManager) {
-			ActorProcess_UnsetAttackData(process);
-		}
-		actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
-		return true;
-	}
-	return g_originalAttackStopHandlerHandle(_this, actor);
+	//_MESSAGE(a_variableName.c_str());
+	return g_originalPCGetAnimationVariableBool(_this, a_variableName, a_out);
 }
 
 
@@ -4402,11 +4424,14 @@ extern "C" {
 		}
 
 		g_originalNotifyAnimationGraph = *Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
-		SafeWrite64(Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
-		//SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+		//SafeWrite64(Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+		SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
 
 		g_originalPCUpdateAnimation = *PlayerCharacter_UpdateAnimation_vtbl;
 		SafeWrite64(PlayerCharacter_UpdateAnimation_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_UpdateAnimation_Hook));
+
+		g_originalPCGetAnimationVariableBool = *PlayerCharacter_GetAnimationVariableBool_vtbl;
+		SafeWrite64(PlayerCharacter_GetAnimationVariableBool_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_GetAnimationVariableBool_Hook));
 
 		g_originalHitFrameHandlerHandle = *HitFrameHandler_Handle_vtbl;
 		SafeWrite64(HitFrameHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(HitFrameHandler_Handle_Hook));
