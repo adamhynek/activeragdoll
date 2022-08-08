@@ -631,8 +631,8 @@ extern RelocAddr<_Actor_SetActionValue> Actor_SetActionValue;
 typedef int(*_TESNPC_GetSoundAmount)(TESNPC *_this);
 extern RelocAddr<_TESNPC_GetSoundAmount> TESNPC_GetSoundAmount;
 
-typedef void(*_CombatController_sub_14050DEC0)(void *_this);
-extern RelocAddr<_CombatController_sub_14050DEC0> CombatController_sub_14050DEC0;
+typedef void(*_CombatController_SetLastAttackTimeToNow)(void *_this);
+extern RelocAddr<_CombatController_SetLastAttackTimeToNow> CombatController_SetLastAttackTimeToNow;
 
 typedef void(*_Actor_RemoveMagicEffectsDueToAction)(Actor *_this, int action);
 extern RelocAddr<_Actor_RemoveMagicEffectsDueToAction> Actor_RemoveMagicEffectsDueToAction;
@@ -649,8 +649,8 @@ extern RelocAddr<_ActorProcess_UpdateRegenDelay> ActorProcess_UpdateRegenDelay;
 typedef void(*_FlashHudMenuMeter)(UInt32 actorValue);
 extern RelocAddr<_FlashHudMenuMeter> FlashHudMenuMeter;
 
-typedef float(*_PlayerControls_sub_140705530)(PlayerControls *_this, UInt64 defaultActionObject, UInt64 a3);
-extern RelocAddr<_PlayerControls_sub_140705530> PlayerControls_sub_140705530;
+typedef float(*_PlayerControls_SendAction)(PlayerControls *_this, UInt32 defaultActionObject, UInt32 priority);
+extern RelocAddr<_PlayerControls_SendAction> PlayerControls_SendAction;
 
 typedef void(*_Character_HitTarget)(Character *_this, Actor *target, Projectile *projectile, bool isOffhand);
 extern RelocAddr<_Character_HitTarget> Character_HitTarget;

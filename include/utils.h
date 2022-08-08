@@ -56,6 +56,7 @@ TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand);
 bool IsHoldingTwoHandedWeapon(Actor *actor);
 bool IsOneHandedWeapon(TESObjectWEAP *weapon);
 bool IsUnarmed(TESForm *equippedObject);
+bool IsBashing(Actor* actor, bool isOffhand);
 
 double GetTime();
 
@@ -129,8 +130,10 @@ bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle);
 inline UInt32 GetEnabledInputs() { return UInt32(InputManager::GetSingleton()->unk138); }
 inline bool AreCombatControlsEnabled() { return GetEnabledInputs() & UInt32(EnabledInputs::fighting); }
 
-constexpr UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
-constexpr UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
+inline UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
+inline UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
+
+inline int GetAttackDialogueSubtype(bool isPowerAttack, bool isBash) { return isBash ? 28 : (isPowerAttack ? 27 : 26); } // 26 is attack, 27 powerattack, 28 bash
 
 constexpr int GetDialogueTypeFromSubtype(int subtype)
 {

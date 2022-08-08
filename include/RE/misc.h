@@ -556,4 +556,4 @@ typedef void(*_ActorValueOwner_RestoreActorValue)(ActorValueOwner *_this, UInt32
 typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UInt32 unk);
 typedef bool(*_TESActionData_Process)(TESActionData *_this);
 typedef bool(*_HitFrameHandler_Handle)(void *_this, Actor *actor, BSFixedString *side); // side == "Left" when offhand, "" when main hand
-typedef bool(*_AttackStopHandler_Handle)(void* _this, Actor* actor);
+typedef bool(*_AttackHandler_Handle)(void* _this, Actor* actor);

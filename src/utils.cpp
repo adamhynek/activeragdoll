@@ -213,6 +213,45 @@ bool IsUnarmed(TESForm *equippedObject)
 	return false;
 }
 
+bool IsBashing(Actor* actor, bool isOffhand)
+{
+	TESForm* equippedObj = actor->GetEquippedObject(isOffhand);
+	TESObjectWEAP* weapon = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
+	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
+
+	TESForm* offhandObj = actor->GetEquippedObject(true);
+	TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
+	bool isShield = isOffhand && equippedShield;
+
+	TESObjectLIGH* equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
+	bool isTorch = isOffhand && equippedLight;
+
+	bool isBash = false;
+	if (isBowOrCrossbow || isShield || isTorch) {
+		// We hit with a bow, crossbow, shield, or torch
+		return true;
+	}
+	else {
+		bool isBlocking = Actor_IsBlocking(actor);
+		if (IsHoldingTwoHandedWeapon(actor)) {
+			if (isBlocking) {
+				// Both hands are occupied with a two-handed weapon and we're blocking, so it's a bash
+				return true;
+			}
+		}
+		else {
+			if (weapon && IsOneHandedWeapon(weapon)) {
+				if (isBlocking && IsUnarmed(offhandObj)) {
+					// We hit with a bashable one-handed weapon and we're blocking, and the blocking can't be due to the other hand
+					return true;
+				}
+			}
+		}
+	}
+
+	return false;
+}
+
 void PrintVector(const NiPoint3 &p)
 {
 	_MESSAGE("%.2f, %.2f, %.2f", p.x, p.y, p.z);
