@@ -106,7 +106,7 @@ struct VRMeleeData
 	bool applyImpulseOnHit; // BD - default true
 	SwingDirection swingDirection; // C0 - default 0
 	float cooldown; // C4 - gets set to the cooldown, then ticks down, can (and will) get negative - default 0
-	float powerAttackCooldown; // C8 - default 0
+	float duration; // C8 - default 0
 	UInt32 unkCC;
 };
 static_assert(offsetof(VRMeleeData, collisionNode) == 0x18);

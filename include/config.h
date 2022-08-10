@@ -200,6 +200,9 @@ namespace Config {
 
 		float swingLinearVelocityThreshold = 3.f;
 		float swingCooldown = 0.5f;
+		float swingDuration = 0.2f;
+
+		bool spoofbAllowRotationDuringSwing = true;
 
 		bool resizePlayerCharController = true;
 		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;

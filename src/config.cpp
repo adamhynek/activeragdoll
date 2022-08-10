@@ -360,6 +360,9 @@ namespace Config {
 
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
+		if (!RegisterFloat("swingDuration", options.swingDuration)) success = false;
+
+		if (!RegisterBool("spoofbAllowRotationDuringSwing", options.spoofbAllowRotationDuringSwing)) success = false;
 
 		if (!RegisterBool("resizePlayerCharController", options.resizePlayerCharController)) success = false;
 		if (!RegisterBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) success = false;

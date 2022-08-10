@@ -129,6 +129,11 @@ NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);
 bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle);
 inline UInt32 GetEnabledInputs() { return UInt32(InputManager::GetSingleton()->unk138); }
 inline bool AreCombatControlsEnabled() { return GetEnabledInputs() & UInt32(EnabledInputs::fighting); }
+inline UInt32 GetAttackState(Actor* actor) { return (actor->actorState.flags04 >> 28) & 0xF; }
+inline void SetAttackState(Actor* actor, UInt32 attackState) {
+	actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
+	actor->actorState.flags04 |= attackState << 28;
+}
 
 inline UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
 inline UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
