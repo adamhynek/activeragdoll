@@ -765,7 +765,7 @@ struct SwingHandler
 
 		SwingWeapon(weapon, isOffhand, isBash); // Reads from last attackData and attackState
 
-		g_numSkipAnimationFrames = 2; // skip the animation
+		g_numSkipAnimationFrames = isBash ? Config::options.swingSkipAnimFramesBash : Config::options.swingSkipAnimFrames; // skip the animation
 		swingCooldown = Config::options.swingCooldown;
 		swingDuration = Config::options.swingDuration;
 
@@ -2565,6 +2565,15 @@ void ProcessHavokHitJobsHook()
 		g_playerCollisionGroup = filterInfo >> 16;
 	}
 
+#ifdef _DEBUG
+	{
+		IAnimationGraphManagerHolder * animGraphHolder = &(*g_thePlayer)->animGraphHolder;
+		bool bAllowRotation;
+		get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(animGraphHolder, 0x12)(animGraphHolder, BSFixedString("bAllowRotation"), bAllowRotation);
+		PrintToFile(std::to_string(bAllowRotation), "bAllowRotation.txt");
+	}
+#endif // _DEBUG
+
 	if (world != g_contactListener.world) {
 		if (NiPointer<bhkWorld> oldWorld = g_contactListener.world) {
 			_MESSAGE("Removing listeners from old havok world");
@@ -4320,9 +4329,16 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
 				g_shoveAnimTimes[_this] = g_currentFrameTime;
 			}
 		}
-#ifdef _DEBUG
+	}
+	return accepted;
+}
+
+bool PlayerCharacter_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder* _this, const BSFixedString& animationName)
+{
+	bool accepted = g_originalNotifyAnimationGraph(_this, animationName);
+	if (accepted) {
+		// Event was accepted by the graph
 		_MESSAGE("%p: %s", _this, animationName.c_str());
-#endif // _DEBUG
 	}
 	return accepted;
 }
@@ -4334,7 +4350,7 @@ void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
 {
 	if (g_numSkipAnimationFrames > 0) {
 		--g_numSkipAnimationFrames;
-		deltaTime = 10000.f;
+		deltaTime = Config::options.skipAnimationDeltaTime;
 	}
 	g_originalPCUpdateAnimation(_this, deltaTime);
 }
@@ -4458,7 +4474,7 @@ extern "C" {
 			_MESSAGE("Successfully read config parameters");
 		}
 		else {
-			_WARNING("[WARNING] Failed to read some config options. Using defaults instead.");
+			_WARNING("[WARNING] Failed to read some config options");
 		}
 
 		_MESSAGE("Registering for SKSE messages");
@@ -4499,7 +4515,9 @@ extern "C" {
 
 		g_originalNotifyAnimationGraph = *Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
 		SafeWrite64(Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
-		//SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
+#ifdef _DEBUG
+		SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_NotifyAnimationGraph_Hook));
+#endif // _DEBUG
 
 		g_originalPCUpdateAnimation = *PlayerCharacter_UpdateAnimation_vtbl;
 		SafeWrite64(PlayerCharacter_UpdateAnimation_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_UpdateAnimation_Hook));

@@ -202,6 +202,10 @@ namespace Config {
 		float swingCooldown = 0.5f;
 		float swingDuration = 0.2f;
 
+		int swingSkipAnimFrames = 2;
+		int swingSkipAnimFramesBash = 3;
+		float skipAnimationDeltaTime = 10000.f;
+
 		bool spoofbAllowRotationDuringSwing = true;
 
 		bool resizePlayerCharController = true;

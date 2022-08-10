@@ -362,6 +362,10 @@ namespace Config {
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
 		if (!RegisterFloat("swingDuration", options.swingDuration)) success = false;
 
+		if (!RegisterInt("swingSkipAnimFrames", options.swingSkipAnimFrames)) success = false;
+		if (!RegisterInt("swingSkipAnimFramesBash", options.swingSkipAnimFramesBash)) success = false;
+		if (!RegisterFloat("skipAnimationDeltaTime", options.skipAnimationDeltaTime)) success = false;
+
 		if (!RegisterBool("spoofbAllowRotationDuringSwing", options.spoofbAllowRotationDuringSwing)) success = false;
 
 		if (!RegisterBool("resizePlayerCharController", options.resizePlayerCharController)) success = false;
