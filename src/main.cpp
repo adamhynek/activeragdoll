@@ -3624,6 +3624,23 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 	}
 }
 
+// Hooks the IAnimationGraphManagerHolder::GetAnimationVariableBool vfunc call in the papyrus GetAnimationVariableBool func
+bool Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, bool& a_out)
+{
+	IAnimationGraphManagerHolder* playerAnimGraphHolder = &(*g_thePlayer)->animGraphHolder;
+	if (_this == playerAnimGraphHolder) {
+		static BSFixedString bAllowRotationStr("bAllowRotation");
+		if (a_variableName == bAllowRotationStr) {
+			if (g_rightSwingHandler.IsPowerAttackActive() || g_leftSwingHandler.IsPowerAttackActive()) {
+				a_out = true;
+				return true;
+			}
+		}
+	}
+
+	return get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(_this, 0x12)(_this, a_variableName, a_out);
+}
+
 // Return true to let the base game run its code, false to return immediately
 bool WeaponRightSwingHandler_Handle_Hook(void* _this, Actor* actor)
 {
@@ -3776,6 +3793,8 @@ auto Character_HitTarget_HitData_Populate_HookLoc = RelocAddr<uintptr_t>(0x631CA
 auto Actor_GetHit_DispatchHitEventFromHitData_HookLoc = RelocAddr<uintptr_t>(0x62F3DA);
 auto ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc = RelocAddr<uintptr_t>(0x636742);
 
+auto Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc = RelocAddr<uintptr_t>(0x9CE8D0);
+
 
 void PerformHooks(void)
 {
@@ -3855,6 +3874,11 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write5Call(Character_HitTarget_HitData_Populate_HookLoc.GetUIntPtr(), uintptr_t(Character_HitTarget_HitData_Populate_Hook));
 		_MESSAGE("Character_HitTarget_HitData_Populate hook complete");
+	}
+
+	if (Config::options.spoofbAllowRotationDuringSwing) {
+		g_branchTrampoline.Write6Call(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc.GetUIntPtr(), uintptr_t(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook));
+		_MESSAGE("Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool hook complete");
 	}
 
 	{
@@ -4355,21 +4379,6 @@ void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
 	g_originalPCUpdateAnimation(_this, deltaTime);
 }
 
-// PlayerCharacter.animGraphHolder::GetAnimationVariableBool hook
-_IAnimationGraphManagerHolder_GetAnimationVariableBool g_originalPCGetAnimationVariableBool = nullptr;
-static RelocPtr<_IAnimationGraphManagerHolder_GetAnimationVariableBool> PlayerCharacter_GetAnimationVariableBool_vtbl(0x16E2C80); // 0x16E2BF0 + 0x12 * 8
-bool PlayerCharacter_GetAnimationVariableBool_Hook(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, bool& a_out)
-{
-	static BSFixedString bAllowRotationStr("bAllowRotation");
-	if (a_variableName == bAllowRotationStr) {
-		if (g_rightSwingHandler.IsPowerAttackActive() || g_leftSwingHandler.IsPowerAttackActive()) {
-			a_out = true;
-			return true;
-		}
-	}
-	return g_originalPCGetAnimationVariableBool(_this, a_variableName, a_out);
-}
-
 
 extern "C" {
 	void OnDataLoaded()
@@ -4521,11 +4530,6 @@ extern "C" {
 
 		g_originalPCUpdateAnimation = *PlayerCharacter_UpdateAnimation_vtbl;
 		SafeWrite64(PlayerCharacter_UpdateAnimation_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_UpdateAnimation_Hook));
-
-		if (Config::options.spoofbAllowRotationDuringSwing) {
-			g_originalPCGetAnimationVariableBool = *PlayerCharacter_GetAnimationVariableBool_vtbl;
-			SafeWrite64(PlayerCharacter_GetAnimationVariableBool_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_GetAnimationVariableBool_Hook));
-		}
 
 		g_originalHitFrameHandlerHandle = *HitFrameHandler_Handle_vtbl;
 		SafeWrite64(HitFrameHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(HitFrameHandler_Handle_Hook));
