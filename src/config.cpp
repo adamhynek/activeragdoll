@@ -359,6 +359,7 @@ namespace Config {
 		if (!RegisterFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) success = false;
 
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
+		if (!RegisterFloat("swingVerticalSpeedMultipler", options.swingVerticalSpeedMultipler)) success = false;
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
 		if (!RegisterFloat("swingDuration", options.swingDuration)) success = false;
 

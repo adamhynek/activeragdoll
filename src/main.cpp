@@ -629,13 +629,6 @@ struct SwingHandler
 		// If it's a shield (bash), this will make us block/unblock instantly, which may be desirable as we are bashing?
 		PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
 
-		/*if (BGSAction* powerAttackAction = (BGSAction*)g_defaultObjectManager->objects[GetPowerAttackActionId(isOffhand)]) {
-			// This sets the attack data to the power attack data again after the above call set it to the regular attack
-			// This notifies the anim graph with the corresponding power attack action based on movement direction
-			//SendAction(player, target, powerAttackAction);
-			SendAction(player, nullptr, powerAttackAction);
-		}*/
-
 		// Do this again after the above func overwrote the attackData
 		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, true, &attackData);
 
@@ -687,7 +680,7 @@ struct SwingHandler
 		}
 	}
 
-	void Swing()
+	void Swing(bool isStab = false)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
@@ -699,9 +692,11 @@ struct SwingHandler
 
 		float angularVelocityX, angularVelocityY;
 		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_worldTransform.pos, angularVelocityX, angularVelocityY);
+		angularVelocityY *= Config::options.swingVerticalSpeedMultipler;
 		float angularSpeed = sqrtf(angularVelocityX * angularVelocityX + angularVelocityY * angularVelocityY) / lastDeltaTime;
 
-		meleeData->swingDirection = VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocityX, angularVelocityY);
+		// This will trigger a forward power attack if the swing is triggered from a hit and the hit is a stab, otherwise the direction is based on swinging direction.
+		meleeData->swingDirection = isStab ? VRMeleeData::SwingDirection::kForward : VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocityX, angularVelocityY);
 
 		TESForm* offhandObj = player->GetEquippedObject(true);
 		TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
@@ -725,15 +720,6 @@ struct SwingHandler
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
 			bool success = TrySwingPowerAttack(isLeft, isOffhand); // this also sets the attackData
-
-			if (BGSAction* powerAttackAction = (BGSAction*)g_defaultObjectManager->objects[GetPowerAttackActionId(isOffhand)]) {
-				// TODO: Need to figure out a way to support the animation conditions, which was previously done through this SendAction call
-				//       (since we don't want to do an anim here other than in the swing) (but supposedly Power Attack VR does already work with the current planck version which doesn't include this SendAction call ???)
-				// This sets the attack data to the power attack data again after the above call set it to the regular attack
-				// This notifies the anim graph with the corresponding power attack action based on movement direction
-				//SendAction(source, target, powerAttackAction);
-			}
-
 			wasLastSwingPowerAttack = success;
 		}
 		else {
@@ -1012,7 +998,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 	}
 
-	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
+	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
+		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
@@ -1020,15 +1007,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		SwingHandler& swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			// TODO: What if the weapon swing handler from the anim messes with our attackState / attackData during the hit processing?
-			swingHandler.Swing();
+			swingHandler.Swing(isStab);
 		}
 
 		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
 		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
 
-		// TODO: If we didn't trigger a swing animation here, what will unset the attack data? (no attackstop handler in this case).
-		//       Should we just unset it immediately after dispatching the hit event (which happens in a task, not directly in the collision handler, though it does appear to occur in the same frame)?
 		BGSAttackData* attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
 		if (!attackData) return;
@@ -1279,8 +1263,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (weap && CanWeaponStab(weap)) {
 			// Check for stab
 			// All stabbable weapons use the melee weapon offset node
-			NiPointer<NiAVObject> weaponOffsetNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
-			if (weaponOffsetNode) {
+			if (NiPointer<NiAVObject> weaponOffsetNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode]) {
 				// Use last frame's offset node transform because this frame is not over yet and it can still be modified by e.g. higgs two-handing
 				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_oldWorldTransform.rot);
 				float stabAmount = DotProduct(handDirection, weaponForward);
@@ -1293,8 +1276,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else if (!equippedObj || (weap && weap->type() == TESObjectWEAP::GameData::kType_HandToHandMelee)) {
 			// Check for punch
 			// For punching use the hand node
-			NiPointer<NiAVObject> handNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftHandBone: PlayerCharacter::Node::kNode_RightHandBone];
-			if (handNode) {
+			if (NiPointer<NiAVObject> handNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftHandBone : PlayerCharacter::Node::kNode_RightHandBone]) {
 				NiPoint3 punchVector = UpVector(handNode->m_worldTransform.rot); // in the direction of fingers when fingers are extended
 				float punchAmount = DotProduct(handDirection, punchVector);
 				//_MESSAGE("Punch amount: %.2f", punchAmount);
@@ -1326,7 +1308,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
 		}
 		else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
 			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
@@ -2391,7 +2373,7 @@ void UpdateSpeedReduction()
 	if (speedReduction != g_savedSpeedReduction) {
 		PlayerCharacter *player = *g_thePlayer;
 
-		// First just restore whatever our speed was before
+		// First just undo our previous speed change
 		ModSpeedMult(player, g_savedSpeedReduction);
 
 		// Now modify the speed based on what we have held

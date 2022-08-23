@@ -455,9 +455,9 @@ struct TESActionData : ActionInput
 	virtual bool Process(); // 05
 	*/
 
-	BSFixedString attackDataEvent{}; // 28
-	BSFixedString unk30{};
-	UInt32 unk38 = 0; // 2 if attackDataEvent starts with "NA_". -1 if no idle.
+	BSFixedString event{}; // 28
+	BSFixedString unk30{}; // synched anim event?
+	UInt32 unk38 = 0; // 2 if event starts with "NA_". -1 if no idle.
 	UInt32 unk3C = 0;
 	UInt64 unk40 = 0;
 	TESIdleForm *idle = 0; // 48

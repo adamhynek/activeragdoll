@@ -199,6 +199,7 @@ namespace Config {
 		float hitImpulseDecayMult3 = 0.075f;
 
 		float swingLinearVelocityThreshold = 3.f;
+		float swingVerticalSpeedMultipler = 2.f;
 		float swingCooldown = 0.5f;
 		float swingDuration = 0.2f;
 
