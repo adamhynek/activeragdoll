@@ -1137,6 +1137,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 						hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
 						if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {
 							bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
+							// TODO: Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just do what the game already does by default?)
 							Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
 							ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()));
 						}
@@ -3912,7 +3913,7 @@ void PerformHooks(void)
 				pop(rdx);
 
 				// Return immediately if our hook returns false, otherwise continue the function
-				test(rax, rax);
+				test(al, al);
 				jz(skip);
 
 				// Original code
@@ -3959,7 +3960,7 @@ void PerformHooks(void)
 				pop(rdx);
 
 				// Return immediately if our hook returns false, otherwise continue the function
-				test(rax, rax);
+				test(al, al);
 				jz(skip);
 
 				// Original code
@@ -4297,7 +4298,7 @@ void ShowErrorBox(const char *errorString)
 	int msgboxID = MessageBox(
 		NULL,
 		(LPCTSTR)errorString,
-		(LPCTSTR)"ActiveRagdoll Fatal Error",
+		(LPCTSTR)"PLANCK Fatal Error",
 		MB_ICONERROR | MB_OK | MB_TASKMODAL
 	);
 }
@@ -4316,7 +4317,6 @@ void ShowErrorBoxAndTerminate(const char *errorString)
 
 // Animation graph hook for detecting if certain animations were played
 _IAnimationGraphManagerHolder_NotifyAnimationGraph g_originalNotifyAnimationGraph = nullptr;
-static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x016E2BF8); // PlayerCharacter
 static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x16D7780); // Character
 bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder *_this, const BSFixedString &animationName)
 {
@@ -4339,9 +4339,11 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
 	return accepted;
 }
 
+_IAnimationGraphManagerHolder_NotifyAnimationGraph g_originalPlayerCharacterNotifyAnimationGraph = nullptr;
+static RelocPtr<_IAnimationGraphManagerHolder_NotifyAnimationGraph> PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl(0x016E2BF8); // PlayerCharacter
 bool PlayerCharacter_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder* _this, const BSFixedString& animationName)
 {
-	bool accepted = g_originalNotifyAnimationGraph(_this, animationName);
+	bool accepted = g_originalPlayerCharacterNotifyAnimationGraph(_this, animationName);
 	if (accepted) {
 		// Event was accepted by the graph
 		_MESSAGE("%p: %s", _this, animationName.c_str());
@@ -4507,6 +4509,7 @@ extern "C" {
 		g_originalNotifyAnimationGraph = *Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
 		SafeWrite64(Character_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook));
 #ifdef _DEBUG
+		g_originalPlayerCharacterNotifyAnimationGraph = *PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl;
 		SafeWrite64(PlayerCharacter_IAnimationGraphManagerHolder_NotifyAnimationGraph_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_NotifyAnimationGraph_Hook));
 #endif // _DEBUG
 
