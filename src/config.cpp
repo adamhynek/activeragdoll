@@ -358,6 +358,8 @@ namespace Config {
 		if (!RegisterFloat("hitImpulseDecayMult2", options.hitImpulseDecayMult2)) success = false;
 		if (!RegisterFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) success = false;
 
+		if (!RegisterBool("playMeleeWorldImpactSounds", options.playMeleeWorldImpactSounds)) success = false;
+
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingVerticalSpeedMultipler", options.swingVerticalSpeedMultipler)) success = false;
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;

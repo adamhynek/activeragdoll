@@ -70,8 +70,6 @@ RelocAddr<void *> TESActionData_vtbl(0x15BF5D8);
 
 RelocPtr<FOCollisionListener *> g_foCollisionListener(0x1F850F0);
 
-RelocPtr<BGSImpactManager> g_impactManager(0x2FEBD60);
-
 RelocPtr<AIProcessManager *> g_aiProcessManager(0x01F831B0);
 RelocPtr<float> g_bAlwaysDriveRagdoll(0x1EBE830);
 
@@ -79,6 +77,9 @@ RelocPtr<BGSDefaultObjectManager> g_defaultObjectManager(0x01F81D90);
 RelocPtr<UInt32> g_playerHandle(0x2FEB9EC);
 
 RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
+
+RelocPtr<TES *> g_tes(0x2FEB6F8);
+RelocPtr<BGSImpactManager *> g_impactManager(0x2FC52E0);
 
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
@@ -127,6 +128,7 @@ RelocAddr<_bhkWorldObject_UpdateCollisionFilter> bhkWorldObject_UpdateCollisionF
 RelocAddr<_bhkRigidBodyCinfo_ctor> bhkRigidBodyCinfo_ctor(0xE06110);
 RelocAddr<_bhkRigidBody_ctor> bhkRigidBody_ctor(0x2AEC80);
 RelocAddr<_bhkBoxShape_ctor> bhkBoxShape_ctor(0x2AEB70);
+RelocAddr<_bhkShape_GetMaterialId> bhkShape_GetMaterialId(0xE30F40);
 RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReference(0xA01280);
 RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReference(0xA01340);
 
@@ -333,3 +335,6 @@ RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue(0x6580B0);
 RelocAddr<_sub_140664870> sub_140664870(0x664870);
 RelocAddr<_sub_1406EE920> sub_1406EE920(0x6EE920);
 RelocAddr<_sub_1406EC5C0> sub_1406EC5C0(0x6EC5C0);
+RelocAddr<_TES_GetLandMaterialId> TES_GetLandMaterialId(0x167720);
+RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData(0x192040);
+RelocAddr<_BGSImpactManager_PlayImpactSound> BGSImpactManager_PlayImpactSound(0x5A9FF0);

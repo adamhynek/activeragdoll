@@ -541,6 +541,23 @@ enum class EnabledInputs : UInt32
 	menu = 1 << 8,
 };
 
+struct TES {};
+
+struct ImpactSoundData
+{
+	// Thanks po3
+	BGSImpactData *impactData; // 00
+	NiPoint3 *position; // 08
+	NiAVObject *objectToFollow; // 10
+	SoundData *sound1; // 18
+	SoundData *sound2; // 20
+	bool playSound1; // 28
+	bool playSound2; // 29
+	bool unk2A; // 2A
+	void *unk30; // 30
+};
+static_assert(sizeof(ImpactSoundData) == 0x38);
+
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, SInt32& a_out); // 11
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, bool& a_out); // 12

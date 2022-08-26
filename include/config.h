@@ -198,6 +198,8 @@ namespace Config {
 		float hitImpulseDecayMult2 = 0.125f;
 		float hitImpulseDecayMult3 = 0.075f;
 
+		bool playMeleeWorldImpactSounds = true;
+
 		float swingLinearVelocityThreshold = 3.f;
 		float swingVerticalSpeedMultipler = 2.f;
 		float swingCooldown = 0.5f;

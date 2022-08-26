@@ -98,6 +98,9 @@ extern RelocPtr<UInt32> g_playerHandle;
 
 extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
 
+extern RelocPtr<TES *> g_tes;
+extern RelocPtr<BGSImpactManager *> g_impactManager;
+
 
 // Havok / Bethesda havok wrappers
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
@@ -221,6 +224,9 @@ extern RelocAddr<_bhkRigidBody_ctor> bhkRigidBody_ctor;
 
 typedef void(*_bhkBoxShape_ctor)(bhkBoxShape *_this, hkVector4 *halfExtents);
 extern RelocAddr<_bhkBoxShape_ctor> bhkBoxShape_ctor;
+
+typedef UInt32(*_bhkShape_GetMaterialId)(bhkShape *_this, hkpShapeKey shapeKey);
+extern RelocAddr<_bhkShape_GetMaterialId> bhkShape_GetMaterialId;
 
 typedef void(*_hkReferencedObject_addReference)(hkReferencedObject *_this);
 extern RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReference;
@@ -801,6 +807,15 @@ extern RelocAddr<_sub_140664870> sub_140664870;
 
 typedef void * (*_sub_1406EE920)(void);
 extern RelocAddr<_sub_1406EE920> sub_1406EE920;
+
+typedef UInt32(*_TES_GetLandMaterialId)(TES *_this, const NiPoint3 &position);
+extern RelocAddr<_TES_GetLandMaterialId> TES_GetLandMaterialId;
+
+typedef BGSBlockBashData * (*_TESForm_GetBlockBashData)(TESForm *_this);
+extern RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData;
+
+typedef bool(*_BGSImpactManager_PlayImpactSound)(BGSImpactManager *_this, ImpactSoundData &impactSoundData);
+extern RelocAddr<_BGSImpactManager_PlayImpactSound> BGSImpactManager_PlayImpactSound;
 
 
 struct UnkSwingData

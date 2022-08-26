@@ -998,6 +998,58 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 	}
 
+	void PlayWorldImpactSound(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, bool isOffhand)
+	{
+		PlayerCharacter *player = *g_thePlayer;
+
+		UInt32 materialId = 0;
+		UInt32 hitLayer = hitRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+		if (hitLayer == BGSCollisionLayer::kCollisionLayer_Ground) {
+			materialId = TES_GetLandMaterialId(*g_tes, hitPosition);
+		}
+		else { // Not the ground
+			if (bhkShape *shape = (bhkShape *)hitRigidBody->getCollidable()->getShape()->m_userData) {
+				if (hkpShapeKey *shapeKey = evnt.getShapeKeys(evnt.getBody(1) == hitRigidBody)) {
+					materialId = bhkShape_GetMaterialId(shape, *shapeKey);
+				}
+			}
+		}
+
+		BGSMaterialType *material = GetMaterialType(materialId);
+		BGSImpactDataSet *impactSet = nullptr;
+
+		bool isBash = IsBashing(player, isOffhand);
+		if (isBash) {
+			BGSBlockBashData *blockBashData = TESForm_GetBlockBashData(weapon);
+			impactSet = blockBashData ? blockBashData->impact : (*g_unarmedWeapon)->impactDataSet;
+		}
+		else { // Not bash
+			TESForm *weaponOrUnarmed = weapon ? weapon : *g_unarmedWeapon;
+			if (weaponOrUnarmed->formType == kFormType_Weapon) {
+				if (TESObjectWEAP *weap = DYNAMIC_CAST(weaponOrUnarmed, TESForm, TESObjectWEAP)) {
+					impactSet = weap->impactDataSet;
+				}
+			}
+		}
+
+		if (!impactSet) return;
+
+		if (BGSImpactData *impact = BGSImpactDataSet_GetImpactData(impactSet, material)) {
+			ImpactSoundData impactSoundData{
+				impact,
+				&hitPosition,
+				nullptr,
+				nullptr,
+				nullptr,
+				true,
+				false,
+				false,
+				nullptr
+			};
+			BGSImpactManager_PlayImpactSound(*g_impactManager, impactSoundData);
+		}
+	}
+
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
 		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
@@ -1040,7 +1092,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		else {
 			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 			if (didDispatchHitEvent) {
-				// TODO: Play VFX and sound?
+				// TODO: Play VFX?
+
+				if (Config::options.playMeleeWorldImpactSounds) {
+					PlayWorldImpactSound(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
+				}
+
 				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 			}
 

@@ -104,12 +104,22 @@ static_assert(sizeof(bhkWorld) == 0xC600);
 
 struct bhkShape : bhkSerializable
 {
+	virtual void Unk_32(void); // 32
+	virtual void Unk_33(void); // 33
+	virtual struct bhkShapeCollection * GetCollection(); // 34 - { return 0; }
+	virtual void Unk_35(void); // 35
+
 	RE::hkRefPtr<hkpShape> shape; // 10
 	UInt64 unk18; // == 0?
 	UInt32 materialId; // 20
-	UInt32 pad28;
+	UInt32 filterInfo; // 24
 };
 static_assert(sizeof(bhkShape) == 0x28);
+
+struct bhkShapeCollection : bhkShape
+{
+	virtual UInt32 GetMaterialId(hkpShapeKey shapeKey); // 36
+};
 
 struct bhkSphereRepShape : bhkShape {};
 
