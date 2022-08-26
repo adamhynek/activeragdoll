@@ -241,7 +241,8 @@ bool IsBashing(Actor* actor, bool isOffhand)
 		}
 		else {
 			if (weapon && IsOneHandedWeapon(weapon)) {
-				if (isBlocking && IsUnarmed(offhandObj)) {
+				TESForm *otherHand = actor->GetEquippedObject(!isOffhand);
+				if (isBlocking && (IsUnarmed(otherHand) || (otherHand && otherHand->formType == kFormType_Spell))) {
 					// We hit with a bashable one-handed weapon and we're blocking, and the blocking can't be due to the other hand
 					return true;
 				}
