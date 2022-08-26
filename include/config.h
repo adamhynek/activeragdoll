@@ -107,8 +107,8 @@ namespace Config {
 		float keepOffsetAngleDifferenceMultiplier = 0.8f;
 		double keepOffsetRetryInterval = 1.0;
 
-		float collisionDamageMinSpeed = 400.f; // skyrim units
-		float collisionDamageMinMass = 6.f;
+		float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
+		float collisionDamageMinMassPlayerInflicted = 6.f;
 
 		bool doWarp = true;
 		float maxAllowedDistBeforeWarp = 15.f;

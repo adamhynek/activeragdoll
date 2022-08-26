@@ -148,7 +148,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 	return false;
 }
 
-float GetPhysicsDamage(float mass, float speed)
+float GetPhysicsDamage(float mass, float speed, float minMass, float minSpeed)
 {
 	/*
 	// defaults
@@ -163,8 +163,8 @@ float GetPhysicsDamage(float mass, float speed)
 	g_fPhysicsDamageSpeedMin = 500.f;
 	*/
 
-	if (mass < Config::options.collisionDamageMinMass) return 0.f;
-	if (speed < Config::options.collisionDamageMinSpeed) return 0.f;
+	if (mass < minMass) return 0.f;
+	if (speed < minSpeed) return 0.f;
 
 	float damage = 0.f;
 	if (mass >= *g_fPhysicsDamage1Mass) {
@@ -835,7 +835,7 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 	if (isPowerAttack && isShield) {
 		// power bash
 		if (BGSAction* blockAnticipateAction = (BGSAction*)g_defaultObjectManager->objects[74]) {
-			// TODO: Is this still okay?
+			// This is cool, as it does not drain stamina or anything as was done as part of the swing. This will just do the actual bash recoil on the target.
 			SendAction(source, target, blockAnticipateAction);
 		}
 		PlayerCharacter* player = *g_thePlayer;
@@ -1053,7 +1053,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime };
 	}
 
-	void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal)
+	void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal, float minMass, float minSpeed)
 	{
 		bhkCharacterController::CollisionEvent collisionEvent {
 			collidingBody,
@@ -1065,7 +1065,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		float massInv = collidingBody->hkBody->getMassInv();
 		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
 		float speed = VectorLength(collisionEvent.bodyVelocity);
-		float damage = GetPhysicsDamage(mass, speed);
+		float damage = GetPhysicsDamage(mass, speed, minMass, minSpeed);
 		//_MESSAGE("%.2f", damage);
 
 		if (damage > 0.f) {
@@ -1137,9 +1137,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 						hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
 						if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {
 							bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
-							// TODO: Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just do what the game already does by default?)
+							// Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just use the base game's minimums)
 							Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
-							ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()));
+							float minMass = aggressor ? Config::options.collisionDamageMinMassPlayerInflicted : *g_fPhysicsDamage1Mass;
+							float minSpeed = aggressor ? Config::options.collisionDamageMinSpeedPlayerInflicted : *g_fPhysicsDamageSpeedMin;
+							ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()), minMass, minSpeed);
 						}
 					}
 				}

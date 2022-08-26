@@ -267,8 +267,8 @@ namespace Config {
 		if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
 		if (!RegisterDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) success = false;
 
-		if (!RegisterFloat("collisionDamageMinSpeed", options.collisionDamageMinSpeed)) success = false;
-		if (!RegisterFloat("collisionDamageMinMass", options.collisionDamageMinMass)) success = false;
+		if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;
+		if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;
 
 		if (!RegisterBool("doWarp", options.doWarp)) success = false;
 		if (!RegisterFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) success = false;
