@@ -25,11 +25,11 @@ namespace PlanckPluginAPI {
 
 	struct PlanckHitEvent : TESHitEvent
 	{
-		// Extended hit information added by planck
-		PlanckHitData extendedHitData;
-
 		// The HitData of the hit, containing the damage dealt, etc.
 		void *hitData;
+
+		// Extended hit information added by planck
+		PlanckHitData extendedHitData;
 	};
 
 	constexpr UInt32 hitEventMagicNumber = 0x59914000;

@@ -3652,8 +3652,8 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
 #endif // _DEBUG
 
 		PlanckPluginAPI::PlanckHitEvent extendedHitEvent{ hitEvent->target, hitEvent->caster, hitEvent->sourceFormID, hitEvent->projectileFormID, hitEvent->flags };
-		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
 		extendedHitEvent.hitData = hitData;
+		extendedHitEvent.extendedHitData = g_interface001.lastHitData;
 		extendedHitEvent.flags &= ~(0xFFFFFF00); // zero out top 3 bytes
 		extendedHitEvent.flags |= PlanckPluginAPI::hitEventMagicNumber; // hopefully this never occurs randomly...
 
@@ -4273,8 +4273,7 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 				if (hmdPose.bDeviceIsConnected && hmdPose.bPoseIsValid && hmdPose.eTrackingResult == vr_src::ETrackingResult::TrackingResult_Running_OK) {
 					vr_src::HmdMatrix34_t &hmdMatrix = hmdPose.mDeviceToAbsoluteTracking;
 
-					NiTransform hmdTransform;
-					HmdMatrixToNiTransform(hmdTransform, hmdMatrix);
+					NiTransform hmdTransform; HmdMatrixToNiTransform(hmdTransform, hmdMatrix);
 
 					// Use the transform between the openvr hmd pose and skyrim's hmdnode transform to get the transform from openvr space to skyrim worldspace
 					NiMatrix33 openvrToSkyrimWorldTransform = hmdNode->m_worldTransform.rot * hmdTransform.rot.Transpose();
