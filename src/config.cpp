@@ -360,6 +360,8 @@ namespace Config {
 
 		if (!RegisterBool("playMeleeWorldImpactSounds", options.playMeleeWorldImpactSounds)) success = false;
 
+		if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
+
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingVerticalSpeedMultipler", options.swingVerticalSpeedMultipler)) success = false;
 		if (!RegisterFloat("swingRequiredHandHmdDirection", options.swingRequiredHandHmdDirection)) success = false;

@@ -335,24 +335,56 @@ void RunDelayedJobs(double now)
 
 struct ControllerVelocityData
 {
-	// TODO: Look back at different number of frames depending on framerate (5 frames seems too high for 45 fps)
-	std::deque<NiPoint3> velocities{ 5, NiPoint3() };
+	std::deque<NiPoint3> velocities{ 50, NiPoint3() };
 	NiPoint3 avgVelocity;
 	float avgSpeed;
 
+	NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
+	{
+		NiPoint3 averageVector = NiPoint3();
+
+		int i = 0;
+		for (NiPoint3 &vector : vectors) {
+			averageVector += vector;
+			if (++i >= numFrames) {
+				break;
+			}
+		}
+
+		return averageVector / i;
+	}
+
+	float GetAverageVectorLength(std::deque<NiPoint3> &vectors, int numFrames)
+	{
+		float speed = 0;
+
+		int i = 0;
+		for (NiPoint3 &velocity : velocities) {
+			speed += VectorLength(velocity);
+			if (++i >= numFrames) {
+				break;
+			}
+		}
+		return speed /= i;
+	}
+
+	int GetNumSmoothingFrames()
+	{
+		int numSmoothingFrames = Config::options.numControllerVelocitySmoothingFrames;
+		float smoothingMultiplier = 0.011f / *g_deltaTime; // Half the number of frames at 45fps compared to 90fps, etc.
+		return round(float(numSmoothingFrames) * smoothingMultiplier);
+	}
+
 	void RecomputeAverageVelocity()
 	{
-		avgVelocity = std::accumulate(velocities.begin(), velocities.end(), NiPoint3()) / velocities.size();
+		int numSmoothingFrames = GetNumSmoothingFrames();
+		avgVelocity = GetAverageVector(velocities, numSmoothingFrames);
 	}
 
 	void RecomputeAverageSpeed()
 	{
-		float speed = 0;
-		for (NiPoint3 &velocity : velocities) {
-			speed += VectorLength(velocity);
-		}
-		speed /= std::size(velocities);
-		avgSpeed = speed;
+		int numSmoothingFrames = GetNumSmoothingFrames();
+		avgSpeed = GetAverageVectorLength(velocities, numSmoothingFrames);
 	}
 
 	void Recompute()
