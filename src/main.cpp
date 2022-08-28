@@ -335,6 +335,7 @@ void RunDelayedJobs(double now)
 
 struct ControllerVelocityData
 {
+	// TODO: Look back at different number of frames depending on framerate (5 frames seems too high for 45 fps)
 	std::deque<NiPoint3> velocities{ 5, NiPoint3() };
 	NiPoint3 avgVelocity;
 	float avgSpeed;
@@ -4458,6 +4459,10 @@ extern "C" {
 			else if (msg->type == SKSEMessagingInterface::kMessage_DataLoaded) {
 				OnDataLoaded();
 			}
+			else if (msg->type == SKSEMessagingInterface::kMessage_PostLoad) {
+				// Register our own mod api listener
+				g_messaging->RegisterListener(g_pluginHandle, nullptr, PlanckPluginAPI::ModMessageHandler);
+			}
 			else if (msg->type == SKSEMessagingInterface::kMessage_PostPostLoad) {
 				// Get the HIGGS plugin API
 				HiggsPluginAPI::GetHiggsInterface001(g_pluginHandle, g_messaging);
@@ -4499,10 +4504,10 @@ extern "C" {
 		gLog.SetPrintLevel(IDebugLog::kLevel_DebugMessage);
 		gLog.SetLogLevel(IDebugLog::kLevel_DebugMessage);
 
-		_MESSAGE("activeragdoll v%s", ACTIVERAGDOLL_VERSION_VERSTRING);
+		_MESSAGE("PLANCK v%s", ACTIVERAGDOLL_VERSION_VERSTRING);
 
 		info->infoVersion = PluginInfo::kInfoVersion;
-		info->name = "activeragdoll";
+		info->name = "PLANCK";
 		info->version = ACTIVERAGDOLL_VERSION_MAJOR;
 
 		g_pluginHandle = skse->GetPluginHandle();
@@ -4521,7 +4526,7 @@ extern "C" {
 
 	bool SKSEPlugin_Load(const SKSEInterface * skse)
 	{	// Called by SKSE to load this plugin
-		_MESSAGE("activeragdoll loaded");
+		_MESSAGE("PLANCK loaded");
 
 		if (Config::ReadConfigOptions()) {
 			_MESSAGE("Successfully read config parameters");

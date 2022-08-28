@@ -7,7 +7,7 @@ struct PlanckMessage {
 };
 
 // Stores the API after it has already been fetched
-static PlanckPluginAPI::IPlanckInterface001 * g_planckInterface = nullptr;
+PlanckPluginAPI::IPlanckInterface001 * g_planckInterface = nullptr;
 
 // Fetches the interface to use from PLANCK
 PlanckPluginAPI::IPlanckInterface001 * PlanckPluginAPI::GetPlanckInterface001(const PluginHandle & pluginHandle, SKSEMessagingInterface * messagingInterface)
