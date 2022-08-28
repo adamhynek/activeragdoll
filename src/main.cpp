@@ -680,23 +680,26 @@ struct SwingHandler
 		}
 	}
 
+	NiPoint2 ComputeAngularVelocity(VRMeleeData *meleeData)
+	{
+		NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::kNode_HmdNode];
+		float angularVelocityX, angularVelocityY;
+		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_localTransform.pos, angularVelocityX, angularVelocityY);
+		return { angularVelocityX, angularVelocityY };
+	}
+
 	void Swing(bool isStab = false)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
 		PlayerCharacter* player = *g_thePlayer;
 
-		NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::kNode_HmdNode];
-
 		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
-
-		float angularVelocityX, angularVelocityY;
-		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_worldTransform.pos, angularVelocityX, angularVelocityY);
-		angularVelocityY *= Config::options.swingVerticalSpeedMultipler;
-		float angularSpeed = sqrtf(angularVelocityX * angularVelocityX + angularVelocityY * angularVelocityY) / lastDeltaTime;
+		NiPoint2 angularVelocity = ComputeAngularVelocity(meleeData);
+		angularVelocity.y *= Config::options.swingVerticalSpeedMultipler;
 
 		// This will trigger a forward power attack if the swing is triggered from a hit and the hit is a stab, otherwise the direction is based on swinging direction.
-		meleeData->swingDirection = isStab ? VRMeleeData::SwingDirection::kForward : VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocityX, angularVelocityY);
+		meleeData->swingDirection = isStab ? VRMeleeData::SwingDirection::kForward : VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocity.x, angularVelocity.y);
 
 		TESForm* offhandObj = player->GetEquippedObject(true);
 		TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
@@ -784,8 +787,15 @@ struct SwingHandler
 		if (!AreCombatControlsEnabled()) return;
 		if (Actor_IsInRagdollState(player) || IsSwimming(player) || IsStaggered(player)) return;
 
+		NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::kNode_HmdNode];
+		if (!hmdNode) return;
+
 		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
 		float speed = velocityData.avgSpeed;
+
+		NiPoint3 handDirection = VectorNormalized(velocityData.avgVelocity);
+		NiPoint3 hmdForward = ForwardVector(hmdNode->m_worldTransform.rot);
+		float handInHmdDirection = DotProduct(handDirection, hmdForward);
 
 		if (swingState == SwingState::None) {
 			if (swingCooldown <= 0.f) {
@@ -798,10 +808,11 @@ struct SwingHandler
 		if (swingState == SwingState::PreSwing) {
 			if (speed < lastSwingSpeed) {
 				// We are past the peak of the swing
-				if (attackState == 0) { // No swinging allowed while e.g. firing a crossbow
+				if (attackState == 0 && handInHmdDirection > Config::options.swingRequiredHandHmdDirection) {
 					Swing();
 				}
 				else {
+					// No swinging allowed while e.g. firing a crossbow, or swinging extremely backwards
 					swingState = SwingState::None;
 				}
 			}
@@ -2606,15 +2617,6 @@ void ProcessHavokHitJobsHook()
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
 		g_playerCollisionGroup = filterInfo >> 16;
 	}
-
-#ifdef _DEBUG
-	{
-		IAnimationGraphManagerHolder * animGraphHolder = &(*g_thePlayer)->animGraphHolder;
-		bool bAllowRotation;
-		get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(animGraphHolder, 0x12)(animGraphHolder, BSFixedString("bAllowRotation"), bAllowRotation);
-		PrintToFile(std::to_string(bAllowRotation), "bAllowRotation.txt");
-	}
-#endif // _DEBUG
 
 	if (world != g_contactListener.world) {
 		if (NiPointer<bhkWorld> oldWorld = g_contactListener.world) {

@@ -362,6 +362,7 @@ namespace Config {
 
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingVerticalSpeedMultipler", options.swingVerticalSpeedMultipler)) success = false;
+		if (!RegisterFloat("swingRequiredHandHmdDirection", options.swingRequiredHandHmdDirection)) success = false;
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
 		if (!RegisterFloat("swingDuration", options.swingDuration)) success = false;
 
