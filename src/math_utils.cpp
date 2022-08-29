@@ -44,6 +44,13 @@ NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta)
 	return result;
 }
 
+NiPoint3 NiMatrixToEuler(NiMatrix33 &mat)
+{
+	NiPoint3 euler;
+	NiMatrixToEulerImpl(&mat, &euler.x, &euler.y, &euler.z);
+	return euler;
+}
+
 NiPoint3 MatrixToEuler(const NiMatrix33 &mat)
 {
 	// Thanks DavidJCobb
@@ -101,6 +108,13 @@ NiMatrix33 EulerToMatrix(const NiPoint3 &euler)
 	//
 	return output;
 };
+
+NiMatrix33 MatrixFromForwardVector(NiPoint3 &forward, NiPoint3 &world)
+{
+	NiMatrix33 rot;
+	NiMatrixFromForwardVector(&rot, &forward, &world);
+	return rot;
+}
 
 NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, float angle)
 {

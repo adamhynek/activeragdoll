@@ -333,11 +333,14 @@ void RunDelayedJobs(double now)
 	}
 }
 
-struct ControllerVelocityData
+struct ControllerTrackingData
 {
 	std::deque<NiPoint3> velocities{ 50, NiPoint3() };
 	NiPoint3 avgVelocity;
 	float avgSpeed;
+
+	std::deque<NiPoint3> positionsRoomspace{ 50, NiPoint3() };
+	NiPoint2 angularVelocity;
 
 	NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
 	{
@@ -375,25 +378,63 @@ struct ControllerVelocityData
 		return round(float(numSmoothingFrames) * smoothingMultiplier);
 	}
 
-	void RecomputeAverageVelocity()
+	int GetNumControllerAngularVelocityTrackingFrames()
+	{
+		int numFrames = Config::options.numControllerAngularVelocityTrackingFrames;
+		float smoothingMultiplier = 0.011f / *g_deltaTime; // Half the number of frames at 45fps compared to 90fps, etc.
+		return round(float(numFrames) * smoothingMultiplier);
+	}
+
+	void ComputeAverageVelocity()
 	{
 		int numSmoothingFrames = GetNumSmoothingFrames();
 		avgVelocity = GetAverageVector(velocities, numSmoothingFrames);
 	}
 
-	void RecomputeAverageSpeed()
+	void ComputeAverageSpeed()
 	{
 		int numSmoothingFrames = GetNumSmoothingFrames();
 		avgSpeed = GetAverageVectorLength(velocities, numSmoothingFrames);
 	}
 
-	void Recompute()
+	void ComputeAngularVelocity()
 	{
-		RecomputeAverageVelocity();
-		RecomputeAverageSpeed();
+		int numFrames = GetNumControllerAngularVelocityTrackingFrames();
+
+		NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
+		NiPoint3 hmdLocalPos = hmdNode->m_localTransform.pos;
+
+		NiPoint2 eulerSums = { 0.f, 0.f };
+
+		int i = 0;
+		NiPoint3 *prev = nullptr;
+		for (NiPoint3 &positionRoomspace : positionsRoomspace) {
+			if (prev) {
+				// "prev" in this case is actually the _newer_ value, as this deque is ordered from new to old
+				NiPoint3 hmdToController = VectorNormalized(positionRoomspace - hmdLocalPos);
+				NiMatrix33 rot = MatrixFromForwardVector(hmdToController, NiPoint3(0.f, 0.f, 1.f));
+				NiPoint3 olderEuler = NiMatrixToEuler(rot);
+
+				hmdToController = VectorNormalized(*prev - hmdLocalPos);
+				rot = MatrixFromForwardVector(hmdToController, NiPoint3(0.f, 0.f, 1.f));
+				NiPoint3 newerEuler = NiMatrixToEuler(rot);
+
+				NiPoint3 eulerDiff = newerEuler - olderEuler;
+				eulerSums.x += eulerDiff.x;
+				eulerSums.y += eulerDiff.y;
+			}
+
+			prev = &positionRoomspace;
+
+			if (++i >= numFrames) {
+				break;
+			}
+		}
+
+		angularVelocity = eulerSums;
 	}
 };
-ControllerVelocityData g_controllerVelocities[2]; // one for each hand
+ControllerTrackingData g_controllerData[2]; // one for each hand
 
 std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<UInt16> g_activeBipedGroups{};
@@ -713,14 +754,6 @@ struct SwingHandler
 		}
 	}
 
-	NiPoint2 ComputeAngularVelocity(VRMeleeData *meleeData)
-	{
-		NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::kNode_HmdNode];
-		float angularVelocityX, angularVelocityY;
-		VRMeleeData_ComputeAngularVelocities(meleeData, hmdNode->m_localTransform.pos, angularVelocityX, angularVelocityY);
-		return { angularVelocityX, angularVelocityY };
-	}
-
 	void Swing(bool isStab = false)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
@@ -728,7 +761,7 @@ struct SwingHandler
 		PlayerCharacter* player = *g_thePlayer;
 
 		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
-		NiPoint2 angularVelocity = ComputeAngularVelocity(meleeData);
+		NiPoint2 angularVelocity = g_controllerData[isLeft].angularVelocity;
 		angularVelocity.y *= Config::options.swingVerticalSpeedMultipler;
 
 		// This will trigger a forward power attack if the swing is triggered from a hit and the hit is a stab, otherwise the direction is based on swinging direction.
@@ -823,10 +856,10 @@ struct SwingHandler
 		NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::kNode_HmdNode];
 		if (!hmdNode) return;
 
-		ControllerVelocityData& velocityData = g_controllerVelocities[isLeft];
-		float speed = velocityData.avgSpeed;
+		ControllerTrackingData& controllerData = g_controllerData[isLeft];
+		float speed = controllerData.avgSpeed;
 
-		NiPoint3 handDirection = VectorNormalized(velocityData.avgVelocity);
+		NiPoint3 handDirection = VectorNormalized(controllerData.avgVelocity);
 		NiPoint3 hmdForward = ForwardVector(hmdNode->m_worldTransform.rot);
 		float handInHmdDirection = DotProduct(handDirection, hmdForward);
 
@@ -1355,12 +1388,12 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		TESForm *equippedObj = player->GetEquippedObject(isOffhand);
 		TESObjectWEAP *weap = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
 
-		NiPoint3 handDirection = VectorNormalized(g_controllerVelocities[isLeft].avgVelocity);
-		float handSpeedRoomspace = g_controllerVelocities[isLeft].avgSpeed;
+		NiPoint3 handDirection = VectorNormalized(g_controllerData[isLeft].avgVelocity);
+		float handSpeedRoomspace = g_controllerData[isLeft].avgSpeed;
 		bool isTwoHanding = g_higgsInterface->IsTwoHanding();
 		if (isTwoHanding) {
-			handDirection = VectorNormalized(g_controllerVelocities[0].avgVelocity + g_controllerVelocities[1].avgVelocity);
-			handSpeedRoomspace = max(g_controllerVelocities[0].avgSpeed, g_controllerVelocities[1].avgSpeed);
+			handDirection = VectorNormalized(g_controllerData[0].avgVelocity + g_controllerData[1].avgVelocity);
+			handSpeedRoomspace = max(g_controllerData[0].avgSpeed, g_controllerData[1].avgSpeed);
 		}
 
 		bool isStab = false, isPunch = false, isSwing = false;
@@ -2543,9 +2576,9 @@ bool UpdateActorShove(Actor *actor)
 	if (Config::options.disableShoveWhileWeaponsDrawn && player->actorState.IsWeaponDrawn()) return false;
 
 	for (int isLeft = 0; isLeft < 2; ++isLeft) {
-		ControllerVelocityData &velocityData = g_controllerVelocities[isLeft];
+		ControllerTrackingData &controllerData = g_controllerData[isLeft];
 
-		if (velocityData.avgSpeed > Config::options.shoveSpeedThreshold) {
+		if (controllerData.avgSpeed > Config::options.shoveSpeedThreshold) {
 			if (g_contactListener.handCollidedRefs[isLeft].count(actor) && ShouldShoveActor(actor)) {
 				if (!g_shovedActors.count(actor)) {
 					float staminaCost = Config::options.shoveStaminaCost;
@@ -2563,7 +2596,7 @@ bool UpdateActorShove(Actor *actor)
 							}
 						}
 
-						NiPoint3 shoveDirection = VectorNormalized(velocityData.avgVelocity);
+						NiPoint3 shoveDirection = VectorNormalized(controllerData.avgVelocity);
 						QueueBumpActor(actor, shoveDirection, true, false, false, false);
 
 						if (Config::options.playShovePhysicsSound) {
@@ -2588,7 +2621,7 @@ bool UpdateActorShove(Actor *actor)
 					// Ignore future contact points for a bit to make things less janky
 					g_contactListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
 
-					if (g_controllerVelocities[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
+					if (g_controllerData[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
 						PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
 						g_contactListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
 					}
@@ -2628,6 +2661,22 @@ void PlayerCharacter_UpdateWeaponSwing_Hook(PlayerCharacter *player, float delta
 {
 	g_rightSwingHandler.UpdateWeaponSwing(deltaTime);
 	g_leftSwingHandler.UpdateWeaponSwing(deltaTime);
+}
+
+void PreVrikPreHiggsCallback()
+{
+	// Wand nodes are up to date at this point
+
+	for (int i = 0; i < 2; i++) {
+		bool isLeft = bool(i);
+		NiAVObjectPtr wandNode = GetWandNode(isLeft);
+		NiPoint3 wandPositionRoomspace = wandNode->m_localTransform.pos;
+
+		ControllerTrackingData &controllerData = g_controllerData[i];
+		controllerData.positionsRoomspace.pop_back();
+		controllerData.positionsRoomspace.push_front(wandPositionRoomspace);
+		controllerData.ComputeAngularVelocity();
+	}
 }
 
 void ProcessHavokHitJobsHook()
@@ -4339,9 +4388,10 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 								NiPoint3 openvrVelocity = { pose.vVelocity.v[0], pose.vVelocity.v[1], pose.vVelocity.v[2] };
 								NiPoint3 skyrimVelocity = { openvrVelocity.x, -openvrVelocity.z, openvrVelocity.y };
 								NiPoint3 velocityWorldspace = openvrToSkyrimWorldTransform * skyrimVelocity;
-								g_controllerVelocities[0].velocities.pop_back();
-								g_controllerVelocities[0].velocities.push_front(velocityWorldspace);
-								g_controllerVelocities[0].Recompute();
+								g_controllerData[0].velocities.pop_back();
+								g_controllerData[0].velocities.push_front(velocityWorldspace);
+								g_controllerData[0].ComputeAverageVelocity();
+								g_controllerData[0].ComputeAverageSpeed();
 							}
 						}
 						else if (i == leftIndex && isLeftConnected) {
@@ -4350,9 +4400,10 @@ bool WaitPosesCB(vr_src::TrackedDevicePose_t* pRenderPoseArray, uint32_t unRende
 								NiPoint3 openvrVelocity = { pose.vVelocity.v[0], pose.vVelocity.v[1], pose.vVelocity.v[2] };
 								NiPoint3 skyrimVelocity = { openvrVelocity.x, -openvrVelocity.z, openvrVelocity.y };
 								NiPoint3 velocityWorldspace = openvrToSkyrimWorldTransform * skyrimVelocity;
-								g_controllerVelocities[1].velocities.pop_back();
-								g_controllerVelocities[1].velocities.push_front(velocityWorldspace);
-								g_controllerVelocities[1].Recompute();
+								g_controllerData[1].velocities.pop_back();
+								g_controllerData[1].velocities.push_front(velocityWorldspace);
+								g_controllerData[1].ComputeAverageVelocity();
+								g_controllerData[1].ComputeAverageSpeed();
 							}
 						}
 					}
@@ -4502,12 +4553,13 @@ extern "C" {
 					_MESSAGE("Got higgs interface!");
 
 					unsigned int higgsVersion = g_higgsInterface->GetBuildNumber();
-					if (higgsVersion < 1040601) {
+					if (higgsVersion < 1050100) {
 						ShowErrorBoxAndTerminate("[CRITICAL] HIGGS is present but is a lower version than is required by this mod. Get the latest version of HIGGS and try again.");
 					}
 
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
 					g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
+					g_higgsInterface->AddPreVrikPreHiggsCallback(PreVrikPreHiggsCallback);
 
 					UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
 					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters

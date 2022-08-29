@@ -83,6 +83,8 @@ inline bool CanWeaponStab(TESObjectWEAP *weapon) {
 	);
 };
 
+inline NiPointer<NiAVObject> GetWandNode(bool isLeft) { return isLeft ? (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_LeftWandNode] : (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_RightWandNode]; }
+
 bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);

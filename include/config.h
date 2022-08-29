@@ -201,6 +201,7 @@ namespace Config {
 		bool playMeleeWorldImpactSounds = true;
 
 		int numControllerVelocitySmoothingFrames = 5;
+		int numControllerAngularVelocityTrackingFrames = 10;
 
 		float swingLinearVelocityThreshold = 3.f;
 		float swingVerticalSpeedMultipler = 2.f;
