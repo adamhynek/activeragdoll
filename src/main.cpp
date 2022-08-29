@@ -966,13 +966,11 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 	}
 }
 
-bool HitRefr(Character* source, TESObjectREFR* target, TESForm* weapon, hkpRigidBody* hitBody, bool isLeft, bool isOffhand)
+void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffhand)
 {
-	SetAttackState(source, 2); // kSwing
-
 	float damage;
 	{ // All this just to get the fricken damage
-		InventoryEntryData* weaponEntry = ActorProcess_GetCurrentlyEquippedWeapon(source->processManager, isOffhand);
+		InventoryEntryData *weaponEntry = ActorProcess_GetCurrentlyEquippedWeapon(source->processManager, isOffhand);
 
 		HitData hitData;
 		HitData_ctor(&hitData);
@@ -983,18 +981,23 @@ bool HitRefr(Character* source, TESObjectREFR* target, TESForm* weapon, hkpRigid
 		HitData_dtor(&hitData);
 	}
 
-	bool didDispatchHitEvent = DispatchHitEvents(source, target, hitBody, weapon);
+	BSTaskPool_QueueDestructibleDamageTask(BSTaskPool::GetSingleton(), target, damage);
+}
+
+void HitRefr(Character* source, TESObjectREFR* target, TESForm* weapon, hkpRigidBody* hitBody, bool isLeft, bool isOffhand)
+{
+	SetAttackState(source, 2); // kSwing
+
 	if (IsMoveableEntity(hitBody)) {
 		TESObjectREFR_SetActorCause(target, TESObjectREFR_GetActorCause(source));
 	}
-	BSTaskPool_QueueDestroyTask(BSTaskPool::GetSingleton(), target, damage);
+
+	DoDestructibleDamage(source, target, isOffhand);
 
 	SwingHandler& swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 	if (!swingHandler.IsSwingActive()) {
 		SetAttackState(source, 0);
 	}
-
-	return didDispatchHitEvent;
 }
 
 
@@ -1140,29 +1143,29 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
 
-		SwingHandler& swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
-		if (!swingHandler.IsSwingCoolingDown()) {
-			// There was no recent swing, so perform one now
-			swingHandler.Swing(isStab);
-		}
-
-		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
-		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
-
-		BGSAttackData* attackData = nullptr;
-		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
-		if (!attackData) return;
-
-		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
-		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
-		*playerLastHitPosition = hitPosition;
-
-		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
-		*playerLastHitVelocity = hitVelocity;
-
 		Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+
+			SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+			if (!swingHandler.IsSwingCoolingDown()) {
+				// There was no recent swing, so perform one now
+				swingHandler.Swing(isStab);
+			}
+
+			// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
+			bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+
+			BGSAttackData *attackData = nullptr;
+			PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
+			if (!attackData) return;
+
+			// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
+			NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+			*playerLastHitPosition = hitPosition;
+
+			NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+			*playerLastHitVelocity = hitVelocity;
 
 			HitActor(player, hitChar, weapon, hitRigidBody, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
 
@@ -1174,9 +1177,33 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 		else {
-			bool didDispatchHitEvent = HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
-			if (didDispatchHitEvent) {
+			bool didDispatchHitEvent = DispatchHitEvents(player, hitRefr, hitRigidBody, weapon);
+
+			BGSDestructibleObjectForm *destructible = TESForm_GetDestructibleObjectForm(hitRefr->baseForm);
+			bool isDestructible = destructible && destructible->data;
+
+			if (didDispatchHitEvent || isDestructible) {
 				// TODO: Play VFX?
+
+				SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+				if (!swingHandler.IsSwingCoolingDown()) {
+					// There was no recent swing, so perform one now
+					swingHandler.Swing(isStab);
+				}
+
+				// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
+				bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+
+				BGSAttackData *attackData = nullptr;
+				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
+
+				NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+				*playerLastHitPosition = hitPosition;
+
+				NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+				*playerLastHitVelocity = hitVelocity;
+
+				HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 
 				if (Config::options.playMeleeWorldImpactSounds) {
 					PlayWorldImpactSound(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
