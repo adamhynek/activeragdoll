@@ -204,7 +204,7 @@ namespace Config {
 		int numControllerAngularVelocityTrackingFrames = 10;
 
 		float swingLinearVelocityThreshold = 3.f;
-		float swingVerticalSpeedMultipler = 2.f;
+		float swingDownwardsSpeedMultipler = 4.5f;
 		float swingRequiredHandHmdDirection = -0.8f;
 		float swingCooldown = 0.5f;
 		float swingDuration = 0.2f;

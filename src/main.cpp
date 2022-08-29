@@ -762,7 +762,10 @@ struct SwingHandler
 
 		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
 		NiPoint2 angularVelocity = g_controllerData[isLeft].angularVelocity;
-		angularVelocity.y *= Config::options.swingVerticalSpeedMultipler;
+		if (angularVelocity.y > 0.f) {
+			// Positive y means swinging down
+			angularVelocity.y *= Config::options.swingDownwardsSpeedMultipler;
+		}
 
 		// This will trigger a forward power attack if the swing is triggered from a hit and the hit is a stab, otherwise the direction is based on swinging direction.
 		meleeData->swingDirection = isStab ? VRMeleeData::SwingDirection::kForward : VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocity.x, angularVelocity.y);
