@@ -110,8 +110,7 @@ typedef void(*_VMClassRegistry_Destruct)(VMClassRegistry *_this, UInt32 unk);
 bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBody *hitBody, TESForm *weapon)
 {
 	SkyrimVM *vm = *g_skyrimVM;
-	VMClassRegistry *registry = vm->GetClassRegistry();
-	if (registry) {
+	if (VMClassRegistry *registry = vm->GetClassRegistry()) {
 		// vm incref
 		InterlockedIncrement(((UInt32 *)&registry->unk0004));
 
@@ -678,7 +677,7 @@ struct SwingHandler
 	}
 
 	// Return true if power attack succeeded, false if regular attack
-	bool TrySwingPowerAttack(bool isLeft, bool isOffhand)
+	bool TrySwingPowerAttack(bool isLeft, bool isOffhand, bool isBash)
 	{
 		PlayerCharacter* player = *g_thePlayer;
 
@@ -715,6 +714,11 @@ struct SwingHandler
 		}
 
 		get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&player->animGraphHolder, 0x1)(&player->animGraphHolder, attackData->event);
+
+		if (!isBash) { // bash dialogue will be handled if the bash actually hits
+			// Trigger dialogue here, since WeaponSwingCallback() won't properly handle the powerattack case, and it won't interrupt us if we do it here.
+			TriggerDialogueByType(player, nullptr, 27, false); // 27 == powerAttack
+		}
 
 		*((UInt8*)player + 0x12D7) |= 0x1C;
 
@@ -791,7 +795,7 @@ struct SwingHandler
 
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
-			bool success = TrySwingPowerAttack(isLeft, isOffhand); // this also sets the attackData
+			bool success = TrySwingPowerAttack(isLeft, isOffhand, isBash); // this also sets the attackData
 			wasLastSwingPowerAttack = success;
 		}
 		else {
