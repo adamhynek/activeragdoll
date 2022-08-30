@@ -637,6 +637,7 @@ struct SwingHandler
 	SwingState swingState = SwingState::None;
 	float lastSwingSpeed = 0.f;
 	bool wasLastSwingPowerAttack = false;
+	bool didLastSwingFail = false;
 	float swingCooldown = 0.f;
 	float swingDuration = 0.f;
 	float lastDeltaTime = 1.f;
@@ -725,6 +726,38 @@ struct SwingHandler
 		return true;
 	}
 
+	// Return true if bash succeeded, false if it didn't (and hence no attack should occur)
+	bool TryBash(bool isOffhand)
+	{
+		PlayerCharacter *player = *g_thePlayer;
+
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
+		if (!attackData) return false;
+
+		float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
+		float currentStamina = player->actorValueOwner.GetCurrent(26);
+		if (staminaCost > 0.f && currentStamina <= 0.f) {
+			// No stamina to bash
+			SetAttackState(player, 0);
+			FlashHudMenuMeter(26);
+			return false;
+		}
+
+		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
+			DeductSwingStamina(staminaCost);
+		}
+
+		if (SpellItem *attackSpell = attackData->data.attackSpell) {
+			Actor_DoCombatSpellApply(player, attackSpell, nullptr);
+		}
+
+		// Play bash animation
+		get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&player->animGraphHolder, 0x1)(&player->animGraphHolder, attackData->event);
+
+		return true;
+	}
+
 	void SwingWeapon(TESObjectWEAP* weapon, bool isOffhand, bool isBash, bool playSound = true)
 	{
 		PlayerCharacter* player = *g_thePlayer;
@@ -793,25 +826,29 @@ struct SwingHandler
 		UInt32 newAttackState = isBash ? 6 : 2; // kBash if bashing else kSwing
 		SetAttackState(player, newAttackState);
 
+		didLastSwingFail = false;
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
 			bool success = TrySwingPowerAttack(isLeft, isOffhand, isBash); // this also sets the attackData
+			if (!success && isBash) {
+				if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+					PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
+				}
+				didLastSwingFail = true;
+			}
 			wasLastSwingPowerAttack = success;
 		}
 		else {
+			wasLastSwingPowerAttack = false;
+
 			if (isBash) {
-				BGSAttackData* attackData = nullptr;
-				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-				if (attackData) {
-					// TODO: We should deduct stamina for bashes as well, and make hits do nothing if out of stamina and bashing (play out of stamina sound, or something more noticeable)
-
-					if (SpellItem* attackSpell = attackData->data.attackSpell) {
-						Actor_DoCombatSpellApply(player, attackSpell, nullptr);
+				bool success = TryBash(isOffhand);
+				if (!success) {
+					if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 					}
-
-					// Play bash animation
-					get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&player->animGraphHolder, 0x1)(&player->animGraphHolder, attackData->event);
 				}
+				didLastSwingFail = !success;
 			}
 			else {
 				// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
@@ -819,19 +856,19 @@ struct SwingHandler
 				// It also sets the attackState to kDraw (1)
 				PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
 			}
-			wasLastSwingPowerAttack = false;
 		}
 
-		// Set the attackState again after it gets set to kDraw by PlayerControls_SendAction()
-		SetAttackState(player, newAttackState);
+		if (!didLastSwingFail) {
+			// Set the attackState again after it gets set to kDraw by PlayerControls_SendAction()
+			SetAttackState(player, newAttackState);
 
-		SwingWeapon(weapon, isOffhand, isBash); // Reads from last attackData and attackState
+			SwingWeapon(weapon, isOffhand, isBash); // Reads from last attackData and attackState
 
-		g_numSkipAnimationFrames = isBash ? Config::options.swingSkipAnimFramesBash : Config::options.swingSkipAnimFrames; // skip the animation
+			g_numSkipAnimationFrames = isBash ? Config::options.swingSkipAnimFramesBash : Config::options.swingSkipAnimFrames; // skip the animation
+		}
+
 		swingCooldown = Config::options.swingCooldown;
 		swingDuration = Config::options.swingDuration;
-
-		swingState = SwingState::Swing;
 	}
 
 	void UpdateWeaponSwing(float deltaTime)
@@ -883,6 +920,7 @@ struct SwingHandler
 				// We are past the peak of the swing
 				if (attackState == 0 && handInHmdDirection > Config::options.swingRequiredHandHmdDirection) {
 					Swing();
+					swingState = didLastSwingFail ? SwingState::None : SwingState::Swing;
 				}
 				else {
 					// No swinging allowed while e.g. firing a crossbow, or swinging extremely backwards
@@ -1143,6 +1181,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
 
+		hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime };
+
 		Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
@@ -1151,6 +1191,10 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (!swingHandler.IsSwingCoolingDown()) {
 				// There was no recent swing, so perform one now
 				swingHandler.Swing(isStab);
+			}
+
+			if (swingHandler.didLastSwingFail) {
+				return;
 			}
 
 			// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
@@ -1185,10 +1229,19 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (didDispatchHitEvent || isDestructible) {
 				// TODO: Play VFX?
 
+				if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
+					// Disable contact for keyframed/fixed objects in this case
+					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				}
+
 				SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 				if (!swingHandler.IsSwingCoolingDown()) {
 					// There was no recent swing, so perform one now
 					swingHandler.Swing(isStab);
+				}
+
+				if (swingHandler.didLastSwingFail) {
+					return;
 				}
 
 				// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
@@ -1211,14 +1264,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 			}
-
-			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
-				// Disable contact for keyframed/fixed objects in this case
-				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-			}
 		}
-
-		hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime };
 	}
 
 	void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal, float minMass, float minSpeed)

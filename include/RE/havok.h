@@ -216,7 +216,7 @@ struct bhkNiCollisionObject : NiCollisionObject
 	virtual void UpdateNodeTransformsFromCollision(void) = 0; // 2B
 	virtual void UpdateCollisionFromNodeTransform(void) = 0; // 2C
 	virtual void ZeroOutSmallVelocities(void) = 0; // 2D
-	virtual void SetMotionType(void) = 0; // 2E
+	virtual void SetMotionType(UInt32 motionType, bhkRigidBody *rigidBody, bool activate) = 0; // 2E
 	virtual void IsFixedOrKeyframed(void); // 2F
 	virtual void Unk_30(void); // 30 - { return 1; }
 
