@@ -363,6 +363,9 @@ namespace Config {
 		if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
 		if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;
 
+		if (!RegisterFloat("swingFailedRumbleIntensity", options.swingFailedRumbleIntensity)) success = false;
+		if (!RegisterFloat("swingFailedRumbleDuration", options.swingFailedRumbleDuration)) success = false;
+
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingDownwardsSpeedMultipler", options.swingDownwardsSpeedMultipler)) success = false;
 		if (!RegisterFloat("swingRequiredHandHmdDirection", options.swingRequiredHandHmdDirection)) success = false;

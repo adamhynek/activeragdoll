@@ -689,10 +689,16 @@ struct SwingHandler
 		float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
 		float currentStamina = player->actorValueOwner.GetCurrent(26);
 		if (staminaCost > 0.f && currentStamina <= 0.f) {
-			// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
-			PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
-			// Now do a regular attack (overwrites the attack data too)
-			PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+			if (isBash) {
+				// If a bash failed, cancel the attack entirely
+				SetAttackState(player, 0);
+			}
+			else {
+				// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
+				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
+				// Now do a regular attack (overwrites the attack data too)
+				PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
+			}
 			FlashHudMenuMeter(26);
 			return false;
 		}
@@ -1194,6 +1200,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			if (swingHandler.didLastSwingFail) {
+				PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
 				return;
 			}
 
@@ -1241,6 +1248,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				}
 
 				if (swingHandler.didLastSwingFail) {
+					PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
 					return;
 				}
 

@@ -203,6 +203,9 @@ namespace Config {
 		int numControllerVelocitySmoothingFrames = 5;
 		int numControllerAngularVelocityTrackingFrames = 10;
 
+		float swingFailedRumbleIntensity = 0.5f;
+		float swingFailedRumbleDuration = 0.5f;
+
 		float swingLinearVelocityThreshold = 3.f;
 		float swingDownwardsSpeedMultipler = 4.5f;
 		float swingRequiredHandHmdDirection = -0.8f;
