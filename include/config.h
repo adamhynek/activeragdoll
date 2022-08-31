@@ -203,6 +203,8 @@ namespace Config {
 		int numControllerVelocitySmoothingFrames = 5;
 		int numControllerAngularVelocityTrackingFrames = 10;
 
+		bool failBashWhenOutOfStamina = true;
+
 		float swingFailedRumbleIntensity = 0.5f;
 		float swingFailedRumbleDuration = 0.5f;
 

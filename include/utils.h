@@ -39,6 +39,15 @@ inline EventDispatcher<T> * GetDispatcher(UInt64 offset) {
 	return (EventDispatcher<T> *)((UInt64)GetEventDispatcherList() + offset);
 }
 
+template<class T>
+inline T * GetDefaultObject(int index) {
+	bool *objectsInit = (bool *)((UInt64)g_defaultObjectManager.GetUIntPtr() + 0xBA8);
+	if (objectsInit[index]) {
+		return (T *)g_defaultObjectManager->objects[index];
+	}
+	return nullptr;
+}
+
 NiAVObject * GetHighestParent(NiAVObject *node);
 void updateTransformTree(NiAVObject * root, NiAVObject::ControllerUpdateContext *ctx);
 void UpdateKeyframedNodeTransform(NiAVObject *node, const NiTransform &transform);

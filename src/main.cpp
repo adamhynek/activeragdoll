@@ -678,7 +678,7 @@ struct SwingHandler
 	}
 
 	// Return true if power attack succeeded, false if regular attack
-	bool TrySwingPowerAttack(bool isLeft, bool isOffhand, bool isBash)
+	bool TrySwingPowerAttack(bool isOffhand, bool isBash)
 	{
 		PlayerCharacter* player = *g_thePlayer;
 
@@ -689,11 +689,7 @@ struct SwingHandler
 		float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
 		float currentStamina = player->actorValueOwner.GetCurrent(26);
 		if (staminaCost > 0.f && currentStamina <= 0.f) {
-			if (isBash) {
-				// If a bash failed, cancel the attack entirely
-				SetAttackState(player, 0);
-			}
-			else {
+			if (!isBash) {
 				// No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
 				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
 				// Now do a regular attack (overwrites the attack data too)
@@ -745,13 +741,17 @@ struct SwingHandler
 		float currentStamina = player->actorValueOwner.GetCurrent(26);
 		if (staminaCost > 0.f && currentStamina <= 0.f) {
 			// No stamina to bash
-			SetAttackState(player, 0);
-			FlashHudMenuMeter(26);
-			return false;
+			if (Config::options.failBashWhenOutOfStamina) {
+				SetAttackState(player, 0);
+				FlashHudMenuMeter(26);
+				return false;
+			}
 		}
-
-		if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
-			DeductSwingStamina(staminaCost);
+		else {
+			// Enough stamina
+			if (!get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget) && staminaCost > 0.f) {
+				DeductSwingStamina(staminaCost);
+			}
 		}
 
 		if (SpellItem *attackSpell = attackData->data.attackSpell) {
@@ -835,26 +835,29 @@ struct SwingHandler
 		didLastSwingFail = false;
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
-			bool success = TrySwingPowerAttack(isLeft, isOffhand, isBash); // this also sets the attackData
-			if (!success && isBash) {
-				if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
-					PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
+			bool didPowerAttackSucceed = TrySwingPowerAttack(isOffhand, isBash); // this also sets the attackData
+			if (!didPowerAttackSucceed && isBash) {
+				bool didBashSucceed = TryBash(isOffhand);
+				if (!didBashSucceed) {
+					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
+						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
+					}
 				}
-				didLastSwingFail = true;
+				didLastSwingFail = !didBashSucceed;
 			}
-			wasLastSwingPowerAttack = success;
+			wasLastSwingPowerAttack = didPowerAttackSucceed;
 		}
 		else {
 			wasLastSwingPowerAttack = false;
 
 			if (isBash) {
-				bool success = TryBash(isOffhand);
-				if (!success) {
-					if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+				bool didBashSucceed = TryBash(isOffhand);
+				if (!didBashSucceed) {
+					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 					}
 				}
-				didLastSwingFail = !success;
+				didLastSwingFail = !didBashSucceed;
 			}
 			else {
 				// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
@@ -872,6 +875,8 @@ struct SwingHandler
 
 			g_numSkipAnimationFrames = isBash ? Config::options.swingSkipAnimFramesBash : Config::options.swingSkipAnimFrames; // skip the animation
 		}
+
+		swingState = didLastSwingFail ? SwingState::None : SwingState::Swing;
 
 		swingCooldown = Config::options.swingCooldown;
 		swingDuration = Config::options.swingDuration;
@@ -926,7 +931,6 @@ struct SwingHandler
 				// We are past the peak of the swing
 				if (attackState == 0 && handInHmdDirection > Config::options.swingRequiredHandHmdDirection) {
 					Swing();
-					swingState = didLastSwingFail ? SwingState::None : SwingState::Swing;
 				}
 				else {
 					// No swinging allowed while e.g. firing a crossbow, or swinging extremely backwards
@@ -962,7 +966,7 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 
 	if (isPowerAttack && isShield) {
 		// power bash
-		if (BGSAction* blockAnticipateAction = (BGSAction*)g_defaultObjectManager->objects[74]) {
+		if (BGSAction* blockAnticipateAction = GetDefaultObject<BGSAction>(74)) {
 			// This is cool, as it does not drain stamina or anything as was done as part of the swing. This will just do the actual bash recoil on the target.
 			SendAction(source, target, blockAnticipateAction);
 		}
@@ -1228,6 +1232,11 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 		}
 		else {
+			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
+				// Disable contact for keyframed/fixed objects in this case
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			}
+
 			bool didDispatchHitEvent = DispatchHitEvents(player, hitRefr, hitRigidBody, weapon);
 
 			BGSDestructibleObjectForm *destructible = TESForm_GetDestructibleObjectForm(hitRefr->baseForm);
@@ -1235,11 +1244,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			if (didDispatchHitEvent || isDestructible) {
 				// TODO: Play VFX?
-
-				if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
-					// Disable contact for keyframed/fixed objects in this case
-					evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-				}
 
 				SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 				if (!swingHandler.IsSwingCoolingDown()) {
@@ -2627,7 +2631,7 @@ void UpdateSpeedReduction()
 			FlashHudMenuMeter(26);
 
 			if (Config::options.playSoundOnGrabStaminaDepletion) {
-				if (BGSSoundDescriptorForm *shoutFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[129]) {
+				if (BGSSoundDescriptorForm *shoutFailSound = GetDefaultObject<BGSSoundDescriptorForm>(129)) {
 					PlaySoundAtNode(shoutFailSound, player->GetNiNode(), {});
 				}
 			}
@@ -2698,7 +2702,7 @@ bool UpdateActorShove(Actor *actor)
 					else {
 						// Not enough stamina
 						if (Config::options.playSoundOnShoveNoStamina) {
-							if (BGSSoundDescriptorForm *magicFailSound = (BGSSoundDescriptorForm *)g_defaultObjectManager->objects[128]) {
+							if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 								PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 							}
 						}

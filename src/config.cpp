@@ -363,6 +363,8 @@ namespace Config {
 		if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
 		if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;
 
+		if (!RegisterBool("failBashWhenOutOfStamina", options.failBashWhenOutOfStamina)) success = false;
+
 		if (!RegisterFloat("swingFailedRumbleIntensity", options.swingFailedRumbleIntensity)) success = false;
 		if (!RegisterFloat("swingFailedRumbleDuration", options.swingFailedRumbleDuration)) success = false;
 
