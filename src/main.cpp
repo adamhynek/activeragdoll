@@ -839,6 +839,7 @@ struct SwingHandler
 			if (!didPowerAttackSucceed && isBash) {
 				bool didBashSucceed = TryBash(isOffhand);
 				if (!didBashSucceed) {
+					Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
 					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 					}
@@ -853,6 +854,7 @@ struct SwingHandler
 			if (isBash) {
 				bool didBashSucceed = TryBash(isOffhand);
 				if (!didBashSucceed) {
+					Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
 					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 					}

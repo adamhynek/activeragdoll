@@ -667,6 +667,9 @@ extern RelocAddr<_Character_HitTarget> Character_HitTarget;
 typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
 extern RelocAddr<_UpdateDialogue> UpdateDialogue;
 
+typedef void(*_Actor_TriggerMiscDialogue)(Actor *_this, int dialogueSubtype, bool interruptDialogue);
+extern RelocAddr<_Actor_TriggerMiscDialogue> Actor_TriggerMiscDialogue;
+
 typedef bool(*_Actor_IsHostileToActor)(Actor *_this, Actor *actor);
 extern RelocAddr<_Actor_IsHostileToActor> Actor_IsHostileToActor;
 

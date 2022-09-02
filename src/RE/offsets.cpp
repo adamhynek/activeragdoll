@@ -287,6 +287,7 @@ RelocAddr<_FlashHudMenuMeter> FlashHudMenuMeter(0x902F20);
 RelocAddr<_PlayerControls_SendAction> PlayerControls_SendAction(0x72C380);
 RelocAddr<_Character_HitTarget> Character_HitTarget(0x631AF0);
 RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
+RelocAddr<_Actor_TriggerMiscDialogue> Actor_TriggerMiscDialogue(0x5F2500);
 RelocAddr<_Actor_IsHostileToActor> Actor_IsHostileToActor(0x5F0560);
 RelocAddr<_Actor_GetDetectionCalculatedValue> Actor_GetDetectionCalculatedValue(0x605190);
 RelocAddr<_Actor_SendAssaultAlarm> Actor_SendAssaultAlarm(0x986530);

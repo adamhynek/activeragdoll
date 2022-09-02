@@ -18,7 +18,7 @@ namespace PlanckPluginAPI {
 		// Note: This can not necessarily be safely accessed if the node was deleted between when the hit was detected and the hit event is fired.
 		NiAVObject *node = nullptr;
 		// The name of the node that was hit.
-		const char *nodeName = nullptr;
+		BSFixedString nodeName = nullptr;
 		// Whether the hit was with the left or right hand's weapon.
 		bool isLeft;
 	};
