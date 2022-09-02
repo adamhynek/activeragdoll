@@ -1229,7 +1229,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
 			if (Config::options.applyImpulseOnHit) {
-				// TODO: Higher impulse for power attacks?
+				if (isPowerAttack) {
+					impulseMult *= Config::options.powerAttackImpulseMultiplier;
+				}
 				ApplyHitImpulse(hitChar, hitRigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
 			}
 		}

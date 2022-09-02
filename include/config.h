@@ -175,6 +175,8 @@ namespace Config {
 		float hitImpulseProportionalStrength = -0.15f;
 		float hitImpulseMassExponent = 0.5f;
 
+		float powerAttackImpulseMultiplier = 2.f;
+
 		float hitImpulseMinStrength = 0.2f;
 		float hitImpulseMaxStrength = 1.f;
 		float hitImpulseMaxVelocity = 1500.f; // skyrim units
