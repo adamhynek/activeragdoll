@@ -361,6 +361,7 @@ namespace Config {
 		if (!RegisterFloat("hitImpulseDecayMult3", options.hitImpulseDecayMult3)) success = false;
 
 		if (!RegisterBool("playMeleeWorldImpactSounds", options.playMeleeWorldImpactSounds)) success = false;
+		if (!RegisterBool("playMeleeImpactEffects", options.playMeleeImpactEffects)) success = false;
 
 		if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
 		if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;

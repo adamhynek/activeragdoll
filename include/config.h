@@ -201,6 +201,7 @@ namespace Config {
 		float hitImpulseDecayMult3 = 0.075f;
 
 		bool playMeleeWorldImpactSounds = true;
+		bool playMeleeImpactEffects = true;
 
 		int numControllerVelocitySmoothingFrames = 5;
 		int numControllerAngularVelocityTrackingFrames = 10;

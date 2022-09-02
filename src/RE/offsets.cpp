@@ -341,3 +341,5 @@ RelocAddr<_sub_1406EC5C0> sub_1406EC5C0(0x6EC5C0);
 RelocAddr<_TES_GetLandMaterialId> TES_GetLandMaterialId(0x167720);
 RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData(0x192040);
 RelocAddr<_BGSImpactManager_PlayImpactSound> BGSImpactManager_PlayImpactSound(0x5A9FF0);
+RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect(0x45B740);
+RelocAddr<_TESObjectCELL_PlaceParticleEffect_2> TESObjectCELL_PlaceParticleEffect_2(0x45B4F0);

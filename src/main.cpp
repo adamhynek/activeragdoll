@@ -1135,7 +1135,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 	}
 
-	void PlayWorldImpactSound(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, bool isOffhand)
+	void PlayImpactEffects(TESObjectCELL *cell, hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, const NiPoint3 &hitNormal, bool isOffhand)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
@@ -1172,18 +1172,24 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (!impactSet) return;
 
 		if (BGSImpactData *impact = BGSImpactDataSet_GetImpactData(impactSet, material)) {
-			ImpactSoundData impactSoundData{
-				impact,
-				&hitPosition,
-				nullptr,
-				nullptr,
-				nullptr,
-				true,
-				false,
-				false,
-				nullptr
-			};
-			BGSImpactManager_PlayImpactSound(*g_impactManager, impactSoundData);
+			if (Config::options.playMeleeWorldImpactSounds) {
+				ImpactSoundData impactSoundData{
+					impact,
+					&hitPosition,
+					nullptr,
+					nullptr,
+					nullptr,
+					true,
+					false,
+					false,
+					nullptr
+				};
+				BGSImpactManager_PlayImpactSound(*g_impactManager, impactSoundData);
+			}
+
+			if (Config::options.playMeleeImpactEffects) {
+				TESObjectCELL_PlaceParticleEffect_2(cell, impact->duration, impact->model.GetModelName(), hitNormal, hitPosition, 1.f, 7);
+			}
 		}
 	}
 
@@ -1274,8 +1280,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 				HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
 
-				if (Config::options.playMeleeWorldImpactSounds) {
-					PlayWorldImpactSound(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
+				if (Config::options.playMeleeImpactEffects || Config::options.playMeleeWorldImpactSounds) {
+					PlayImpactEffects(player->parentCell, hitRigidBody, evnt, weapon, hitPosition, VectorNormalized(-hitVelocity), isOffhand);
 				}
 
 				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
