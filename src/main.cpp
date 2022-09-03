@@ -959,12 +959,7 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 
 	bool isBash = IsBashing(source, isOffhand);
 
-	if (isBash) {
-		SetAttackState(source, 6); // kBash
-	}
-	else {
-		SetAttackState(source, 2); // kSwing
-	}
+	SetAttackState(source, isBash ? 6 : 2); // kBash : kSwing
 
 	if (isPowerAttack && isShield) {
 		// power bash
@@ -982,16 +977,14 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 	int dialogueSubtype = isBash ? 28 : (isPowerAttack ? 27 : 26); // 26 is attack, 27 powerattack, 28 bash
 	TriggerDialogueByType(source, target, dialogueSubtype, false);
 
-	if (isPowerAttack) {
 #ifdef _DEBUG
+	if (isPowerAttack) {
 		_MESSAGE("%d Detect hit power attack", *g_currentFrameCounter);
-#endif // _DEBUG
 	}
 	else {
-#ifdef _DEBUG
 		_MESSAGE("%d Detect hit", *g_currentFrameCounter);
-#endif // _DEBUG
 	}
+#endif // _DEBUG
 
 	// Set last hit data to be read from at the time that the hit event is fired
 	PlanckPluginAPI::PlanckHitData& lastHitData = g_interface001.lastHitData;
@@ -1188,7 +1181,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			if (Config::options.playMeleeImpactEffects) {
-				TESObjectCELL_PlaceParticleEffect_2(cell, impact->duration, impact->model.GetModelName(), hitNormal, hitPosition, 1.f, 7);
+				TESObjectCELL_PlaceParticleEffect(cell, impact->duration, impact->model.GetModelName(), hitNormal, hitPosition, 1.f, 7, nullptr);
 			}
 		}
 	}
@@ -1302,7 +1295,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
 		float speed = VectorLength(collisionEvent.bodyVelocity);
 		float damage = GetPhysicsDamage(mass, speed, minMass, minSpeed);
-		//_MESSAGE("%.2f", damage);
+
+		_DMESSAGE("Physics damage: %.2f", damage);
 
 		if (damage > 0.f) {
 			HitData hitData;
@@ -1506,7 +1500,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 				// Use last frame's offset node transform because this frame is not over yet and it can still be modified by e.g. higgs two-handing
 				NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_oldWorldTransform.rot);
 				float stabAmount = DotProduct(handDirection, weaponForward);
-				//_MESSAGE("Stab amount: %.2f", stabAmount);
+				_DMESSAGE("Stab amount: %.2f", stabAmount);
 				if (stabAmount > Config::options.hitStabDirectionThreshold && hitSpeed > Config::options.hitStabSpeedThreshold) {
 					isStab = true;
 				}
@@ -1518,7 +1512,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (NiPointer<NiAVObject> handNode = player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftHandBone : PlayerCharacter::Node::kNode_RightHandBone]) {
 				NiPoint3 punchVector = UpVector(handNode->m_worldTransform.rot); // in the direction of fingers when fingers are extended
 				float punchAmount = DotProduct(handDirection, punchVector);
-				//_MESSAGE("Punch amount: %.2f", punchAmount);
+				_DMESSAGE("Punch amount: %.2f", punchAmount);
 				if (punchAmount > Config::options.hitPunchDirectionThreshold && hitSpeed > Config::options.hitPunchSpeedThreshold) {
 					isPunch = true;
 				}
@@ -1588,7 +1582,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) return; // Both objects are on the higgs layer
 
 		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::Added });
-		//_MESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		//_DMESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
@@ -1598,7 +1592,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 		// Technically our objects could have changed layers or something between added and removed
 		events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::Removed });
-		//_MESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
+		//_DMESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
 	virtual void postSimulationCallback(hkpWorld* world)
@@ -3529,8 +3523,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 				if (NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root)) {
 					NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
-					//std::string boneName = std::string("Ragdoll_") + collNode->m_name;
-					//_MESSAGE(collNode->m_name);
 
 					if (int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name); boneIndex >= 0) {
 						const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
@@ -4687,8 +4679,8 @@ extern "C" {
 	bool SKSEPlugin_Query(const SKSEInterface* skse, PluginInfo* info)
 	{
 		gLog.OpenRelative(CSIDL_MYDOCUMENTS, "\\My Games\\Skyrim VR\\SKSE\\activeragdoll.log");
-		gLog.SetPrintLevel(IDebugLog::kLevel_DebugMessage);
-		gLog.SetLogLevel(IDebugLog::kLevel_DebugMessage);
+		gLog.SetPrintLevel(IDebugLog::kLevel_Message);
+		gLog.SetLogLevel(IDebugLog::kLevel_Message);
 
 		_MESSAGE("PLANCK v%s", ACTIVERAGDOLL_VERSION_VERSTRING);
 
@@ -4720,6 +4712,9 @@ extern "C" {
 		else {
 			_WARNING("[WARNING] Failed to read some config options");
 		}
+
+		gLog.SetPrintLevel((IDebugLog::LogLevel)Config::options.logLevel);
+		gLog.SetLogLevel((IDebugLog::LogLevel)Config::options.logLevel);
 
 		_MESSAGE("Registering for SKSE messages");
 		g_messaging = (SKSEMessagingInterface*)skse->QueryInterface(kInterface_Messaging);

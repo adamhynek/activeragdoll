@@ -186,6 +186,8 @@ namespace Config {
 	{
 		bool success = true;
 
+		if (!ReadInt("LogLevel", options.logLevel)) success = false;
+
 		if (!RegisterFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) success = false;
 		if (!RegisterFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) success = false;
 

@@ -8,6 +8,8 @@
 
 namespace Config {
 	struct Options {
+		int logLevel = IDebugLog::kLevel_Message;
+
 		float activeRagdollStartDistance = 50.f;
 		float activeRagdollEndDistance = 60.f;
 

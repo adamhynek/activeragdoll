@@ -826,11 +826,11 @@ extern RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData;
 typedef bool(*_BGSImpactManager_PlayImpactSound)(BGSImpactManager *_this, ImpactSoundData &impactSoundData);
 extern RelocAddr<_BGSImpactManager_PlayImpactSound> BGSImpactManager_PlayImpactSound;
 
-typedef void(*_TESObjectCELL_PlaceParticleEffect)(TESObjectCELL *_this, float lifetime, const char *modelName, const NiMatrix33 &normal, const NiPoint3 &pos, float scale, UInt32 flags, NiAVObject *target);
-extern RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect;
+typedef void(*_TESObjectCELL_PlaceParticleEffect_Impl)(TESObjectCELL *_this, float lifetime, const char *modelName, const NiMatrix33 &normal, const NiPoint3 &pos, float scale, UInt32 flags, NiAVObject *target);
+extern RelocAddr<_TESObjectCELL_PlaceParticleEffect_Impl> TESObjectCELL_PlaceParticleEffect_Impl;
 
-typedef void(*_TESObjectCELL_PlaceParticleEffect_2)(TESObjectCELL *_this, float lifetime, const char *modelName, const NiPoint3 &normal, const NiPoint3 &pos, float scale, UInt32 flags);
-extern RelocAddr<_TESObjectCELL_PlaceParticleEffect_2> TESObjectCELL_PlaceParticleEffect_2;
+typedef void(*_TESObjectCELL_PlaceParticleEffect)(TESObjectCELL *_this, float lifetime, const char *modelName, const NiPoint3 &normal, const NiPoint3 &pos, float scale, UInt32 flags, NiAVObject *target);
+extern RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect;
 
 
 struct UnkSwingData
