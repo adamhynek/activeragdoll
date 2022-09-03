@@ -3700,17 +3700,17 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	}
 
 	if (Config::options.forceAnimPose) {
-		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->animPose.data()) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			memcpy(poseOut, ragdoll->animPose.data(), numPoses * sizeof(hkQsTransform));
+			memcpy(poseOut, ragdoll->animPose.data(), ragdoll->animPose.size() * sizeof(hkQsTransform));
 		}
 	}
 	else if (Config::options.forceRagdollPose) {
-		if (poseHeader && poseHeader->m_onFraction > 0.f) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->ragdollPose.data()) {
 			int numPoses = poseHeader->m_numData;
 			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-			memcpy(poseOut, ragdoll->ragdollPose.data(), numPoses * sizeof(hkQsTransform));
+			memcpy(poseOut, ragdoll->ragdollPose.data(), ragdoll->ragdollPose.size() * sizeof(hkQsTransform));
 		}
 	}
 
@@ -3739,11 +3739,6 @@ void PreCullActorsHook(Actor *actor)
 	
 	actor->unk274 &= 0xFFFFFFF0;
 	actor->unk274 |= cullState & 0xF;
-	
-	// It might be okay to just set the cull state above and still cull the root node (i.e. get rid of this line)
-	//if (NiPointer<NiNode> root = actor->GetNiNode()) {
-	//	root->m_flags &= ~(1 << 20);  // zero out bit 20 -> do not cull the actor's root node
-	//}
 }
 
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
