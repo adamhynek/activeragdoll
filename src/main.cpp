@@ -637,6 +637,7 @@ struct SwingHandler
 	SwingState swingState = SwingState::None;
 	float lastSwingSpeed = 0.f;
 	bool wasLastSwingPowerAttack = false;
+	bool wasLastSwingBash = false;
 	bool didLastSwingFail = false;
 	float swingCooldown = 0.f;
 	float swingDuration = 0.f;
@@ -657,6 +658,11 @@ struct SwingHandler
 	inline bool IsPowerAttackActive()
 	{
 		return IsSwingActive() && wasLastSwingPowerAttack;
+	}
+
+	inline bool IsBashActive()
+	{
+		return IsSwingActive() && wasLastSwingBash;
 	}
 
 	void DeductSwingStamina(float staminaCost)
@@ -833,18 +839,25 @@ struct SwingHandler
 		SetAttackState(player, newAttackState);
 
 		didLastSwingFail = false;
+		wasLastSwingBash = false;
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
 			bool didPowerAttackSucceed = TrySwingPowerAttack(isOffhand, isBash); // this also sets the attackData
 			if (!didPowerAttackSucceed && isBash) {
 				bool didBashSucceed = TryBash(isOffhand);
-				if (!didBashSucceed) {
+				if (didBashSucceed) {
+					wasLastSwingBash = true;
+				}
+				else {
 					Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
 					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
 					}
 				}
 				didLastSwingFail = !didBashSucceed;
+			}
+			if (didPowerAttackSucceed && isBash) {
+				wasLastSwingBash = true;
 			}
 			wasLastSwingPowerAttack = didPowerAttackSucceed;
 		}
@@ -853,7 +866,10 @@ struct SwingHandler
 
 			if (isBash) {
 				bool didBashSucceed = TryBash(isOffhand);
-				if (!didBashSucceed) {
+				if (didBashSucceed) {
+					wasLastSwingBash = true;
+				}
+				else {
 					Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
 					if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
 						PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
@@ -3844,11 +3860,23 @@ bool Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook(IAnimati
 {
 	IAnimationGraphManagerHolder* playerAnimGraphHolder = &(*g_thePlayer)->animGraphHolder;
 	if (_this == playerAnimGraphHolder) {
-		static BSFixedString bAllowRotationStr("bAllowRotation");
-		if (a_variableName == bAllowRotationStr) {
-			if (g_rightSwingHandler.IsPowerAttackActive() || g_leftSwingHandler.IsPowerAttackActive()) {
-				a_out = true;
-				return true;
+		if (Config::options.spoofbAllowRotationDuringSwing) {
+			static BSFixedString bAllowRotationStr("bAllowRotation");
+			if (a_variableName == bAllowRotationStr) {
+				if (g_rightSwingHandler.IsPowerAttackActive() || g_leftSwingHandler.IsPowerAttackActive()) {
+					a_out = true;
+					return true;
+				}
+			}
+		}
+
+		if (Config::options.spoofIsBashingDuringSwing) {
+			static BSFixedString IsBashingStr("IsBashing");
+			if (a_variableName == IsBashingStr) {
+				if (g_rightSwingHandler.IsBashActive() || g_leftSwingHandler.IsBashActive()) {
+					a_out = true;
+					return true;
+				}
 			}
 		}
 	}
@@ -4091,7 +4119,7 @@ void PerformHooks(void)
 		_MESSAGE("Character_HitTarget_HitData_Populate hook complete");
 	}
 
-	if (Config::options.spoofbAllowRotationDuringSwing) {
+	{
 		g_branchTrampoline.Write6Call(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc.GetUIntPtr(), uintptr_t(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook));
 		_MESSAGE("Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool hook complete");
 	}

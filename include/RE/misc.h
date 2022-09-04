@@ -406,6 +406,13 @@ enum class KnockState : UInt8
 	GetUp = 6,
 };
 
+enum class GetUpType
+{
+	Reanimate = 0,
+	GetUp = 1,
+	GetUpSwim = 2,
+};
+
 struct FOCollisionListener : hkpContactListener
 {
 	struct CollisionDamageEvent
