@@ -224,6 +224,7 @@ namespace Config {
 		float skipAnimationDeltaTime = 10000.f;
 
 		bool spoofbAllowRotationDuringSwing = true;
+		bool spoofIsBashingDuringSwing = true;
 
 		bool resizePlayerCharController = true;
 		bool adjustPlayerCharControllerBottomRingHeightToMaintainSlope = true;

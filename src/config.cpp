@@ -384,6 +384,7 @@ namespace Config {
 		if (!RegisterFloat("skipAnimationDeltaTime", options.skipAnimationDeltaTime)) success = false;
 
 		if (!RegisterBool("spoofbAllowRotationDuringSwing", options.spoofbAllowRotationDuringSwing)) success = false;
+		if (!RegisterBool("spoofIsBashingDuringSwing", options.spoofIsBashingDuringSwing)) success = false;
 
 		if (!RegisterBool("resizePlayerCharController", options.resizePlayerCharController)) success = false;
 		if (!RegisterBool("adjustPlayerCharControllerBottomRingHeightToMaintainSlope", options.adjustPlayerCharControllerBottomRingHeightToMaintainSlope)) success = false;
