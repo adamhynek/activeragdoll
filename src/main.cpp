@@ -881,6 +881,9 @@ struct SwingHandler
 				// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
 				// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
 				// It also sets the attackState to kDraw (1)
+
+				// TODO: Deadlock here on BSAnimationGraphManager::updateLock. Deadlocks with NotifyAnimationGraph from dualwieldblockvr sending blockStop.
+				//       What happens is that during the contact point callback, we are in the havok task queue critical section. In NotifyAnimationGraph at one point it tries to hkReferencedObject::AddReference() from the other thread, which needs the hkReferencedObjectLock.
 				PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
 			}
 		}
@@ -966,7 +969,7 @@ SwingHandler g_leftSwingHandler{ true };
 
 bool g_isInPlanckHit = false;
 
-void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigidBody* hitRigidBody, const NiPoint3& hitPosition, const NiPoint3& hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
+void HitActor(Character* source, Character* target, NiAVObject *hitNode, const NiPoint3& hitPosition, const NiPoint3& hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm* offhandObj = source->GetEquippedObject(true);
@@ -1005,7 +1008,7 @@ void HitActor(Character* source, Character* target, TESForm* weaponForm, hkpRigi
 	// Set last hit data to be read from at the time that the hit event is fired
 	PlanckPluginAPI::PlanckHitData& lastHitData = g_interface001.lastHitData;
 	lastHitData = {};
-	if (NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable())) {
+	if (hitNode) {
 		lastHitData.node = hitNode;
 		lastHitData.nodeName = hitNode->m_name;
 	}
@@ -1059,6 +1062,135 @@ void HitRefr(Character* source, TESObjectREFR* target, TESForm* weapon, hkpRigid
 	}
 }
 
+NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, float impulseMult)
+{
+	float massInv = rigidBody->getMassInv();
+	float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
+
+	float impulseStrength = std::clamp(
+		Config::options.hitImpulseBaseStrength + Config::options.hitImpulseProportionalStrength * powf(mass, Config::options.hitImpulseMassExponent),
+		Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
+	);
+
+	float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity / *g_globalTimeMultiplier); // limit the imparted velocity to some reasonable value
+	NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * *g_havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
+	impulse *= impulseStrength; // Scale the velocity as we see fit
+	impulse *= impulseMult;
+	if (impulse.z < 0) {
+		// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
+		impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
+	}
+
+	return impulse;
+}
+
+void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
+{
+	UInt32 targetHandle = GetOrCreateRefrHandle(actor);
+	// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+	ForEachRagdollDriver(actor, [world, rigidBody, hitVelocity, impulseMult, targetHandle](hkbRagdollDriver *driver) {
+		// No deadlock here as the BSAnimationGraphManager update lock has already been acquired
+		BSReadLocker lock(&world->worldLock);
+		ForEachAdjacentBody(driver, rigidBody, [driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+			QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult1, targetHandle);
+			ForEachAdjacentBody(driver, adjacentBody, [driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+				QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
+				ForEachAdjacentBody(driver, adjacentBody, [hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+					QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
+					});
+				});
+			});
+		});
+
+	// Apply a point impulse at the hit location to the body we actually hit
+	QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
+}
+
+
+struct DoActorHitTask : TaskDelegate
+{
+	void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+	{
+		PlayerCharacter *player = *g_thePlayer;
+
+		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+		if (!swingHandler.IsSwingCoolingDown()) {
+			// There was no recent swing, so perform one now
+			swingHandler.Swing(isStab);
+		}
+
+		if (swingHandler.didLastSwingFail) {
+			PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
+			return;
+		}
+
+		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
+		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
+		if (!attackData) return;
+
+		// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
+		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+		*playerLastHitPosition = hitPosition;
+
+		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+		*playerLastHitVelocity = hitVelocity;
+
+		HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
+
+		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
+
+		if (Config::options.applyImpulseOnHit) {
+			if (isPowerAttack) {
+				impulseMult *= Config::options.powerAttackImpulseMultiplier;
+			}
+
+			if (NiPointer<NiAVObject> root = hitChar->GetNiNode()) {
+				if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(player->parentCell)) {
+					if (DoesRefrHaveNode(hitChar, hitNode)) {
+						if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(hitNode)) {
+							ApplyHitImpulse(world, hitChar, rigidBody->hkBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		: hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
+
+	static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
+		return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+	}
+
+	virtual void Run() {
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(hitActorHandle, refr)) {
+			if (Character *actor = DYNAMIC_CAST(refr, TESObjectREFR, Character)) {
+				DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+			}
+		}
+	}
+
+	virtual void Dispose() {
+		delete this;
+	}
+
+	UInt32 hitActorHandle;
+	NiPoint3 hitPosition;
+	NiPoint3 hitVelocity;
+	NiPointer<NiAVObject> hitNode;
+	float impulseMult;
+	bool isLeft;
+	bool isOffhand;
+	bool isTwoHanding;
+	bool isStab;
+};
+
+
 
 float g_savedMinSoundVel;
 
@@ -1100,48 +1232,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	inline bool IsCollided(TESObjectREFR *refr)
 	{
 		return collidedRefs[0].count(refr) || collidedRefs[1].count(refr);
-	}
-
-	NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, float impulseMult)
-	{
-		float massInv = rigidBody->getMassInv();
-		float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
-
-		float impulseStrength = std::clamp(
-			Config::options.hitImpulseBaseStrength + Config::options.hitImpulseProportionalStrength * powf(mass, Config::options.hitImpulseMassExponent),
-			Config::options.hitImpulseMinStrength, Config::options.hitImpulseMaxStrength
-		);
-
-		float impulseSpeed = min(VectorLength(hitVelocity), Config::options.hitImpulseMaxVelocity / *g_globalTimeMultiplier); // limit the imparted velocity to some reasonable value
-		NiPoint3 impulse = VectorNormalized(hitVelocity) * impulseSpeed * *g_havokWorldScale * mass; // This impulse will give the object the exact velocity it is hit with
-		impulse *= impulseStrength; // Scale the velocity as we see fit
-		impulse *= impulseMult;
-		if (impulse.z < 0) {
-			// Impulse points downwards somewhat, scale back the downward component so we don't get things shooting into the ground.
-			impulse.z *= Config::options.hitImpulseDownwardsMultiplier;
-		}
-
-		return impulse;
-	}
-
-	void ApplyHitImpulse(Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
-	{
-		UInt32 targetHandle = GetOrCreateRefrHandle(actor);
-		// Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-		ForEachRagdollDriver(actor, [this, rigidBody, hitVelocity, impulseMult, targetHandle](hkbRagdollDriver *driver) {
-			ForEachAdjacentBody(driver, rigidBody, [this, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-				QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult1, targetHandle);
-				ForEachAdjacentBody(driver, adjacentBody, [this, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-					QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
-					ForEachAdjacentBody(driver, adjacentBody, [this, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-						QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
-					});
-				});
-			});
-		});
-
-		// Apply a point impulse at the hit location to the body we actually hit
-		QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 	}
 
 	void PlayImpactEffects(TESObjectCELL *cell, hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, const NiPoint3 &hitNormal, bool isOffhand)
@@ -1214,41 +1304,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
-			SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
-			if (!swingHandler.IsSwingCoolingDown()) {
-				// There was no recent swing, so perform one now
-				swingHandler.Swing(isStab);
-			}
-
-			if (swingHandler.didLastSwingFail) {
-				PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
-				return;
-			}
-
-			// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
-			bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
-
-			BGSAttackData *attackData = nullptr;
-			PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
-			if (!attackData) return;
-
-			// Hit position / velocity need to be set before Character::HitTarget() which at some point will read from them (during the HitData population)
-			NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
-			*playerLastHitPosition = hitPosition;
-
-			NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
-			*playerLastHitVelocity = hitVelocity;
-
-			HitActor(player, hitChar, weapon, hitRigidBody, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
-
-			PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
-
-			if (Config::options.applyImpulseOnHit) {
-				if (isPowerAttack) {
-					impulseMult *= Config::options.powerAttackImpulseMultiplier;
-				}
-				ApplyHitImpulse(hitChar, hitRigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
-			}
+			NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
+			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
 		}
 		else {
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -3545,12 +3602,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 						hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this is the root collision node so there shouldn't be much of a hierarchy here
-						hkQsTransform poseT;
-						poseT.setMul(worldFromModel, poseData[boneIndex]);
+						hkQsTransform poseT; poseT.setMul(worldFromModel, poseData[boneIndex]);
 
-						if (Config::options.doWarp && ragdoll->rootBoneTransform) {
-							hkTransform actualT;
-							rb->getTransform(actualT);
+						if (ragdoll->rootBoneTransform) {
+							hkTransform actualT; rb->getTransform(actualT);
 
 							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->rootBoneTransform->m_translation) * *g_havokWorldScale;
 							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
@@ -3563,7 +3618,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							float actualAngle = atan2f(actualForward.x, actualForward.y);
 							ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
 
-							if (VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp) {
+							if (Config::options.doWarp && VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp) {
 								if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
 									SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
 								}
@@ -4028,7 +4083,7 @@ auto Actor_KillEndHavokHit_HookLoc = RelocAddr<uintptr_t>(0x60C808);
 
 auto ActorProcess_ExitFurniture_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x687FF7);
 auto ActorProcess_ExitFurniture_ResetRagdoll_HookLoc = RelocAddr<uintptr_t>(0x688061);
-auto ActorProcess_EnterFurniture_SetWorld_HookLoc = RelocAddr<uintptr_t>(0x68E344);
+auto ActorProcess_EnterFurniture_SetWorld_HookLoc = RelocAddr<uintptr_t>(0x68E344); // sets the world to null when entering furniture
 
 auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
 
