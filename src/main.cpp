@@ -881,9 +881,6 @@ struct SwingHandler
 				// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
 				// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
 				// It also sets the attackState to kDraw (1)
-
-				// TODO: Deadlock here on BSAnimationGraphManager::updateLock. Deadlocks with NotifyAnimationGraph from dualwieldblockvr sending blockStop.
-				//       What happens is that during the contact point callback, we are in the havok task queue critical section. In NotifyAnimationGraph at one point it tries to hkReferencedObject::AddReference() from the other thread, which needs the hkReferencedObjectLock.
 				PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
 			}
 		}
@@ -1046,11 +1043,11 @@ void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffha
 	BSTaskPool_QueueDestructibleDamageTask(BSTaskPool::GetSingleton(), target, damage);
 }
 
-void HitRefr(Character* source, TESObjectREFR* target, TESForm* weapon, hkpRigidBody* hitBody, bool isLeft, bool isOffhand)
+void HitRefr(Character *source, TESObjectREFR *target, bool setCause, bool isLeft, bool isOffhand)
 {
 	SetAttackState(source, 2); // kSwing
 
-	if (IsMoveableEntity(hitBody)) {
+	if (setCause) {
 		TESObjectREFR_SetActorCause(target, TESObjectREFR_GetActorCause(source));
 	}
 
@@ -1104,6 +1101,69 @@ void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, con
 
 	// Apply a point impulse at the hit location to the body we actually hit
 	QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
+}
+
+BGSImpactData * GetImpactData(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, bool isOffhand)
+{
+	PlayerCharacter *player = *g_thePlayer;
+
+	UInt32 materialId = 0;
+	UInt32 hitLayer = hitRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
+	if (hitLayer == BGSCollisionLayer::kCollisionLayer_Ground) {
+		materialId = TES_GetLandMaterialId(*g_tes, hitPosition);
+	}
+	else { // Not the ground
+		if (bhkShape *shape = (bhkShape *)hitRigidBody->getCollidable()->getShape()->m_userData) {
+			if (hkpShapeKey *shapeKey = evnt.getShapeKeys(evnt.getBody(1) == hitRigidBody)) {
+				materialId = bhkShape_GetMaterialId(shape, *shapeKey);
+			}
+		}
+	}
+
+	BGSMaterialType *material = GetMaterialType(materialId);
+	BGSImpactDataSet *impactSet = nullptr;
+
+	bool isBash = IsBashing(player, isOffhand);
+	if (isBash) {
+		BGSBlockBashData *blockBashData = TESForm_GetBlockBashData(weapon);
+		impactSet = blockBashData ? blockBashData->impact : (*g_unarmedWeapon)->impactDataSet;
+	}
+	else { // Not bash
+		TESForm *weaponOrUnarmed = weapon ? weapon : *g_unarmedWeapon;
+		if (weaponOrUnarmed->formType == kFormType_Weapon) {
+			if (TESObjectWEAP *weap = DYNAMIC_CAST(weaponOrUnarmed, TESForm, TESObjectWEAP)) {
+				impactSet = weap->impactDataSet;
+			}
+		}
+	}
+
+	if (!impactSet) return nullptr;
+
+	return BGSImpactDataSet_GetImpactData(impactSet, material);
+}
+
+void PlayImpactEffects(TESObjectCELL *cell, BGSImpactData *impact, NiPoint3 hitPosition, const NiPoint3 &hitNormal)
+{
+	if (!impact) return;
+
+	if (Config::options.playMeleeWorldImpactSounds) {
+		ImpactSoundData impactSoundData{
+			impact,
+			&hitPosition,
+			nullptr,
+			nullptr,
+			nullptr,
+			true,
+			false,
+			false,
+			nullptr
+		};
+		BGSImpactManager_PlayImpactSound(*g_impactManager, impactSoundData);
+	}
+
+	if (Config::options.playMeleeImpactEffects) {
+		TESObjectCELL_PlaceParticleEffect(cell, impact->duration, impact->model.GetModelName(), hitNormal, hitPosition, 1.f, 7, nullptr);
+	}
 }
 
 
@@ -1191,6 +1251,72 @@ struct DoActorHitTask : TaskDelegate
 };
 
 
+struct DoRefrHitTask : TaskDelegate
+{
+	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+	{
+		PlayerCharacter *player = *g_thePlayer;
+
+		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
+		if (!swingHandler.IsSwingCoolingDown()) {
+			// There was no recent swing, so perform one now
+			swingHandler.Swing(isStab);
+		}
+
+		if (swingHandler.didLastSwingFail) {
+			PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
+			return;
+		}
+
+		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
+		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+
+		BGSAttackData *attackData = nullptr;
+		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
+
+		NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
+		*playerLastHitPosition = hitPosition;
+
+		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
+		*playerLastHitVelocity = hitVelocity;
+
+		HitRefr(player, hitRefr, setCause, isLeft, isOffhand);
+
+		PlayImpactEffects(player->parentCell, impact, hitPosition, VectorNormalized(-hitVelocity));
+
+		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
+	}
+
+	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
+
+	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
+		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+	}
+
+	virtual void Run() {
+		NiPointer<TESObjectREFR> refr;
+		if (LookupREFRByHandle(hitRefrHandle, refr)) {
+			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+		}
+	}
+
+	virtual void Dispose() {
+		delete this;
+	}
+
+	UInt32 hitRefrHandle;
+	NiPoint3 hitPosition;
+	NiPoint3 hitVelocity;
+	BGSImpactData *impact;
+	bool setCause;
+	bool isLeft;
+	bool isOffhand;
+	bool isTwoHanding;
+	bool isStab;
+};
+
+
 
 float g_savedMinSoundVel;
 
@@ -1234,64 +1360,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		return collidedRefs[0].count(refr) || collidedRefs[1].count(refr);
 	}
 
-	void PlayImpactEffects(TESObjectCELL *cell, hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, const NiPoint3 &hitNormal, bool isOffhand)
-	{
-		PlayerCharacter *player = *g_thePlayer;
-
-		UInt32 materialId = 0;
-		UInt32 hitLayer = hitRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-		if (hitLayer == BGSCollisionLayer::kCollisionLayer_Ground) {
-			materialId = TES_GetLandMaterialId(*g_tes, hitPosition);
-		}
-		else { // Not the ground
-			if (bhkShape *shape = (bhkShape *)hitRigidBody->getCollidable()->getShape()->m_userData) {
-				if (hkpShapeKey *shapeKey = evnt.getShapeKeys(evnt.getBody(1) == hitRigidBody)) {
-					materialId = bhkShape_GetMaterialId(shape, *shapeKey);
-				}
-			}
-		}
-
-		BGSMaterialType *material = GetMaterialType(materialId);
-		BGSImpactDataSet *impactSet = nullptr;
-
-		bool isBash = IsBashing(player, isOffhand);
-		if (isBash) {
-			BGSBlockBashData *blockBashData = TESForm_GetBlockBashData(weapon);
-			impactSet = blockBashData ? blockBashData->impact : (*g_unarmedWeapon)->impactDataSet;
-		}
-		else { // Not bash
-			TESForm *weaponOrUnarmed = weapon ? weapon : *g_unarmedWeapon;
-			if (weaponOrUnarmed->formType == kFormType_Weapon) {
-				if (TESObjectWEAP *weap = DYNAMIC_CAST(weaponOrUnarmed, TESForm, TESObjectWEAP)) {
-					impactSet = weap->impactDataSet;
-				}
-			}
-		}
-
-		if (!impactSet) return;
-
-		if (BGSImpactData *impact = BGSImpactDataSet_GetImpactData(impactSet, material)) {
-			if (Config::options.playMeleeWorldImpactSounds) {
-				ImpactSoundData impactSoundData{
-					impact,
-					&hitPosition,
-					nullptr,
-					nullptr,
-					nullptr,
-					true,
-					false,
-					false,
-					nullptr
-				};
-				BGSImpactManager_PlayImpactSound(*g_impactManager, impactSoundData);
-			}
-
-			if (Config::options.playMeleeImpactEffects) {
-				TESObjectCELL_PlaceParticleEffect(cell, impact->duration, impact->model.GetModelName(), hitNormal, hitPosition, 1.f, 7, nullptr);
-			}
-		}
-	}
-
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
 		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
@@ -1319,38 +1387,9 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			bool isDestructible = destructible && destructible->data;
 
 			if (didDispatchHitEvent || isDestructible) {
-				// TODO: Play VFX?
+				BGSImpactData *impact = GetImpactData(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
 
-				SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
-				if (!swingHandler.IsSwingCoolingDown()) {
-					// There was no recent swing, so perform one now
-					swingHandler.Swing(isStab);
-				}
-
-				if (swingHandler.didLastSwingFail) {
-					PlayRumble(!isLeft, Config::options.swingFailedRumbleIntensity, Config::options.swingFailedRumbleDuration);
-					return;
-				}
-
-				// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
-				bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
-
-				BGSAttackData *attackData = nullptr;
-				PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
-
-				NiPoint3 *playerLastHitPosition = (NiPoint3 *)((UInt64)player + 0x6BC);
-				*playerLastHitPosition = hitPosition;
-
-				NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
-				*playerLastHitVelocity = hitVelocity;
-
-				HitRefr(player, hitRefr, weapon, hitRigidBody, isLeft, isOffhand);
-
-				if (Config::options.playMeleeImpactEffects || Config::options.playMeleeWorldImpactSounds) {
-					PlayImpactEffects(player->parentCell, hitRigidBody, evnt, weapon, hitPosition, VectorNormalized(-hitVelocity), isOffhand);
-				}
-
-				PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
+				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding, isStab));
 			}
 		}
 	}
