@@ -210,6 +210,7 @@ RelocAddr<_BSAnimationGraphManager_SetWorld> BSAnimationGraphManager_SetWorld(0x
 RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableConstraints(0xE09CA0);
 RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(0x61A4E0);
 RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll(0xA25860);
+RelocAddr<_hkbRagdollDriver_reset> hkbRagdollDriver_reset(0xA279C0);
 RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint(0xE63A20);
 RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0xAC06A0);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
@@ -316,6 +317,7 @@ RelocAddr<_hkpWorld_addAction> hkpWorld_addAction(0xAB1D40);
 RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction(0xAB1F60);
 RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld(0xB4D7C0);
 RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose(0xA27BC0);
+RelocAddr<_CopyAndPotentiallyApplyHavokScaleToTransform> CopyAndPotentiallyApplyHavokScaleToTransform(0xA27C40);
 RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage(0x3AC280);
 RelocAddr<_BSTaskPool_QueueRemoveCollisionFromWorld> BSTaskPool_QueueRemoveCollisionFromWorld(0x5CC120);
 RelocAddr<_BSTaskPool_QueueAddHavok> BSTaskPool_QueueAddHavok(0x5CBF90);

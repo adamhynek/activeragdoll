@@ -433,6 +433,9 @@ extern RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraint
 typedef hkaRagdollInstance * (*_hkbRagdollDriver_getRagdoll)(hkbRagdollDriver *_this);
 extern RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll;
 
+typedef void(*_hkbRagdollDriver_reset)(hkbRagdollDriver *_this);
+extern RelocAddr<_hkbRagdollDriver_reset> hkbRagdollDriver_reset;
+
 typedef bhkConstraint * (*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
 extern RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint;
 
@@ -748,11 +751,14 @@ extern RelocAddr<_hkpWorld_addAction> hkpWorld_addAction;
 typedef void(*_hkpWorld_removeAction)(hkpWorld *world, hkpAction* action);
 extern RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction;
 
-typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, hkQsTransform *worldFromModel, hkQsTransform *poseLocalSpace, hkQsTransform *poseWorldspaceOut);
+typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, const hkQsTransform &worldFromModel, hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
 extern RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld;
 
-typedef void(*_CopyAndApplyScaleToPose)(bool useHavokWorldScaleOrInverseScale, UInt32 numBones, hkQsTransform *poseLowResLocal, hkQsTransform *poseOut, float worldFromModelScale);
+typedef void(*_CopyAndApplyScaleToPose)(bool scaleByHavokWorldScale, UInt32 numBones, hkQsTransform *poseLowResLocal, hkQsTransform *poseOut, float worldFromModelScale);
 extern RelocAddr<_CopyAndApplyScaleToPose> CopyAndApplyScaleToPose;
+
+typedef void(*_CopyAndPotentiallyApplyHavokScaleToTransform)(bool scaleByHavokWorldScale, const hkQsTransform *in, hkQsTransform *out);
+extern RelocAddr<_CopyAndPotentiallyApplyHavokScaleToTransform> CopyAndPotentiallyApplyHavokScaleToTransform;
 
 typedef void(*_FOCollisionListener_TryApplyCollisionDamage)(FOCollisionListener *_this, float separatingSpeed, hkpRigidBody *rigidBodyA, hkpRigidBody *rigidBodyB, TESObjectREFR *refrA, TESObjectREFR *refrB);
 extern RelocAddr<_FOCollisionListener_TryApplyCollisionDamage> FOCollisionListener_TryApplyCollisionDamage;

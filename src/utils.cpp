@@ -594,8 +594,7 @@ void GetAllSkinnedNodes(NiAVObject *root, std::unordered_set<NiAVObject *> &skin
 
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
 {
-	auto rigidBody = GetRigidBody(root);
-	if (rigidBody) {
+	if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root)) {
 		return rigidBody;
 	}
 
@@ -604,7 +603,9 @@ NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
 		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
 			auto child = node->m_children.m_data[i];
 			if (child) {
-				return GetFirstRigidBody(child);
+				if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(child)) {
+					return rigidBody;
+				}
 			}
 		}
 	}

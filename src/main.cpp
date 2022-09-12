@@ -3453,29 +3453,6 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput& ge
 	}
 }
 
-int GetAnimBoneIndex(hkbCharacter *character, const std::string &boneName)
-{
-	hkaSkeleton *animSkeleton = character->setup->m_animationSkeleton;
-	for (int i = 0; i < animSkeleton->m_bones.getSize(); i++) {
-		const hkaBone &bone = animSkeleton->m_bones[i];
-		if (boneName == bone.m_name.cString()) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-int GetRagdollBoneIndex(hkbCharacter *character, const std::string &boneName)
-{
-	const hkaSkeleton *skeleton = character->ragdollDriver->ragdoll->m_skeleton;
-	for (int i = 0; i < skeleton->m_bones.getSize(); i++) {
-		const hkaBone &bone = skeleton->m_bones[i];
-		if (boneName == bone.m_name.cString()) {
-			return i;
-		}
-	}
-	return -1;
-}
 
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput)
 {
@@ -3630,23 +3607,43 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 
 	// Root motion
-	if (NiPointer<NiNode> root = actor->GetNiNode()) {
-		if (bhkCharacterController *controller = GetCharacterController(actor)) {
-			if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-				if (NiPointer<bhkRigidBody> rb = GetFirstRigidBody(root)) {
-					NiAVObject *collNode = GetNodeFromCollidable(&rb->hkBody->m_collidable);
+	if (bhkCharacterController *controller = GetCharacterController(actor)) {
+		if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+			if (driver->ragdoll->getNumBones() > 0) {
+				if (hkpRigidBody *rootRigidBody = driver->ragdoll->getRigidBodyOfBone(0)) {
+					if (NiPointer<NiAVObject> rootNode = GetNodeFromCollidable(rootRigidBody->getCollidable())) {
 
-					if (int boneIndex = GetAnimBoneIndex(driver->character, collNode->m_name); boneIndex >= 0) {
 						const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 
-						hkQsTransform *poseData = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-						// TODO: Technically I think we need to apply the entire hierarchy of poses here, not just worldFromModel, but this is the root collision node so there shouldn't be much of a hierarchy here
-						hkQsTransform poseT; poseT.setMul(worldFromModel, poseData[boneIndex]);
+						hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-						if (ragdoll->rootBoneTransform) {
-							hkTransform actualT; rb->getTransform(actualT);
+						int numPosesLow = driver->ragdoll->getNumBones();
 
-							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->rootBoneTransform->m_translation) * *g_havokWorldScale;
+						static std::vector<hkQsTransform> scaledLowResPoseLocal{};
+						scaledLowResPoseLocal.resize(numPosesLow);
+
+						static std::vector<hkQsTransform> lowResPoseLocal{};
+						lowResPoseLocal.resize(numPosesLow);
+
+						hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.data());
+
+						CopyAndApplyScaleToPose(true, numPosesLow, lowResPoseLocal.data(), scaledLowResPoseLocal.data(), worldFromModel.m_scale(0));
+
+						hkQsTransform worldFromModelWithScaledPositionButScaleIs1;
+						CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
+						worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
+
+						static std::vector<hkQsTransform> poseWorld{};
+						poseWorld.resize(numPosesLow);
+
+						hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.data(), poseWorld.data());
+
+						hkQsTransform poseT = poseWorld[0];
+
+						if (ragdoll->rootBoneTransform) { // We compare against last frame's pose transform since the rigidbody transforms aren't updated yet for this frame until after the physics step.
+							hkTransform actualT = rootRigidBody->getTransform();
+
+							NiPoint3 posePos = HkVectorToNiPoint(ragdoll->rootBoneTransform->m_translation);
 							NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
 							ragdoll->rootOffset = actualPos - posePos;
 
@@ -3658,29 +3655,31 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
 
 							if (Config::options.doWarp && VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp) {
-								if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-									SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
-								}
-
-								hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-
-								int numPosesLow = driver->ragdoll->getNumBones();
-								static std::vector<hkQsTransform> poseWorld{};
-								poseWorld.resize(numPosesLow);
-								hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+#ifdef _DEBUG
+								TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+								_MESSAGE("%d %s: Warp", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
 
 								// Set rigidbody transforms to the anim pose ones
-								for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-									hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+								for (int i = 0; i < std::size(poseWorld); i++) {
+									hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
+									if (!rb) continue;
+
 									hkQsTransform &transform = poseWorld[i];
 
 									hkTransform newTransform;
-									newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation) * *g_havokWorldScale);
+									newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));
 									hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
 
 									rb->getRigidMotion()->setTransform(newTransform);
 									hkpEntity_updateMovedBodyInfo(rb);
+
+									rb->getRigidMotion()->setLinearVelocity(NiPointToHkVector(NiPoint3()));
+									rb->getRigidMotion()->setAngularVelocity(NiPointToHkVector(NiPoint3()));
 								}
+
+								// Reset all ragdoll controller state to stop it from going crazy
+								hkbRagdollDriver_reset(driver);
 							}
 						}
 
