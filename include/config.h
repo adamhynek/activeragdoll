@@ -215,6 +215,7 @@ namespace Config {
 
 		float swingLinearVelocityThreshold = 3.f;
 		float swingDownwardsSpeedMultipler = 4.5f;
+		float forwardsPowerAttackStickForwardThreshold = 0.5f;
 		float swingRequiredHandHmdDirection = -0.8f;
 		float swingCooldown = 0.5f;
 		float swingDuration = 0.2f;

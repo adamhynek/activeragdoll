@@ -65,6 +65,9 @@ BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 bool g_isRightTriggerHeld = false;
 bool g_isLeftTriggerHeld = false;
 
+vr_src::VRControllerAxis_t g_rightStick;
+vr_src::VRControllerAxis_t g_leftStick;
+
 NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -358,16 +361,16 @@ struct ControllerTrackingData
 
 	float GetAverageVectorLength(std::deque<NiPoint3> &vectors, int numFrames)
 	{
-		float speed = 0;
+		float length = 0;
 
 		int i = 0;
-		for (NiPoint3 &velocity : velocities) {
-			speed += VectorLength(velocity);
+		for (NiPoint3 &vector : vectors) {
+			length += VectorLength(vector);
 			if (++i >= numFrames) {
 				break;
 			}
 		}
-		return speed /= i;
+		return length /= i;
 	}
 
 	int GetNumSmoothingFrames()
@@ -803,7 +806,7 @@ struct SwingHandler
 		}
 	}
 
-	void Swing(bool isStab = false)
+	void Swing()
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
@@ -816,8 +819,14 @@ struct SwingHandler
 			angularVelocity.y *= Config::options.swingDownwardsSpeedMultipler;
 		}
 
-		// This will trigger a forward power attack if the swing is triggered from a hit and the hit is a stab, otherwise the direction is based on swinging direction.
-		meleeData->swingDirection = isStab ? VRMeleeData::SwingDirection::kForward : VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocity.x, angularVelocity.y);
+		// The power attack direction is based on swinging direction. If we are moving forwards and it's a standing power attack (swinging down) then it's a forwards power attack.
+		vr_src::VRControllerAxis_t &movementStick = *g_leftHandedMode ? g_rightStick : g_leftStick;
+		bool isMovingForward = movementStick.y > Config::options.forwardsPowerAttackStickForwardThreshold;
+		meleeData->swingDirection = VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocity.x, angularVelocity.y);
+		if (isMovingForward && meleeData->swingDirection == VRMeleeData::SwingDirection::kDown) {
+			// Turn a standing power attack into a forwards power attack if the left joystick is being pushed sufficiently forward
+			meleeData->swingDirection = VRMeleeData::SwingDirection::kForward;
+		}
 
 		TESForm* offhandObj = player->GetEquippedObject(true);
 		TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
@@ -1169,14 +1178,14 @@ void PlayImpactEffects(TESObjectCELL *cell, BGSImpactData *impact, NiPoint3 hitP
 
 struct DoActorHitTask : TaskDelegate
 {
-	void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+	void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(isStab);
+			swingHandler.Swing();
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1219,18 +1228,18 @@ struct DoActorHitTask : TaskDelegate
 		}
 	}
 
-	DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
-		: hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
+	DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
+		: hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding) {}
 
-	static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
-		return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+	static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding) {
+		return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding);
 	}
 
 	virtual void Run() {
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(hitActorHandle, refr)) {
 			if (Character *actor = DYNAMIC_CAST(refr, TESObjectREFR, Character)) {
-				DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+				DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding);
 			}
 		}
 	}
@@ -1247,20 +1256,19 @@ struct DoActorHitTask : TaskDelegate
 	bool isLeft;
 	bool isOffhand;
 	bool isTwoHanding;
-	bool isStab;
 };
 
 
 struct DoRefrHitTask : TaskDelegate
 {
-	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(isStab);
+			swingHandler.Swing();
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1287,17 +1295,17 @@ struct DoRefrHitTask : TaskDelegate
 		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 	}
 
-	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
-		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
+	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding)
+		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding) {}
 
-	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
-		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding) {
+		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding);
 	}
 
 	virtual void Run() {
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(hitRefrHandle, refr)) {
-			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding);
 		}
 	}
 
@@ -1313,7 +1321,6 @@ struct DoRefrHitTask : TaskDelegate
 	bool isLeft;
 	bool isOffhand;
 	bool isTwoHanding;
-	bool isStab;
 };
 
 
@@ -1361,7 +1368,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	}
 
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
-		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
@@ -1373,7 +1380,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
 			NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
-			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
+			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding));
 		}
 		else {
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -1389,7 +1396,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			if (didDispatchHitEvent || isDestructible) {
 				BGSImpactData *impact = GetImpactData(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
 
-				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding, isStab));
+				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding));
 			}
 		}
 	}
@@ -1653,7 +1660,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
 		}
 		else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
 			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
@@ -4636,14 +4643,35 @@ void ControllerStateCB(uint32_t unControllerDeviceIndex, vr_src::VRControllerSta
 	constexpr vr_src::ETrackedControllerRole leftControllerRole = vr_src::ETrackedControllerRole::TrackedControllerRole_LeftHand;
 	vr_src::TrackedDeviceIndex_t leftController = (*g_openVR)->vrSystem->GetTrackedDeviceIndexForControllerRole(leftControllerRole);
 
-	if (unControllerDeviceIndex == rightController) {
-		// Check if the trigger is pressed
-		const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
-		g_isRightTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
-	}
-	else if (unControllerDeviceIndex == leftController) {
-		const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
-		g_isLeftTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
+	if (g_openVR && *g_openVR) {
+		BSOpenVR *openVR = *g_openVR;
+		vr_src::IVRSystem *vrSystem = openVR->vrSystem;
+
+		if (unControllerDeviceIndex == rightController) {
+			// Check if the trigger is pressed
+			const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
+			g_isRightTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
+
+			for (int i = 0; i < vr_src::k_unControllerStateAxisCount; i++) {
+				vr_src::EVRControllerAxisType axisType = static_cast<vr_src::EVRControllerAxisType>(vrSystem->GetInt32TrackedDeviceProperty(unControllerDeviceIndex, static_cast<vr_src::ETrackedDeviceProperty>(vr_src::ETrackedDeviceProperty::Prop_Axis0Type_Int32 + i)));
+				if (axisType == vr_src::EVRControllerAxisType::k_eControllerAxis_Joystick) {
+					g_rightStick = pControllerState->rAxis[i];
+					break;
+				}
+			}
+		}
+		else if (unControllerDeviceIndex == leftController) {
+			const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
+			g_isLeftTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
+
+			for (int i = 0; i < vr_src::k_unControllerStateAxisCount; i++) {
+				vr_src::EVRControllerAxisType axisType = static_cast<vr_src::EVRControllerAxisType>(vrSystem->GetInt32TrackedDeviceProperty(unControllerDeviceIndex, static_cast<vr_src::ETrackedDeviceProperty>(vr_src::ETrackedDeviceProperty::Prop_Axis0Type_Int32 + i)));
+				if (axisType == vr_src::EVRControllerAxisType::k_eControllerAxis_Joystick) {
+					g_leftStick = pControllerState->rAxis[i];
+					break;
+				}
+			}
+		}
 	}
 }
 

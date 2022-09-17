@@ -375,6 +375,7 @@ namespace Config {
 
 		if (!RegisterFloat("swingLinearVelocityThreshold", options.swingLinearVelocityThreshold)) success = false;
 		if (!RegisterFloat("swingDownwardsSpeedMultipler", options.swingDownwardsSpeedMultipler)) success = false;
+		if (!RegisterFloat("forwardsPowerAttackStickForwardThreshold", options.forwardsPowerAttackStickForwardThreshold)) success = false;
 		if (!RegisterFloat("swingRequiredHandHmdDirection", options.swingRequiredHandHmdDirection)) success = false;
 		if (!RegisterFloat("swingCooldown", options.swingCooldown)) success = false;
 		if (!RegisterFloat("swingDuration", options.swingDuration)) success = false;
