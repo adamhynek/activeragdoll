@@ -806,7 +806,7 @@ struct SwingHandler
 		}
 	}
 
-	void Swing()
+	void Swing(bool isStab = false)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
@@ -823,6 +823,10 @@ struct SwingHandler
 		vr_src::VRControllerAxis_t &movementStick = *g_leftHandedMode ? g_rightStick : g_leftStick;
 		bool isMovingForward = movementStick.y > Config::options.forwardsPowerAttackStickForwardThreshold;
 		meleeData->swingDirection = VRMeleeData::GetSwingDirectionFromAngularVelocities(angularVelocity.x, angularVelocity.y);
+		if (isStab) {
+			// Treat a stab as an in-place (downwards) attack. Below it can be converted to a forwards attack.
+			meleeData->swingDirection = VRMeleeData::SwingDirection::kDown;
+		}
 		if (isMovingForward && meleeData->swingDirection == VRMeleeData::SwingDirection::kDown) {
 			// Turn a standing power attack into a forwards power attack if the left joystick is being pushed sufficiently forward
 			meleeData->swingDirection = VRMeleeData::SwingDirection::kForward;
@@ -1178,14 +1182,14 @@ void PlayImpactEffects(TESObjectCELL *cell, BGSImpactData *impact, NiPoint3 hitP
 
 struct DoActorHitTask : TaskDelegate
 {
-	void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
+	void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing();
+			swingHandler.Swing(isStab);
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1228,18 +1232,18 @@ struct DoActorHitTask : TaskDelegate
 		}
 	}
 
-	DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
-		: hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding) {}
+	DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		: hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
 
-	static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding) {
-		return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding);
+	static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
+		return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
 	}
 
 	virtual void Run() {
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(hitActorHandle, refr)) {
 			if (Character *actor = DYNAMIC_CAST(refr, TESObjectREFR, Character)) {
-				DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding);
+				DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
 			}
 		}
 	}
@@ -1256,19 +1260,20 @@ struct DoActorHitTask : TaskDelegate
 	bool isLeft;
 	bool isOffhand;
 	bool isTwoHanding;
+	bool isStab;
 };
 
 
 struct DoRefrHitTask : TaskDelegate
 {
-	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding)
+	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing();
+			swingHandler.Swing(isStab);
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1295,17 +1300,17 @@ struct DoRefrHitTask : TaskDelegate
 		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 	}
 
-	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding)
-		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding) {}
+	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
 
-	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding) {
-		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding);
+	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
+		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
 	}
 
 	virtual void Run() {
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(hitRefrHandle, refr)) {
-			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding);
+			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
 		}
 	}
 
@@ -1321,6 +1326,7 @@ struct DoRefrHitTask : TaskDelegate
 	bool isLeft;
 	bool isOffhand;
 	bool isTwoHanding;
+	bool isStab;
 };
 
 
@@ -1368,7 +1374,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 	}
 
 	void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
-		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding)
+		TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 		if (hitRefr == player) return;
@@ -1380,7 +1386,8 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
 			NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
-			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding));
+			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
+
 		}
 		else {
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -1395,8 +1402,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			if (didDispatchHitEvent || isDestructible) {
 				BGSImpactData *impact = GetImpactData(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
-
-				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding));
+				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding, isStab));
 			}
 		}
 	}
@@ -1660,7 +1666,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 			}
 
 			float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding);
+			DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
 		}
 		else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
 			// Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
