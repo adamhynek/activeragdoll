@@ -1330,10 +1330,53 @@ struct DoRefrHitTask : TaskDelegate
 };
 
 
+struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
+{
+	PotentiallyConvertBipedObjectToDeadBipTask(UInt32 refrHandle, bhkRigidBody *rigidBody)
+		: refrHandle(refrHandle), rigidBody(rigidBody) {}
+
+	static PotentiallyConvertBipedObjectToDeadBipTask *Create(UInt32 refrHandle, bhkRigidBody *rigidBody) {
+		return new PotentiallyConvertBipedObjectToDeadBipTask(refrHandle, rigidBody);
+	}
+
+	virtual void Run() {
+		NiPointer<TESObjectREFR> refr;
+		if (!LookupREFRByHandle(refrHandle, refr)) return;
+
+		Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+		if (!actor) return;
+
+		NiPointer<NiNode> root = refr->GetNiNode();
+		if (!root || !FindRigidBody(root, rigidBody->hkBody)) return;
+
+		bool isRagdollRigidBody = false;
+		// This is a task because we acquire the animation graph manager lock in here, which can cause a deadlock in some cases
+		ForEachRagdollDriver(actor, [this, &isRagdollRigidBody](hkbRagdollDriver *driver) {
+			if (driver->ragdoll->m_rigidBodies.indexOf(rigidBody->hkBody) >= 0) {
+				isRagdollRigidBody = true;
+			}
+		});
+		if (isRagdollRigidBody) return;
+
+		rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
+		rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
+	}
+
+	virtual void Dispose() {
+		delete this;
+	}
+
+	UInt32 refrHandle;
+	NiPointer<bhkRigidBody> rigidBody;
+};
+
 
 float g_savedMinSoundVel;
 
-struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
+struct PhysicsListener :
+	hkpContactListener,
+	hkpWorldPostSimulationListener,
+	hkpEntityListener
 {
 	struct CollisionEvent
 	{
@@ -1387,7 +1430,6 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 
 			NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
 			g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
-
 		}
 		else {
 			if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -1446,7 +1488,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 	}
 
-	virtual void contactPointCallback(const hkpContactPointEvent& evnt) {
+	virtual void contactPointCallback(const hkpContactPointEvent& evnt) override {
 		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED ||
 			!evnt.m_contactPointProperties->isPotential()) {
 			return;
@@ -1695,7 +1737,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 	}
 
-	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt)
+	virtual void collisionAddedCallback(const hkpCollisionEvent& evnt) override
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
@@ -1710,7 +1752,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		//_DMESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
-	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt)
+	virtual void collisionRemovedCallback(const hkpCollisionEvent& evnt) override
 	{
 		hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
 		hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
@@ -1720,7 +1762,7 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		//_DMESSAGE("%d Removed %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
 	}
 
-	virtual void postSimulationCallback(hkpWorld* world)
+	virtual void postSimulationCallback(hkpWorld* world) override
 	{
 		// Restore the game's original value for fMinSoundVel after any contact callbacks would have been called.
 		*g_fMinSoundVel = g_savedMinSoundVel;
@@ -1812,9 +1854,30 @@ struct ContactListener : hkpContactListener, hkpWorldPostSimulationListener
 		}
 	}
 
+	virtual void entityAddedCallback(hkpEntity *entity) override {
+		hkpRigidBody *rigidBody = hkpGetRigidBody(entity->getCollidable());
+		if (!rigidBody) return;
+
+		UInt32 layer = rigidBody->getCollisionFilterInfo() & 0x7f;
+		if (layer != BGSCollisionLayer::kCollisionLayer_Biped) return;
+
+		// Make sure it's a standalone object that belongs to a node (has a collision object) and isn't the rigidbody of the character controller
+		if (!rigidBody->hasProperty((hkUint32)HavokProperty::CollisionObject) || rigidBody->hasProperty((hkUint32)HavokProperty::CharacterController)) return;
+
+		NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable());
+		if (!refr) return;
+
+		if (refr->formType != kFormType_Character) return;
+
+		bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
+		if (!wrapper) return;
+
+		g_taskInterface->AddTask(PotentiallyConvertBipedObjectToDeadBipTask::Create(GetOrCreateRefrHandle(refr), wrapper));
+	}
+
 	NiPointer<bhkWorld> world = nullptr;
 };
-ContactListener g_contactListener{};
+PhysicsListener g_physicsListener{};
 
 struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 {
@@ -2124,8 +2187,8 @@ struct NPCData
 		float deltaTime = *g_deltaTime;
 
 		bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-		bool isTouchedRight = g_contactListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
-		bool isTouchedLeft = g_contactListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
+		bool isTouchedRight = g_physicsListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
+		bool isTouchedLeft = g_physicsListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
 		bool isInteractedWith = isGrabbed || isTouchedLeft || isTouchedRight || isShoved;
 
 		PlayerCharacter *player = *g_thePlayer;
@@ -2342,10 +2405,8 @@ void ModifyConstraints(Actor *actor)
 		if (Config::options.convertHingeConstraintsToRagdollConstraints) {
 			// Convert any limited hinge constraints to ragdoll constraints so that they can be loosened properly
 			for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
-				NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable);
-				if (node) {
-					NiPointer<bhkRigidBody> wrapper = GetRigidBody(node);
-					if (wrapper) {
+				if (NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable)) {
+					if (NiPointer<bhkRigidBody> wrapper = GetRigidBody(node)) {
 						for (int i = 0; i < wrapper->constraints.count; i++) {
 							bhkConstraint *constraint = wrapper->constraints.entries[i];
 							if (constraint->constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_LIMITEDHINGE) {
@@ -2800,7 +2861,7 @@ bool UpdateActorShove(Actor *actor)
 		ControllerTrackingData &controllerData = g_controllerData[isLeft];
 
 		if (controllerData.avgSpeed > Config::options.shoveSpeedThreshold) {
-			if (g_contactListener.handCollidedRefs[isLeft].count(actor) && ShouldShoveActor(actor)) {
+			if (g_physicsListener.handCollidedRefs[isLeft].count(actor) && ShouldShoveActor(actor)) {
 				if (!g_shovedActors.count(actor)) {
 					float staminaCost = Config::options.shoveStaminaCost;
 					float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
@@ -2840,11 +2901,11 @@ bool UpdateActorShove(Actor *actor)
 
 					PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
 					// Ignore future contact points for a bit to make things less janky
-					g_contactListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
+					g_physicsListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
 
 					if (g_controllerData[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
 						PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
-						g_contactListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
+						g_physicsListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
 					}
 
 					g_shovedActors[actor] = g_currentFrameTime;
@@ -2872,7 +2933,7 @@ void ResetObjects()
 	g_shoveData.clear();
 	g_shoveAnimTimes.clear();
 	g_shovedActors.clear();
-	g_contactListener = ContactListener{};
+	g_physicsListener = PhysicsListener{};
 }
 
 double g_worldChangedTime = 0.0;
@@ -2921,18 +2982,18 @@ void ProcessHavokHitJobsHook()
 		g_playerCollisionGroup = filterInfo >> 16;
 	}
 
-	if (world != g_contactListener.world) {
-		if (NiPointer<bhkWorld> oldWorld = g_contactListener.world) {
+	if (world != g_physicsListener.world) {
+		if (NiPointer<bhkWorld> oldWorld = g_physicsListener.world) {
 			_MESSAGE("Removing listeners from old havok world");
 			{
 				BSWriteLocker lock(&oldWorld->worldLock);
-				hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(oldWorld->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK);
-				if (collisionCallbackExtension) {
+				if (hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(oldWorld->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK)) {
 					// There are times when the collision callback extension is gone even if we required it earlier...
 					hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(oldWorld->world);
 				}
-				hkpWorld_removeContactListener(oldWorld->world, &g_contactListener);
-				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_contactListener);
+				hkpWorld_removeContactListener(oldWorld->world, &g_physicsListener);
+				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_physicsListener);
+				hkpWorld_removeEntityListener(world->world, &g_physicsListener);
 			}
 
 			ResetObjects();
@@ -2944,8 +3005,9 @@ void ProcessHavokHitJobsHook()
 
 			hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
 
-			hkpWorld_addContactListener(world->world, &g_contactListener);
-			hkpWorld_addWorldPostSimulationListener(world->world, &g_contactListener);
+			hkpWorld_addContactListener(world->world, &g_physicsListener);
+			hkpWorld_addWorldPostSimulationListener(world->world, &g_physicsListener);
+			hkpWorld_addEntityListener(world->world, &g_physicsListener);
 
 			bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 
@@ -2978,7 +3040,7 @@ void ProcessHavokHitJobsHook()
 			ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_BipedNoCC);
 		}
 
-		g_contactListener.world = world;
+		g_physicsListener.world = world;
 		g_worldChangedTime = g_currentFrameTime;
 	}
 
@@ -3182,16 +3244,16 @@ void ProcessHavokHitJobsHook()
 
 	{ // Ensure our listener is the last one (will be called first)
 		hkArray<hkpContactListener*> &listeners = world->world->m_contactListeners;
-		if (listeners[listeners.getSize() - 1] != &g_contactListener) {
+		if (listeners[listeners.getSize() - 1] != &g_physicsListener) {
 			BSWriteLocker lock(&world->worldLock);
 
 			int numListeners = listeners.getSize();
-			int listenerIndex = listeners.indexOf(&g_contactListener);
+			int listenerIndex = listeners.indexOf(&g_physicsListener);
 			if (listenerIndex >= 0) {
 				for (int i = listenerIndex + 1; i < numListeners; ++i) {
 					listeners[i - 1] = listeners[i];
 				}
-				listeners[numListeners - 1] = &g_contactListener;
+				listeners[numListeners - 1] = &g_physicsListener;
 			}
 		}
 	}
@@ -3385,7 +3447,7 @@ void ProcessHavokHitJobsHook()
 							if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
 								(name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
 
-								if (g_contactListener.IsCollided(actor) || isHeld) {
+								if (g_physicsListener.IsCollided(actor) || isHeld) {
 									if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
 										g_selfCollidableBipedGroups.insert(collisionGroup);
 										UpdateCollisionFilterOnAllBones(actor);

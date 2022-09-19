@@ -532,6 +532,12 @@ extern RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPost
 typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
 extern RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener;
 
+typedef void(*_hkpWorld_addEntityListener)(hkpWorld *_this, hkpEntityListener *entityListener);
+extern RelocAddr<_hkpWorld_addEntityListener> hkpWorld_addEntityListener;
+
+typedef void(*_hkpWorld_removeEntityListener)(hkpWorld *_this, hkpEntityListener *entityListener);
+extern RelocAddr<_hkpWorld_removeEntityListener> hkpWorld_removeEntityListener;
+
 typedef void(*_hkpShapeShrinker_shrinkConvexVerticesShape)(hkpConvexVerticesShape* convexShape, hkReal maximumConvexRadius, hkReal relShrinkRadius, hkReal allowedDisplacement, const char* shapeName, hkBool optimize); // shapeName default null, optimize default true
 extern RelocAddr<_hkpShapeShrinker_shrinkConvexVerticesShape> hkpShapeShrinker_shrinkConvexVerticesShape;
 

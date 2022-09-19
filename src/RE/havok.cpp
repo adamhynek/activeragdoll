@@ -252,3 +252,58 @@ float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_th
 		return hkpSimpleContactConstraintUtil_calculateSeparatingVelocity(_this.m_bodies[0], _this.m_bodies[1], _this.m_bodies[0]->getCenterOfMassInWorld(), _this.m_bodies[1]->getCenterOfMassInWorld(), _this.m_contactPoint);
 	}
 }
+
+// This is essentially the default game logic for determining whether 2 filter infos should collide or not
+bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 filterInfoA, UInt32 filterInfoB, std::optional<UInt64> a_layerBitfield)
+{
+	UInt32 layerA = filterInfoA & 0x7F;
+	__int64 layerBitfield = a_layerBitfield ? *a_layerBitfield : _this->layerBitfields[layerA];
+
+	if (layerA != 44 && ((filterInfoA & 0x4000) != 0 || (filterInfoB & 0x4000) != 0)) // check if nocollision flag is set
+		return 0;
+
+	if ((filterInfoA & 0xFFFF0000) == 0 || (filterInfoB & 0xFFFF0000) == 0) // collision group 0 means collide with everything
+		return 1;
+
+	UInt32 layerB = filterInfoB & 0x7F;
+
+	if (((filterInfoB ^ filterInfoA) & 0xFFFF0000) == 0) {
+		// same collision group
+
+		if (!_bittest64(&layerBitfield, layerB) || (layerA == 30 && (filterInfoA & 0x8000) != 0 || layerB == 30 && (filterInfoB & 0x8000) != 0) && (filterInfoA & 0x80) == 0 && (filterInfoB & 0x80) == 0) {
+			// layer bitfield check failed, or something with charcontroller layer and bit 15 / bit 7
+			return 0;
+		}
+		long v10 = filterInfoB & filterInfoA;
+		if (_bittest(&v10, 0xFu)) { // bit 15 is set in both collisioninfos
+			long v11 = ((filterInfoA >> 8) & 0x1F) - ((filterInfoB >> 8) & 0x1F);
+			return std::abs(v11) != 1;
+		}
+		else {
+			if (layerA != 8 && (layerA - 32) > 1 || layerB != 8 && layerB - 32 > 1) // both not biped, biped_no_cc, or deadbip
+				return 0;
+			long bipedBitfield = _this->bipedBitfields[(filterInfoA >> 8) & 0x1F];
+			return _bittest(&bipedBitfield, (filterInfoB >> 8) & 0x1F);
+		}
+	}
+
+	// different collision group
+
+	if (layerA != layerB && (layerA == 30 && (filterInfoA & 0x1F00) == 7936 || layerB == 30 && (filterInfoB & 0x1F00) == 7936))
+		return 0;
+	if ((layerA != 30 || (filterInfoA & 0x8000) == 0) && (layerB != 30 || (filterInfoB & 0x8000) == 0)) {
+		// Most common case - layer is not charcontroller, or bit 15 is not set, for both infos
+		return _bittest64(&layerBitfield, layerB);
+	}
+
+	// layer is charcontroller and bit 15 is set, for either info
+
+	if (layerA == 30 && (filterInfoA & 0x8000) != 0 && (filterInfoB & 0x80) != 0 || (filterInfoA & 0x80) != 0 && layerB == 30 && (filterInfoB & 0x8000) != 0)
+		return 1;
+
+	__int64 bitfield = _this->triggerBitfield1;
+	if ((!_bittest64(&bitfield, layerB) & !_bittest64(&bitfield, layerA)) != 0)
+		return 0;
+
+	return _bittest64(&layerBitfield, layerB);
+}

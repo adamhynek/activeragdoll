@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <Common/Base/hkBase.h>
 #include <Physics/Dynamics/Entity/hkpRigidBody.h>
 #include <Physics/Dynamics/Phantom/hkpSimpleShapePhantom.h>
@@ -331,6 +333,7 @@ inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().bloc
 void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener* worldListener);
 int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener* proxyListener);
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this);
+bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 filterInfoA, UInt32 filterInfoB, std::optional<UInt64> a_layerBitfield = std::nullopt);
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);
 bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, float strength);
