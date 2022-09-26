@@ -3637,12 +3637,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-			hkQsTransform *poseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+			hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-			int numPosesLow = driver->ragdoll->getNumBones();
 			static std::vector<hkQsTransform> poseWorld{};
-			poseWorld.resize(numPosesLow);
-			hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld(driver, poseLocal, worldFromModel, poseWorld.data());
+			MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, poseWorld);
 
 			// Set rigidbody transforms to the anim pose ones and save the old values
 			static std::vector<hkTransform> savedTransforms{};
@@ -3652,7 +3650,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				hkQsTransform &transform = poseWorld[i];
 
 				savedTransforms.push_back(rb->getTransform());
-				rb->m_motion.getMotionState()->m_transform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation) * *g_havokWorldScale);
+				rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
 				hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
 			}
 
@@ -3733,29 +3731,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 					if (NiPointer<NiAVObject> rootNode = GetNodeFromCollidable(rootRigidBody->getCollidable())) {
 
 						const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-
 						hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-						int numPosesLow = driver->ragdoll->getNumBones();
-
-						static std::vector<hkQsTransform> scaledLowResPoseLocal{};
-						scaledLowResPoseLocal.resize(numPosesLow);
-
-						static std::vector<hkQsTransform> lowResPoseLocal{};
-						lowResPoseLocal.resize(numPosesLow);
-
-						hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.data());
-
-						CopyAndApplyScaleToPose(true, numPosesLow, lowResPoseLocal.data(), scaledLowResPoseLocal.data(), worldFromModel.m_scale(0));
-
-						hkQsTransform worldFromModelWithScaledPositionButScaleIs1;
-						CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
-						worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
-
 						static std::vector<hkQsTransform> poseWorld{};
-						poseWorld.resize(numPosesLow);
-
-						hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.data(), poseWorld.data());
+						MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, poseWorld);
 
 						hkQsTransform poseT = poseWorld[0];
 

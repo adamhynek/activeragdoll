@@ -259,6 +259,31 @@ void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *con
 	hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformB.m_translation, bodyBTransform, pivot);
 }
 
+void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, std::vector<hkQsTransform> &poseWorld)
+{
+	// We need this because hkbRagdollDriver::mapHighResPoseLocalToLowResPoseWorld() does not actually give correct results.
+	// This is essentially what hkbRagdollDriver::driveToPose() does when computing what transforms to drive the rigidbodies to.
+
+	int numPosesLow = driver->ragdoll->getNumBones();
+
+	static std::vector<hkQsTransform> lowResPoseLocal{};
+	lowResPoseLocal.resize(numPosesLow);
+
+	hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.data());
+
+	static std::vector<hkQsTransform> scaledLowResPoseLocal{};
+	scaledLowResPoseLocal.resize(numPosesLow);
+
+	CopyAndApplyScaleToPose(true, numPosesLow, lowResPoseLocal.data(), scaledLowResPoseLocal.data(), worldFromModel.m_scale(0));
+
+	hkQsTransform worldFromModelWithScaledPositionButScaleIs1;
+	CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
+	worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
+
+	poseWorld.resize(numPosesLow);
+	hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.data(), poseWorld.data());
+}
+
 // This is essentially the default game logic for determining whether 2 filter infos should collide or not
 bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 filterInfoA, UInt32 filterInfoB, std::optional<UInt64> a_layerBitfield)
 {
