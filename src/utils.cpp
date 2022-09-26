@@ -601,8 +601,7 @@ NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
 	NiNode *node = root->GetAsNiNode();
 	if (node) {
 		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
-			auto child = node->m_children.m_data[i];
-			if (child) {
+			if (NiAVObject *child = node->m_children.m_data[i]) {
 				if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(child)) {
 					return rigidBody;
 				}

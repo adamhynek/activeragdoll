@@ -155,6 +155,7 @@ namespace Config {
 		bool enableBipedProjectileCollision = true;
 		bool disableGravityForActiveRagdolls = true;
 		bool loosenRagdollContraintsToMatchPose = true;
+		bool loosenRagdollConstraintPivots = true;
 		bool convertHingeConstraintsToRagdollConstraints = true;
 		bool copyFootIkToPoseTrack = true;
 		bool disableCullingForActiveRagdolls = true;

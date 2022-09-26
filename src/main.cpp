@@ -14,6 +14,7 @@
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
 #include <Common/Base/Types/Geometry/hkStridedVertices.h>
+#include <Physics/Dynamics/Constraint/Bilateral/BallAndSocket/hkpBallAndSocketConstraintData.h>
 
 #include "xbyak/xbyak.h"
 #include "common/IDebugLog.h"  // IDebugLog
@@ -3655,14 +3656,57 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
 			}
 
-			{ // Loosen ragdoll constraints to allow the anim pose
-				if (!ragdoll->easeConstraintsAction) {
-					hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
-					hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
-					ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
-					hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
+			if (!ragdoll->easeConstraintsAction) {
+				// Loosen ragdoll constraints to allow the anim pose
+				hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
+				hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
+				ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
+				hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
+
+				// Loosen constraint pivots first
+				if (Config::options.loosenRagdollConstraintPivots) {
+					ragdoll->originalConstraintPivots.resize(driver->ragdoll->getConstraintArray().getSize());
+
+					for (int i = 0; i < driver->ragdoll->getConstraintArray().getSize(); i++) {
+						hkpConstraintInstance *constraint = driver->ragdoll->getConstraintArray()[i];
+						if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+							hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+#ifdef _DEBUG
+							if (constraint->getInternal()) {
+								hkpConstraintRuntime *rt = constraint->getRuntime();
+								hkpRagdollConstraintData::Runtime *runtime = hkpRagdollConstraintData::getRuntime(rt);
+								hkReal impulseX = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_0].m_impulseApplied;
+								hkReal impulseY = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_1].m_impulseApplied;
+								hkReal impulseZ = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_2].m_impulseApplied;
+								NiPoint3 impulse = { impulseX, impulseY, impulseZ };
+								PrintVector(impulse);
+							}
+#endif // _DEBUG
+
+							hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
+							hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
+
+							hkVector4 pivotAbodySpace = data->m_atoms.m_transforms.m_transformA.m_translation;
+							hkVector4 pivotBbodySpace = data->m_atoms.m_transforms.m_transformB.m_translation;
+							ragdoll->originalConstraintPivots[i] = { pivotAbodySpace, pivotBbodySpace };
+
+							hkVector4 pivotA; hkVector4_setTransformedPos(pivotA, bodyA->getTransform(), pivotAbodySpace);
+							hkVector4 pivotB; hkVector4_setTransformedPos(pivotB, bodyB->getTransform(), pivotBbodySpace);
+
+#ifdef _DEBUG
+							float pivotError = VectorLength(HkVectorToNiPoint(pivotA) - HkVectorToNiPoint(pivotB));
+							_MESSAGE("%.2f", pivotError);
+#endif // _DEBUG
+
+							hkVector4 pivot = NiPointToHkVector(lerp(HkVectorToNiPoint(pivotA), HkVectorToNiPoint(pivotB), 0.5f));
+
+							hkpRagdollConstraintData_setPivotInWorldSpace(data, bodyA->getTransform(), bodyB->getTransform(), pivot);
+						}
+					}
 				}
 
+				// Loosen angular constraints second
 				hkpEaseConstraintsAction_loosenConstraints(ragdoll->easeConstraintsAction);
 			}
 
@@ -3847,8 +3891,21 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		if (ragdoll->easeConstraintsAction) {
 			// Restore constraint limits from before we loosened them
 			// TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
+
 			hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
 			ragdoll->easeConstraintsAction = nullptr;
+
+			if (Config::options.loosenRagdollConstraintPivots) {
+				for (int i = 0; i < driver->ragdoll->getConstraintArray().getSize(); i++) {
+					hkpConstraintInstance *constraint = driver->ragdoll->getConstraintArray()[i];
+					if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+						hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+						data->m_atoms.m_transforms.m_transformA.m_translation = ragdoll->originalConstraintPivots[i].first;
+						data->m_atoms.m_transforms.m_transformB.m_translation = ragdoll->originalConstraintPivots[i].second;
+					}
+				}
+			}
 		}
 	}
 

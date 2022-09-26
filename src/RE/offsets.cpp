@@ -131,6 +131,8 @@ RelocAddr<_bhkBoxShape_ctor> bhkBoxShape_ctor(0x2AEB70);
 RelocAddr<_bhkShape_GetMaterialId> bhkShape_GetMaterialId(0xE30F40);
 RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReference(0xA01280);
 RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReference(0xA01340);
+RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos(0xA05D80);
+RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos(0xA05DC0);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);

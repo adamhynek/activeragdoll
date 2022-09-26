@@ -253,6 +253,12 @@ float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_th
 	}
 }
 
+void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *constraint, const hkTransform &bodyATransform, const hkTransform &bodyBTransform, const hkVector4 &pivot)
+{
+	hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformA.m_translation, bodyATransform, pivot);
+	hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformB.m_translation, bodyBTransform, pivot);
+}
+
 // This is essentially the default game logic for determining whether 2 filter infos should collide or not
 bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 filterInfoA, UInt32 filterInfoB, std::optional<UInt64> a_layerBitfield)
 {

@@ -13,6 +13,7 @@
 #include <Physics/Collide/Shape/Compound/Tree/Mopp/hkpMoppBvTreeShape.h>
 #include <Physics/Dynamics/Collide/ContactListener/hkpContactPointEvent.h>
 #include <Physics/Utilities/CharacterControl/CharacterProxy/hkpCharacterProxy.h>
+#include <Physics/Dynamics/Constraint/Bilateral/Ragdoll/hkpRagdollConstraintData.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -333,6 +334,7 @@ inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().bloc
 void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener* worldListener);
 int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener* proxyListener);
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this);
+void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *constraint, const hkTransform &bodyATransform, const hkTransform &bodyBTransform, const hkVector4 &pivot);
 bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 filterInfoA, UInt32 filterInfoB, std::optional<UInt64> a_layerBitfield = std::nullopt);
 
 void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConstraintCinfo *cInfo);

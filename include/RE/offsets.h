@@ -234,6 +234,12 @@ extern RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReferen
 typedef void(*_hkReferencedObject_removeReference)(hkReferencedObject *_this);
 extern RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReference;
 
+typedef void(*_hkVector4_setTransformedPos)(hkVector4 &_this, const hkTransform &transform, const hkVector4 &pos);
+extern RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos;
+
+typedef void(*_hkVector4_setTransformedInversePos)(hkVector4 &_this, const hkTransform &transform, const hkVector4 &pos);
+extern RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos;
+
 
 // More havok-related
 typedef bhkWorld * (*_GetHavokWorldFromCell)(TESObjectCELL *cell);
