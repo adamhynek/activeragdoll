@@ -3663,43 +3663,27 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 				// Loosen constraint pivots first
 				if (Config::options.loosenRagdollConstraintPivots) {
-					ragdoll->originalConstraintPivots.resize(driver->ragdoll->getConstraintArray().getSize());
+					ragdoll->originalConstraintPivots.clear();
 
-					for (int i = 0; i < driver->ragdoll->getConstraintArray().getSize(); i++) {
-						hkpConstraintInstance *constraint = driver->ragdoll->getConstraintArray()[i];
+					for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
 						if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
 							hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
 
-#ifdef _DEBUG
-							if (constraint->getInternal()) {
-								hkpConstraintRuntime *rt = constraint->getRuntime();
-								hkpRagdollConstraintData::Runtime *runtime = hkpRagdollConstraintData::getRuntime(rt);
-								hkReal impulseX = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_0].m_impulseApplied;
-								hkReal impulseY = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_1].m_impulseApplied;
-								hkReal impulseZ = runtime->m_solverResults[hkpRagdollConstraintData::SOLVER_RESULT_LIN_2].m_impulseApplied;
-								NiPoint3 impulse = { impulseX, impulseY, impulseZ };
-								PrintVector(impulse);
+							if (constraint->getInternal()) { // needed to tell master from slave
+								hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
+								hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
+
+								hkVector4 pivotAbodySpace = data->m_atoms.m_transforms.m_transformA.m_translation;
+								hkVector4 pivotBbodySpace = data->m_atoms.m_transforms.m_transformB.m_translation;
+								ragdoll->originalConstraintPivots[constraint] = { pivotAbodySpace, pivotBbodySpace };
+
+								hkVector4 pivotA; hkVector4_setTransformedPos(pivotA, bodyA->getTransform(), pivotAbodySpace);
+								hkVector4 pivotB; hkVector4_setTransformedPos(pivotB, bodyB->getTransform(), pivotBbodySpace);
+
+								hkVector4 slavePivot = bodyA == constraint->getSlaveEntity() ? pivotA : pivotB;
+
+								hkpRagdollConstraintData_setPivotInWorldSpace(data, bodyA->getTransform(), bodyB->getTransform(), slavePivot);
 							}
-#endif // _DEBUG
-
-							hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
-							hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
-
-							hkVector4 pivotAbodySpace = data->m_atoms.m_transforms.m_transformA.m_translation;
-							hkVector4 pivotBbodySpace = data->m_atoms.m_transforms.m_transformB.m_translation;
-							ragdoll->originalConstraintPivots[i] = { pivotAbodySpace, pivotBbodySpace };
-
-							hkVector4 pivotA; hkVector4_setTransformedPos(pivotA, bodyA->getTransform(), pivotAbodySpace);
-							hkVector4 pivotB; hkVector4_setTransformedPos(pivotB, bodyB->getTransform(), pivotBbodySpace);
-
-#ifdef _DEBUG
-							float pivotError = VectorLength(HkVectorToNiPoint(pivotA) - HkVectorToNiPoint(pivotB));
-							_MESSAGE("%.2f", pivotError);
-#endif // _DEBUG
-
-							hkVector4 pivot = NiPointToHkVector(lerp(HkVectorToNiPoint(pivotA), HkVectorToNiPoint(pivotB), 0.5f));
-
-							hkpRagdollConstraintData_setPivotInWorldSpace(data, bodyA->getTransform(), bodyB->getTransform(), pivot);
 						}
 					}
 				}
@@ -3875,13 +3859,14 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 			ragdoll->easeConstraintsAction = nullptr;
 
 			if (Config::options.loosenRagdollConstraintPivots) {
-				for (int i = 0; i < driver->ragdoll->getConstraintArray().getSize(); i++) {
-					hkpConstraintInstance *constraint = driver->ragdoll->getConstraintArray()[i];
+				for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
 					if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
 						hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
 
-						data->m_atoms.m_transforms.m_transformA.m_translation = ragdoll->originalConstraintPivots[i].first;
-						data->m_atoms.m_transforms.m_transformB.m_translation = ragdoll->originalConstraintPivots[i].second;
+						if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
+							data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
+							data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+						}
 					}
 				}
 			}

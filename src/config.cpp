@@ -316,6 +316,7 @@ namespace Config {
 		if (!RegisterBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) success = false;
 		if (!RegisterBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) success = false;
 		if (!RegisterBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) success = false;
+		if (!RegisterBool("loosenRagdollConstraintPivots", options.loosenRagdollConstraintPivots)) success = false;
 		if (!RegisterBool("convertHingeConstraintsToRagdollConstraints", options.convertHingeConstraintsToRagdollConstraints)) success = false;
 		if (!RegisterBool("copyFootIkToPoseTrack", options.copyFootIkToPoseTrack)) success = false;
 		if (!RegisterBool("disableCullingForActiveRagdolls", options.disableCullingForActiveRagdolls)) success = false;

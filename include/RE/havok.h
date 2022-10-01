@@ -55,12 +55,6 @@ struct ahkpWorld : hkpWorld
 };
 static_assert(offsetof(ahkpWorld, m_userData) == 0x430);
 
-// bhkWorld pointer (exteriors) is at reloc<0x1f850d0>
-// function that gets it from a TESObjectCELL is at reloc<276A90>
-
-// Address of pointer that points to the bhkWorld pointer
-// RelocAddr<bhkWorld ***> BHKWORLD(0x1f850d0); - world for _tamriel outside_ is here - does not work for interiors
-
 struct bhkRefObject : NiObject
 {
 	virtual void SetHavokObject(hkReferencedObject *object); // 25

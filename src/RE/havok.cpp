@@ -243,12 +243,10 @@ int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCh
 
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this)
 {
-	if (_this.m_separatingVelocity)
-	{
+	if (_this.m_separatingVelocity) {
 		return *_this.m_separatingVelocity;
 	}
-	else
-	{
+	else {
 		return hkpSimpleContactConstraintUtil_calculateSeparatingVelocity(_this.m_bodies[0], _this.m_bodies[1], _this.m_bodies[0]->getCenterOfMassInWorld(), _this.m_bodies[1]->getCenterOfMassInWorld(), _this.m_contactPoint);
 	}
 }
