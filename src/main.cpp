@@ -1531,6 +1531,12 @@ struct PhysicsListener :
 						return;
 					}
 
+					hkpRigidBody *otherBody = isATarget ? rigidBodyB : rigidBodyA;
+					if (Config::options.disableBipedClutterCollisionWithNonMoveableObjects && !IsMoveableEntity(otherBody) && g_activeActors.count(actor)) {
+						evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+						return;
+					}
+
 					if (Config::options.doClutterVsBipedCollisionDamage) {
 						hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
 						if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {

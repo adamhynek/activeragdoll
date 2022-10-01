@@ -314,6 +314,7 @@ namespace Config {
 		if (!RegisterBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) success = false;
 		if (!RegisterBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) success = false;
 		if (!RegisterBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) success = false;
+		if (!RegisterBool("disableBipedClutterCollisionWithNonMoveableObjects", options.disableBipedClutterCollisionWithNonMoveableObjects)) success = false;
 		if (!RegisterBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) success = false;
 		if (!RegisterBool("loosenRagdollContraintsToMatchPose", options.loosenRagdollContraintsToMatchPose)) success = false;
 		if (!RegisterBool("loosenRagdollConstraintPivots", options.loosenRagdollConstraintPivots)) success = false;

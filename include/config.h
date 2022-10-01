@@ -153,6 +153,7 @@ namespace Config {
 		bool enableBipedClutterCollision = true;
 		bool enableBipedWeaponCollision = true;
 		bool enableBipedProjectileCollision = true;
+		bool disableBipedClutterCollisionWithNonMoveableObjects = true;
 		bool disableGravityForActiveRagdolls = true;
 		bool loosenRagdollContraintsToMatchPose = true;
 		bool loosenRagdollConstraintPivots = true;
