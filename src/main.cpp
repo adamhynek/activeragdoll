@@ -846,7 +846,8 @@ struct SwingHandler
 
 		bool canPowerAttack = !isTorch && !isStaffOrBowOrCrossbow; // unarmed, melee weapon, or shield
 
-		bool isBash = IsBashing(player, isOffhand);
+		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
+		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, isTriggerHeld);
 
 		// Need to set attackState before UpdateAndGetAttackData()
 		UInt32 newAttackState = isBash ? 6 : 2; // kBash if bashing else kSwing
@@ -854,7 +855,6 @@ struct SwingHandler
 
 		didLastSwingFail = false;
 		wasLastSwingBash = false;
-		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
 		if (isTriggerHeld && canPowerAttack) {
 			bool didPowerAttackSucceed = TrySwingPowerAttack(isOffhand, isBash); // this also sets the attackData
 			if (!didPowerAttackSucceed && isBash) {
@@ -987,7 +987,8 @@ void HitActor(Character* source, Character* target, NiAVObject *hitNode, const N
 	TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
 	bool isShield = isOffhand && equippedShield;
 
-	bool isBash = IsBashing(source, isOffhand);
+	bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
+	bool isBash = ShouldBashBasedOnWeapon(source, isOffhand, isTriggerHeld);
 
 	SetAttackState(source, isBash ? 6 : 2); // kBash : kSwing
 
@@ -1117,10 +1118,8 @@ void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, con
 	QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
 }
 
-BGSImpactData * GetImpactData(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, TESForm *weapon, NiPoint3 hitPosition, bool isOffhand)
+BGSMaterialType * GetImpactMaterial(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition)
 {
-	PlayerCharacter *player = *g_thePlayer;
-
 	UInt32 materialId = 0;
 	UInt32 hitLayer = hitRigidBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 	if (hitLayer == BGSCollisionLayer::kCollisionLayer_Ground) {
@@ -1134,10 +1133,13 @@ BGSImpactData * GetImpactData(hkpRigidBody *hitRigidBody, const hkpContactPointE
 		}
 	}
 
-	BGSMaterialType *material = GetMaterialType(materialId);
+	return GetMaterialType(materialId);
+}
+
+BGSImpactData * GetImpactData(BGSMaterialType *material, TESForm *weapon, bool isBash)
+{
 	BGSImpactDataSet *impactSet = nullptr;
 
-	bool isBash = IsBashing(player, isOffhand);
 	if (isBash) {
 		BGSBlockBashData *blockBashData = TESForm_GetBlockBashData(weapon);
 		impactSet = blockBashData ? blockBashData->impact : (*g_unarmedWeapon)->impactDataSet;
@@ -1267,7 +1269,7 @@ struct DoActorHitTask : TaskDelegate
 
 struct DoRefrHitTask : TaskDelegate
 {
-	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+	void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSMaterialType *hitMaterial, TESForm *weapon, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
 	{
 		PlayerCharacter *player = *g_thePlayer;
 
@@ -1284,6 +1286,7 @@ struct DoRefrHitTask : TaskDelegate
 
 		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
 		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+		bool isBash = swingHandler.wasLastSwingBash;
 
 		BGSAttackData *attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
@@ -1296,22 +1299,23 @@ struct DoRefrHitTask : TaskDelegate
 
 		HitRefr(player, hitRefr, setCause, isLeft, isOffhand);
 
+		BGSImpactData *impact = GetImpactData(hitMaterial, weapon, isBash);
 		PlayImpactEffects(player->parentCell, impact, hitPosition, VectorNormalized(-hitVelocity));
 
 		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 	}
 
-	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
-		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), impact(impact), setCause(setCause), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
+	DoRefrHitTask(UInt32 refrHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSMaterialType *hitMaterial, TESForm *weapon, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+		: hitRefrHandle(refrHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitMaterial(hitMaterial), setCause(setCause), weapon(weapon), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab) {}
 
-	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSImpactData *impact, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
-		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+	static DoRefrHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSMaterialType *hitMaterial, TESForm *weapon, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
+		return new DoRefrHitTask(actorHandle, hitPosition, hitVelocity, hitMaterial, weapon, setCause, isLeft, isOffhand, isTwoHanding, isStab);
 	}
 
 	virtual void Run() {
 		NiPointer<TESObjectREFR> refr;
 		if (LookupREFRByHandle(hitRefrHandle, refr)) {
-			DoRefrHit(refr, hitPosition, hitVelocity, impact, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+			DoRefrHit(refr, hitPosition, hitVelocity, hitMaterial, weapon, setCause, isLeft, isOffhand, isTwoHanding, isStab);
 		}
 	}
 
@@ -1322,7 +1326,8 @@ struct DoRefrHitTask : TaskDelegate
 	UInt32 hitRefrHandle;
 	NiPoint3 hitPosition;
 	NiPoint3 hitVelocity;
-	BGSImpactData *impact;
+	BGSMaterialType *hitMaterial;
+	TESForm *weapon;
 	bool setCause;
 	bool isLeft;
 	bool isOffhand;
@@ -1444,8 +1449,8 @@ struct PhysicsListener :
 			bool isDestructible = destructible && destructible->data;
 
 			if (didDispatchHitEvent || isDestructible) {
-				BGSImpactData *impact = GetImpactData(hitRigidBody, evnt, weapon, hitPosition, isOffhand);
-				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, impact, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding, isStab));
+				BGSMaterialType *material = GetImpactMaterial(hitRigidBody, evnt, hitPosition);
+				g_taskInterface->AddTask(DoRefrHitTask::Create(GetOrCreateRefrHandle(hitRefr), hitPosition, hitVelocity, material, weapon, IsMoveableEntity(hitRigidBody), isLeft, isOffhand, isTwoHanding, isStab));
 			}
 		}
 	}
