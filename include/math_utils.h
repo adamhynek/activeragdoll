@@ -76,6 +76,7 @@ inline float QuaternionLength(const NiQuaternion &q) { return sqrtf(DotProduct(q
 NiPoint3 VectorNormalized(const NiPoint3 &vec);
 NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
 NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta);
+NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat);
 NiPoint3 NiMatrixToEuler(NiMatrix33 &mat);
 NiPoint3 MatrixToEuler(const NiMatrix33 &mat);
 NiMatrix33 EulerToMatrix(const NiPoint3 &euler);

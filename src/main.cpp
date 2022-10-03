@@ -416,15 +416,15 @@ struct ControllerTrackingData
 				// "prev" in this case is actually the _newer_ value, as this deque is ordered from new to old
 				NiPoint3 hmdToController = VectorNormalized(positionRoomspace - hmdLocalPos);
 				NiMatrix33 rot = MatrixFromForwardVector(hmdToController, NiPoint3(0.f, 0.f, 1.f));
-				NiPoint3 olderEuler = NiMatrixToEuler(rot);
+				NiPoint3 olderEuler = NiMatrixToYawPitchRoll(rot); // z x y
 
 				hmdToController = VectorNormalized(*prev - hmdLocalPos);
 				rot = MatrixFromForwardVector(hmdToController, NiPoint3(0.f, 0.f, 1.f));
-				NiPoint3 newerEuler = NiMatrixToEuler(rot);
+				NiPoint3 newerEuler = NiMatrixToYawPitchRoll(rot); // z x y
 
 				NiPoint3 eulerDiff = newerEuler - olderEuler;
-				eulerSums.x += eulerDiff.x;
-				eulerSums.y += eulerDiff.y;
+				eulerSums.x += eulerDiff.x; // yaw
+				eulerSums.y += eulerDiff.y; // pitch
 			}
 
 			prev = &positionRoomspace;
@@ -1353,19 +1353,22 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
 		if (!actor) return;
 
 		NiPointer<NiNode> root = refr->GetNiNode();
-		if (!root || !FindRigidBody(root, rigidBody->hkBody)) return;
+		hkpRigidBody *body = rigidBody->hkBody;
+		if (!root || !body || !FindRigidBody(root, body)) return;
 
 		bool isRagdollRigidBody = false;
 		// This is a task because we acquire the animation graph manager lock in here, which can cause a deadlock in some cases
-		ForEachRagdollDriver(actor, [this, &isRagdollRigidBody](hkbRagdollDriver *driver) {
-			if (driver->ragdoll->m_rigidBodies.indexOf(rigidBody->hkBody) >= 0) {
-				isRagdollRigidBody = true;
+		ForEachRagdollDriver(actor, [this, body, &isRagdollRigidBody](hkbRagdollDriver *driver) {
+			if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+				if (ragdoll->m_rigidBodies.indexOf(body) >= 0) {
+					isRagdollRigidBody = true;
+				}
 			}
 		});
 		if (isRagdollRigidBody) return;
 
-		rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
-		rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
+		body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
+		body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
 	}
 
 	virtual void Dispose() {

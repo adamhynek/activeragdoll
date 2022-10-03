@@ -646,8 +646,7 @@ void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> 
 		SimpleLocker lock(&manager->updateLock);
 		for (int i = 0; i < manager->graphs.size; i++) {
 			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-			hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-			if (driver) {
+			if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
 				f(driver);
 			}
 		}

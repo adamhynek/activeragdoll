@@ -44,10 +44,17 @@ NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta)
 	return result;
 }
 
+NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat)
+{
+	NiPoint3 euler;
+	NiMatrixToYawPitchRollImpl(&mat, &euler.x, &euler.y, &euler.z);
+	return euler;
+}
+
 NiPoint3 NiMatrixToEuler(NiMatrix33 &mat)
 {
 	NiPoint3 euler;
-	NiMatrixToEulerImpl(&mat, &euler.x, &euler.y, &euler.z);
+	NiMatrixToYawPitchRollImpl(&mat, &euler.z, &euler.x, &euler.y);
 	return euler;
 }
 

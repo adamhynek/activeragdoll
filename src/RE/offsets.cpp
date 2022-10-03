@@ -175,7 +175,7 @@ RelocAddr<_TESObjectBOOK_LearnSpell> TESObjectBOOK_LearnSpell(0x23B240);
 RelocAddr<_Actor_GetPickupPutdownSound> Actor_GetPickupPutdownSound(0x5D7F90);
 RelocAddr<_NiMatrixToNiQuaternion> NiMatrixToNiQuaternion(0xCB4460);
 RelocAddr<_NiMatrixFromForwardVector> NiMatrixFromForwardVector(0xC4C1E0);
-RelocAddr<_NiMatrixToEulerImpl> NiMatrixToEulerImpl(0xC9AAA0);
+RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl(0xC9AAA0);
 RelocAddr<_EulerToNiMatrix> EulerToNiMatrix(0xC995A0);
 RelocAddr<_UpdateClavicleToTransformHand> UpdateClavicleToTransformHand(0xC4C5A0);
 RelocAddr<_NiSkinInstance_UpdateBoneMatrices> NiSkinInstance_UpdateBoneMatrices(0xDC7DC0);

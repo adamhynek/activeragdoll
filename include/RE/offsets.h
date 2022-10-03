@@ -363,8 +363,8 @@ extern RelocAddr<_NiMatrixToNiQuaternion> NiMatrixToNiQuaternion;
 typedef NiMatrix33 * (*_NiMatrixFromForwardVector)(NiMatrix33 *matOut, NiPoint3 *forward, NiPoint3 *world);
 extern RelocAddr<_NiMatrixFromForwardVector> NiMatrixFromForwardVector;
 
-typedef NiMatrix33 *(*_NiMatrixToEulerImpl)(NiMatrix33 *mat, float *x, float *y, float *z);
-extern RelocAddr<_NiMatrixToEulerImpl> NiMatrixToEulerImpl;
+typedef NiMatrix33 *(*_NiMatrixToYawPitchRollImpl)(NiMatrix33 *mat, float *yaw, float *pitch, float *roll);
+extern RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl;
 
 typedef NiMatrix33 & (*_EulerToNiMatrix)(NiMatrix33 &matOut, float x, float y, float z);
 extern RelocAddr<_EulerToNiMatrix> EulerToNiMatrix;
