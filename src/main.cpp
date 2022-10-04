@@ -807,11 +807,11 @@ struct SwingHandler
 		}
 	}
 
-	void Swing(bool isStab = false)
+	void Swing(bool isHit = false, bool isStab = false)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
-		PlayerCharacter* player = *g_thePlayer;
+		PlayerCharacter *player = *g_thePlayer;
 
 		VRMeleeData *meleeData = GetVRMeleeData(isLeft);
 		NiPoint2 angularVelocity = g_controllerData[isLeft].angularVelocity;
@@ -833,21 +833,22 @@ struct SwingHandler
 			meleeData->swingDirection = VRMeleeData::SwingDirection::kForward;
 		}
 
-		TESForm* offhandObj = player->GetEquippedObject(true);
-		TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
+		TESForm *offhandObj = player->GetEquippedObject(true);
+		TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
 		bool isShield = isOffhand && equippedShield;
 
-		TESObjectLIGH* equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
+		TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
 		bool isTorch = isOffhand && equippedLight;
 
-		TESObjectWEAP* weapon = GetEquippedWeapon(player, isOffhand);
+		TESObjectWEAP *weapon = GetEquippedWeapon(player, isOffhand);
 		// Realistically, it can't be a staff as staffs don't have melee collision (yet...?)
 		bool isStaffOrBowOrCrossbow = weapon && weapon->type() >= TESObjectWEAP::GameData::kType_Bow;
 
 		bool canPowerAttack = !isTorch && !isStaffOrBowOrCrossbow; // unarmed, melee weapon, or shield
 
 		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
-		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, isTriggerHeld);
+		bool allowWeaponBash = Config::options.enableWeaponBash && (isHit || !Config::options.weaponBashOnlyOnHits) && !isTriggerHeld;
+		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, allowWeaponBash);
 
 		// Need to set attackState before UpdateAndGetAttackData()
 		UInt32 newAttackState = isBash ? 6 : 2; // kBash if bashing else kSwing
@@ -980,15 +981,12 @@ SwingHandler g_leftSwingHandler{ true };
 
 bool g_isInPlanckHit = false;
 
-void HitActor(Character* source, Character* target, NiAVObject *hitNode, const NiPoint3& hitPosition, const NiPoint3& hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack)
+void HitActor(Character* source, Character* target, NiAVObject *hitNode, const NiPoint3& hitPosition, const NiPoint3& hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
 {
 	// Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
 	TESForm* offhandObj = source->GetEquippedObject(true);
 	TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
 	bool isShield = isOffhand && equippedShield;
-
-	bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
-	bool isBash = ShouldBashBasedOnWeapon(source, isOffhand, isTriggerHeld);
 
 	SetAttackState(source, isBash ? 6 : 2); // kBash : kSwing
 
@@ -1192,7 +1190,7 @@ struct DoActorHitTask : TaskDelegate
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(isStab);
+			swingHandler.Swing(true, isStab);
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1202,6 +1200,7 @@ struct DoActorHitTask : TaskDelegate
 
 		// We already figured out if we had enough stamina, and deducted stamina, in the swing, so no need to check it here
 		bool isPowerAttack = swingHandler.wasLastSwingPowerAttack; // either the last recent swing, or the one we just performed
+		bool isBash = swingHandler.wasLastSwingBash;
 
 		BGSAttackData *attackData = nullptr;
 		PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, isPowerAttack, &attackData);
@@ -1214,7 +1213,7 @@ struct DoActorHitTask : TaskDelegate
 		NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
 		*playerLastHitVelocity = hitVelocity;
 
-		HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack);
+		HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
 
 		PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
@@ -1276,7 +1275,7 @@ struct DoRefrHitTask : TaskDelegate
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(isStab);
+			swingHandler.Swing(true, isStab);
 		}
 
 		if (swingHandler.didLastSwingFail) {

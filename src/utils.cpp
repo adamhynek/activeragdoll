@@ -213,7 +213,7 @@ bool IsUnarmed(TESForm *equippedObject)
 	return false;
 }
 
-bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool isTriggerHeld)
+bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool allowWeaponBash)
 {
 	TESForm* equippedObj = actor->GetEquippedObject(isOffhand);
 	TESObjectWEAP* weapon = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
@@ -232,8 +232,7 @@ bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool isTriggerHeld)
 		return true;
 	}
 	else {
-		if (isTriggerHeld) {
-			// Holding the trigger with a weapon indicates we want to hit, not bash
+		if (!allowWeaponBash) {
 			return false;
 		}
 		bool isBlocking = Actor_IsBlocking(actor);

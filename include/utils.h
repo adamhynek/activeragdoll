@@ -65,7 +65,7 @@ TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand);
 bool IsHoldingTwoHandedWeapon(Actor *actor);
 bool IsOneHandedWeapon(TESObjectWEAP *weapon);
 bool IsUnarmed(TESForm *equippedObject);
-bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool isTriggerHeld);
+bool ShouldBashBasedOnWeapon(Actor *actor, bool isOffhand, bool allowWeaponBash);
 
 double GetTime();
 

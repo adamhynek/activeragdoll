@@ -210,6 +210,8 @@ namespace Config {
 		int numControllerVelocitySmoothingFrames = 5;
 		int numControllerAngularVelocityTrackingFrames = 10;
 
+		bool enableWeaponBash = true;
+		bool weaponBashOnlyOnHits = true;
 		bool failBashWhenOutOfStamina = true;
 
 		float swingFailedRumbleIntensity = 0.5f;
