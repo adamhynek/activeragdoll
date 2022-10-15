@@ -6,6 +6,7 @@
 #include <Animation/Ragdoll/Instance/hkaRagdollInstance.h>
 #include <Animation/Ragdoll/Controller/RigidBody/hkaRagdollRigidBodyController.h>
 #include <Animation/Animation/Mapper/hkaSkeletonMapper.h>
+#include <Animation/Animation/Ik/FootPlacement/hkaFootPlacementIkSolver.h>
 #include <Physics/Dynamics/Constraint/Bilateral/Ragdoll/hkpRagdollConstraintData.h>
 #include <Physics/Dynamics/Constraint/Bilateral/LimitedHinge/hkpLimitedHingeConstraintData.h>
 #include <Physics/Dynamics/Constraint/Motor/Position/hkpPositionConstraintMotor.h>
@@ -352,6 +353,18 @@ struct BShkbAnimationGraph
 	static_assert(offsetof(UpdateData, unk2A) == 0x2A);
 	static_assert(offsetof(UpdateData, scale1) == 0x30);
 
+	struct FootIKData
+	{
+		NiPoint3 errorOutTranslation; // 00
+		hkQuaternion alignWithGroundRotation; // 10
+		bool hasErrorOutTranslation; // 20
+		bool hasAlignWithGroundRotation; // 21
+		bool hasHit; // 22
+		bool disableFootIkWhenMoving; // 23
+		bool isCapableOfFootIk; // 24
+	};
+	static_assert(offsetof(FootIKData, hasHit) == 0x22);
+
 	struct BoneNodeEntry
 	{
 		NiNode *node; // 00
@@ -503,9 +516,19 @@ struct hkbGeneratorOutput
 
 struct hkbFootIkDriver : hkReferencedObject
 {
-	hkArray<struct InternalLegData> m_internalLegData; // 10
-	hkVector4 unk20;
-	hkQuaternion unk30;
+	struct InternalLegData
+	{
+		hkVector4 groundPosition; // 00
+		hkVector4 groundNormal; // 10
+		hkaFootPlacementIkSolver *footIkSolver; // 20
+		hkReal verticalError; // 28
+		hkBool hitSomething; // 2C
+		hkBool isPlantedMS; // 2D
+	};
+
+	hkArray<InternalLegData> m_internalLegData; // 10
+	hkVector4 errorOutTranslation; // 20
+	hkQuaternion alignWithGroundRotation; // 30
 	UInt64 unk40;
 	UInt16 unk48;
 	UInt8 disableFootIk; // 4A - doFootIk checks this and bails if it's set
@@ -514,6 +537,29 @@ struct hkbFootIkDriver : hkReferencedObject
 };
 static_assert(sizeof(hkbFootIkDriver) == 0x50);
 static_assert(offsetof(hkbFootIkDriver, disableFootIk) == 0x4A);
+
+struct BGSFootIkRaycastInterfaceDB
+{
+	struct CachedRaycastData
+	{
+		void *vtbl; // 00
+		UInt32 handle; // 08
+		UInt32 pad0C;
+		UInt64 unk10;
+		hkpRigidBody *rigidBody; // 18
+		bhkWorld *world; // 20
+		UInt32 unk28;
+		UInt32 unk2C;
+		bool isSupported; // 30
+	};
+	static_assert(offsetof(CachedRaycastData, isSupported) == 0x30);
+
+	void *vtbl;
+	char unk08[0x38];
+	tArray<CachedRaycastData> raycastData; // 40
+};
+static_assert(offsetof(BGSFootIkRaycastInterfaceDB, raycastData) == 0x40);
+
 
 inline hkReal * Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header) {
 	return reinterpret_cast<hkReal*>(reinterpret_cast<char*>(output.m_tracks) + header.m_dataOffset);
