@@ -3558,17 +3558,9 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (!ragdoll) return;
 
 	ragdoll->deltaTime = deltaTime;
+	ragdoll->knockState = GetActorKnockState(actor);
 
-	KnockState knockState = GetActorKnockState(actor);
-	if (Config::options.blendWhenGettingUp) {
-		if (ragdoll->knockState == KnockState::BeginGetUp && knockState == KnockState::GetUp) {
-			// Went from starting to get up to actually getting up
-			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, g_currentFrameTime, Config::options.getUpBlendTime);
-		}
-	}
-	ragdoll->knockState = knockState;
-
-	if (Actor_IsInRagdollState(actor) || IsActorGettingUp(actor)) return;
+	if (Actor_IsInRagdollState(actor)) return;
 
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
@@ -4202,6 +4194,18 @@ bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
 	return g_originalAttackStopHandlerHandle(_this, actor);
 }
 
+bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
+{
+	if (g_rightHeldRefr == actor || g_leftHeldRefr == actor) {
+		if (ActorProcessManager *process = actor->processManager) {
+			*(float *)&process->middleProcess->unk2B0 = *g_fExplosionKnockStateExplodeDownTime; // reset knocked down timer
+		}
+		return false;
+	}
+
+	return Actor_IsRagdollMovingSlowEnoughToGetUp(actor);
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -4239,6 +4243,10 @@ auto Actor_GetHit_DispatchHitEventFromHitData_HookLoc = RelocAddr<uintptr_t>(0x6
 auto ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc = RelocAddr<uintptr_t>(0x636742);
 
 auto Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc = RelocAddr<uintptr_t>(0x9CE8D0);
+
+auto Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc = RelocAddr<uintptr_t>(0x687164);
+
+auto GetUpStart_ZeroOutPitchRoll_Loc = RelocAddr<uintptr_t>(0x74D65B);
 
 
 void PerformHooks(void)
@@ -4324,6 +4332,17 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write6Call(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc.GetUIntPtr(), uintptr_t(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook));
 		_MESSAGE("Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool hook complete");
+	}
+
+	if (Config::options.preventGetUpWhenRagdollIsGrabbed) {
+		g_branchTrampoline.Write5Call(Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc.GetUIntPtr(), uintptr_t(Actor_IsRagdollMovingSlowEnoughToGetUp_Hook));
+		_MESSAGE("Actor_IsRagdollMovingSlowEnoughToGetUp hook complete");
+	}
+
+	if (Config::options.dontResetPitchRollWhenGettingUp) {
+		char *nops = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; // "\x90" * 11
+		SafeWriteBuf(GetUpStart_ZeroOutPitchRoll_Loc.GetUIntPtr(), nops, 11);
+		_MESSAGE("NOP'd out zeroing out of pitch/roll when starting to get up");
 	}
 
 	{

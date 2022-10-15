@@ -332,8 +332,10 @@ namespace Config {
 		if (!RegisterBool("applyImpulseOnHit", options.applyImpulseOnHit)) success = false;
 		if (!RegisterBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) success = false;
 		if (!RegisterBool("disableHitIfSheathed", options.disableHitIfSheathed)) success = false;
-		if (!RegisterBool("blendWhenGettingUp", options.blendWhenGettingUp)) success = false;
 		if (!RegisterBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) success = false;
+
+		if (!RegisterBool("dontResetPitchRollWhenGettingUp", options.dontResetPitchRollWhenGettingUp)) success = false;
+		if (!RegisterBool("preventGetUpWhenRagdollIsGrabbed", options.preventGetUpWhenRagdollIsGrabbed)) success = false;
 
 		if (!RegisterFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) success = false;
 		if (!RegisterFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) success = false;

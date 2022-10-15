@@ -81,6 +81,8 @@ extern RelocPtr<float> g_fPhysicsDamageSpeedMin;
 extern RelocPtr<float> g_fMeleeLinearVelocityThreshold;
 extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 
+extern RelocPtr<float> g_fExplosionKnockStateExplodeDownTime;
+
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
 extern RelocAddr<void *> PlayerCharacter_vtbl;
@@ -849,6 +851,15 @@ extern RelocAddr<_TESObjectCELL_PlaceParticleEffect_Impl> TESObjectCELL_PlacePar
 
 typedef void(*_TESObjectCELL_PlaceParticleEffect)(TESObjectCELL *_this, float lifetime, const char *modelName, const NiPoint3 &normal, const NiPoint3 &pos, float scale, UInt32 flags, NiAVObject *target);
 extern RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect;
+
+typedef void(*_DispatchTransformDeltaEvent)(void *sinks, NiTransform *a_delta);
+extern RelocAddr<_DispatchTransformDeltaEvent> DispatchTransformDeltaEvent;
+
+typedef void(*_BSAnimationGraphManager_GetWorldFromModel)(BSAnimationGraphManager *_this, NiTransform **worldFromModel);
+extern RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_GetWorldFromModel;
+
+typedef bool(*_Actor_IsRagdollMovingSlowEnoughToGetUp)(Actor *_this);
+extern RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp;
 
 
 struct UnkSwingData

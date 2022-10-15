@@ -62,6 +62,8 @@ RelocPtr<float> g_fPhysicsDamageSpeedMin(0x1E9D6D0);
 RelocPtr<float> g_fMeleeLinearVelocityThreshold(0x1EAE500);
 RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 
+RelocPtr<float> g_fExplosionKnockStateExplodeDownTime(0x1EA0778);
+
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
 RelocAddr<void *> PlayerCharacter_vtbl(0x16E2230);
@@ -349,3 +351,6 @@ RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData(0x192040);
 RelocAddr<_BGSImpactManager_PlayImpactSound> BGSImpactManager_PlayImpactSound(0x5A9FF0);
 RelocAddr<_TESObjectCELL_PlaceParticleEffect_Impl> TESObjectCELL_PlaceParticleEffect_Impl(0x45B740);
 RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect(0x45B4F0);
+RelocAddr<_DispatchTransformDeltaEvent> DispatchTransformDeltaEvent(0xB362D0);
+RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_GetWorldFromModel(0x61D4C0);
+RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp(0x600DF0);

@@ -14,7 +14,6 @@ namespace Config {
 		float activeRagdollEndDistance = 60.f;
 
 		double blendInTime = 0.2;
-		double getUpBlendTime = 0.2;
 
 		bool enableKeyframes = true;
 		double blendInKeyframeTime = 0.05;
@@ -171,9 +170,11 @@ namespace Config {
 		bool applyImpulseOnHit = true;
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = false;
-		bool blendWhenGettingUp = false;
 		bool seamlessFurnitureTransition = true;
 		bool disableConstraints = false;
+
+		bool dontResetPitchRollWhenGettingUp = true;
+		bool preventGetUpWhenRagdollIsGrabbed = true;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;
