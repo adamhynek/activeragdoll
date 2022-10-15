@@ -4206,6 +4206,11 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
 	return Actor_IsRagdollMovingSlowEnoughToGetUp(actor);
 }
 
+void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager, bool *result)
+{
+	*result = true; // act as if we successfully removed the ragdoll from the world
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -4247,6 +4252,10 @@ auto Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc = Rel
 auto Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc = RelocAddr<uintptr_t>(0x687164);
 
 auto GetUpStart_ZeroOutPitchRoll_Loc = RelocAddr<uintptr_t>(0x74D65B);
+
+auto GetUpEnd_RemoveRagdollFromWorld_HookLoc = RelocAddr<uintptr_t>(0x68727D);
+
+auto GetUpEnd_SetMotionTypeKeyframed_Loc = RelocAddr<uintptr_t>(0x6872D0);
 
 
 void PerformHooks(void)
@@ -4343,6 +4352,16 @@ void PerformHooks(void)
 		char *nops = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; // "\x90" * 11
 		SafeWriteBuf(GetUpStart_ZeroOutPitchRoll_Loc.GetUIntPtr(), nops, 11);
 		_MESSAGE("NOP'd out zeroing out of pitch/roll when starting to get up");
+	}
+
+	if (Config::options.dontRemoveRagdollWhenDoneGettingUp) {
+		g_branchTrampoline.Write5Call(GetUpEnd_RemoveRagdollFromWorld_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_RemoveRagdollFromWorld_Hook));
+
+		char *nops = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; // "\x90" * 11
+		SafeWriteBuf(GetUpEnd_SetMotionTypeKeyframed_Loc.GetUIntPtr(), nops, 5);
+		SafeWriteBuf(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), nops, 5);
+
+		_MESSAGE("Stopped the game from removing/resetting the ragdoll when a character has finished getting up");
 	}
 
 	{

@@ -175,6 +175,7 @@ namespace Config {
 
 		bool dontResetPitchRollWhenGettingUp = true;
 		bool preventGetUpWhenRagdollIsGrabbed = true;
+		bool dontRemoveRagdollWhenDoneGettingUp = true;
 
 		float hitImpulseBaseStrength = 1.f;
 		float hitImpulseProportionalStrength = -0.15f;
