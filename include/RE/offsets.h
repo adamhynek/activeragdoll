@@ -253,6 +253,9 @@ extern RelocAddr<_GetNodeFromCollidable> GetNodeFromCollidable;
 typedef TESObjectREFR * (*_GetRefFromCollidable)(const hkpCollidable * a_collidable);
 extern RelocAddr<_GetRefFromCollidable> GetRefFromCollidable;
 
+typedef void(*_NiNode_SetMotionTypeDownwards)(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5);
+extern RelocAddr<_NiNode_SetMotionTypeDownwards> NiNode_SetMotionTypeDownwards;
+
 
 typedef NiTransform * (*_BSVRInterface_GetHandTransform)(BSOpenVR *_this, NiTransform *transformOut, BSVRInterface::BSControllerHand handForOpenVRDeviceIndex, BSVRInterface::BSControllerHand handForBSOpenVRTransform);
 extern RelocAddr<_BSVRInterface_GetHandTransform> BSOpenVR_GetHandTransform;

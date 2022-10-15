@@ -4208,7 +4208,39 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
 
 void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager, bool *result)
 {
-	*result = true; // act as if we successfully removed the ragdoll from the world
+	{
+		SimpleLocker lock(&graphManager->updateLock);
+		for (int i = 0; i < graphManager->graphs.size; i++) {
+			BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
+			if (!graph.ptr) continue;
+
+			Actor *actor = graph.ptr->holder;
+			if (!actor) continue;
+
+			if (g_activeActors.count(actor)) {
+				*result = true; // act as if we successfully removed the ragdoll from the world
+				return;
+			}
+		}
+	}
+
+	BSAnimationGraphManager_RemoveRagdollFromWorld(graphManager, result);
+}
+
+void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5)
+{
+	TESObjectREFR *refr = node->m_owner;
+	if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
+
+	NiNode_SetMotionTypeDownwards(node, motionType, a3, a4, a5);
+}
+
+void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *node)
+{
+	TESObjectREFR *refr = node->m_owner;
+	if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
+
+	BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, node);
 }
 
 
@@ -4241,8 +4273,6 @@ auto ActorProcess_ExitFurniture_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0
 auto ActorProcess_ExitFurniture_ResetRagdoll_HookLoc = RelocAddr<uintptr_t>(0x688061);
 auto ActorProcess_EnterFurniture_SetWorld_HookLoc = RelocAddr<uintptr_t>(0x68E344); // sets the world to null when entering furniture
 
-auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
-
 auto Character_HitTarget_HitData_Populate_HookLoc = RelocAddr<uintptr_t>(0x631CA7);
 auto Actor_GetHit_DispatchHitEventFromHitData_HookLoc = RelocAddr<uintptr_t>(0x62F3DA);
 auto ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc = RelocAddr<uintptr_t>(0x636742);
@@ -4254,8 +4284,8 @@ auto Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc = RelocAddr<uintptr_t>(0x687
 auto GetUpStart_ZeroOutPitchRoll_Loc = RelocAddr<uintptr_t>(0x74D65B);
 
 auto GetUpEnd_RemoveRagdollFromWorld_HookLoc = RelocAddr<uintptr_t>(0x68727D);
-
-auto GetUpEnd_SetMotionTypeKeyframed_Loc = RelocAddr<uintptr_t>(0x6872D0);
+auto GetUpEnd_SetMotionTypeKeyframed_HookLoc = RelocAddr<uintptr_t>(0x6872D0);
+auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
 
 
 void PerformHooks(void)
@@ -4356,11 +4386,8 @@ void PerformHooks(void)
 
 	if (Config::options.dontRemoveRagdollWhenDoneGettingUp) {
 		g_branchTrampoline.Write5Call(GetUpEnd_RemoveRagdollFromWorld_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_RemoveRagdollFromWorld_Hook));
-
-		char *nops = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; // "\x90" * 11
-		SafeWriteBuf(GetUpEnd_SetMotionTypeKeyframed_Loc.GetUIntPtr(), nops, 5);
-		SafeWriteBuf(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), nops, 5);
-
+		g_branchTrampoline.Write5Call(GetUpEnd_SetMotionTypeKeyframed_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook));
+		g_branchTrampoline.Write5Call(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(GetUpEndHandler_Handle_RemoveCollision_Hook));
 		_MESSAGE("Stopped the game from removing/resetting the ragdoll when a character has finished getting up");
 	}
 
