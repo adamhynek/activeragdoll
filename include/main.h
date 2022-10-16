@@ -33,4 +33,5 @@ struct ActiveRagdoll
 	KnockState knockState = KnockState::Normal;
 	bool isOn = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
+	bool disableConstraintMotorsForOneFrame = false;
 };

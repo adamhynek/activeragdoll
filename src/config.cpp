@@ -333,6 +333,7 @@ namespace Config {
 		if (!RegisterBool("useHandVelocityForStabHitDirection", options.useHandVelocityForStabHitDirection)) success = false;
 		if (!RegisterBool("disableHitIfSheathed", options.disableHitIfSheathed)) success = false;
 		if (!RegisterBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) success = false;
+		if (!RegisterBool("disableConstraintMotorsOnFurnitureExit", options.disableConstraintMotorsOnFurnitureExit)) success = false;
 
 		if (!RegisterBool("dontResetPitchRollWhenGettingUp", options.dontResetPitchRollWhenGettingUp)) success = false;
 		if (!RegisterBool("preventGetUpWhenRagdollIsGrabbed", options.preventGetUpWhenRagdollIsGrabbed)) success = false;

@@ -171,6 +171,7 @@ namespace Config {
 		bool useHandVelocityForStabHitDirection = true;
 		bool disableHitIfSheathed = false;
 		bool seamlessFurnitureTransition = true;
+		bool disableConstraintMotorsOnFurnitureExit = true;
 		bool disableConstraints = false;
 
 		bool dontResetPitchRollWhenGettingUp = true;

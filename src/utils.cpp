@@ -637,18 +637,32 @@ bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
 	return false;
 }
 
+void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f)
+{
+	SimpleLocker lock(&graphManager->updateLock);
+	for (int i = 0; i < graphManager->graphs.size; i++) {
+		BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
+		if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+			f(driver);
+		}
+	}
+}
+
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f)
 {
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager *manager = animGraphManager.ptr;
-		SimpleLocker lock(&manager->updateLock);
-		for (int i = 0; i < manager->graphs.size; i++) {
-			BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-			if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-				f(driver);
-			}
-		}
+		ForEachRagdollDriver(animGraphManager.ptr, f);
+	}
+}
+
+void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f)
+{
+	SimpleLocker lock(&graphManager->updateLock);
+	for (int i = 0; i < graphManager->graphs.size; i++) {
+		BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
+		if (!graph.ptr) continue;
+		f(graph.ptr);
 	}
 }
 

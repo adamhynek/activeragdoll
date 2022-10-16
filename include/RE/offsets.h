@@ -504,6 +504,15 @@ extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_Updat
 typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform* poseLocalSpace, const hkQsTransform& worldFromModel, hkaKeyFrameHierarchyUtility::Output* stressOut);
 extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBodyController_driveToPose;
 
+typedef bool(*_hkaRagdollRigidBodyController_ctor)(hkaRagdollRigidBodyController *_this);
+extern RelocAddr<_hkaRagdollRigidBodyController_ctor> hkaRagdollRigidBodyController_ctor;
+
+typedef bool(*_hkaRagdollRigidBodyController_dtor)(hkaRagdollRigidBodyController *_this);
+extern RelocAddr<_hkaRagdollRigidBodyController_dtor> hkaRagdollRigidBodyController_dtor;
+
+typedef bool(*_hkaRagdollRigidBodyController_reinitialize)(hkaRagdollRigidBodyController *_this);
+extern RelocAddr<_hkaRagdollRigidBodyController_reinitialize> hkaRagdollRigidBodyController_reinitialize;
+
 typedef bool(*_hkbRagdollDriver_driveToPose)(hkbRagdollDriver *_this, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput);
 extern RelocAddr<_hkbRagdollDriver_driveToPose> hkbRagdollDriver_driveToPose;
 

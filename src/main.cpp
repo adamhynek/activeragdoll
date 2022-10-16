@@ -3591,6 +3591,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		return;
 	}
 
+	if (isPoweredOn && ragdoll->disableConstraintMotorsForOneFrame) {
+		ragdoll->disableConstraintMotorsForOneFrame = false;
+		poweredHeader->m_onFraction = 0.f;
+	}
+
 	if (Config::options.enableKeyframes) {
 		double elapsedTime = (g_currentFrameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
 		if (elapsedTime <= Config::options.blendInKeyframeTime) {
@@ -4008,7 +4013,17 @@ void ActorProcess_ExitFurniture_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVO
 
 void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manager, bool *a2, Actor *actor)
 {
-	if (g_activeActors.count(actor)) return;
+	if (g_activeActors.count(actor)) {
+		if (Config::options.disableConstraintMotorsOnFurnitureExit) {
+			ForEachRagdollDriver(manager, [](hkbRagdollDriver *driver) {
+				if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+					activeRagdoll->disableConstraintMotorsForOneFrame = true;
+				}
+			});
+		}
+
+		return;
+	}
 	BSAnimationGraphManager_ResetRagdoll(manager, a2);
 }
 
@@ -4229,7 +4244,7 @@ void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager,
 
 void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5)
 {
-	TESObjectREFR *refr = node->m_owner;
+	TESObjectREFR *refr = NiAVObject_GetOwner(node);
 	if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
 
 	NiNode_SetMotionTypeDownwards(node, motionType, a3, a4, a5);
@@ -4237,7 +4252,7 @@ void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType
 
 void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *node)
 {
-	TESObjectREFR *refr = node->m_owner;
+	TESObjectREFR *refr = NiAVObject_GetOwner(node);
 	if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
 
 	BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, node);
