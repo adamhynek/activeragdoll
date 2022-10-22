@@ -1368,6 +1368,7 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
 
 		body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
 		body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
+		bhkWorldObject_UpdateCollisionFilter(rigidBody);
 	}
 
 	virtual void Dispose() {
