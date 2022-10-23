@@ -1870,6 +1870,8 @@ struct PhysicsListener :
 	}
 
 	virtual void entityAddedCallback(hkpEntity *entity) override {
+		if (!Config::options.convertNonRagdollBipedObjectsToDeadBip) return;
+
 		hkpRigidBody *rigidBody = hkpGetRigidBody(entity->getCollidable());
 		if (!rigidBody) return;
 

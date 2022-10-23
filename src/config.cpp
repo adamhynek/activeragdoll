@@ -403,6 +403,8 @@ namespace Config {
 		if (!RegisterFloat("playerCharControllerRadius", options.playerCharControllerRadius)) success = false;
 		if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
 
+		if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;
+
 		if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
 		if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
 		if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;

@@ -242,6 +242,8 @@ namespace Config {
 		float playerCharControllerRadius = 0.15f;
 		float playerCapsuleRadius = 0.15f;
 
+		bool convertNonRagdollBipedObjectsToDeadBip = true;
+
 		std::set<std::string, std::less<>> additionalSelfCollisionRaces;
 		std::set<std::string, std::less<>> excludeRaces;
 		std::set<std::string, std::less<>> aggressionExcludeRaces;
