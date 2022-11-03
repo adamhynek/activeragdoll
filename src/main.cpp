@@ -274,7 +274,7 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
 	bool hasRagdollInterface = false;
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+		BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
 	}
 
 	if (hasRagdollInterface) {
@@ -2451,7 +2451,7 @@ bool AddRagdollToWorld(Actor *actor)
 	bool hasRagdollInterface = false;
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+		BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
 	}
 
 	if (hasRagdollInterface) {
@@ -2522,7 +2522,7 @@ bool RemoveRagdollFromWorld(Actor *actor)
 	bool hasRagdollInterface = false;
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+		BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
 	}
 
 	if (hasRagdollInterface) {
@@ -2570,7 +2570,7 @@ void DisableSyncOnUpdate(Actor *actor)
 	bool hasRagdollInterface = false;
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+		BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
 	}
 
 	if (hasRagdollInterface) {
@@ -2584,7 +2584,7 @@ void EnableGravity(Actor *actor)
 	bool hasRagdollInterface = false;
 	BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
 	if (GetAnimationGraphManager(actor, animGraphManager)) {
-		BSAnimationGraphManager_HasRagdollInterface(animGraphManager.ptr, &hasRagdollInterface);
+		BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
 	}
 
 	if (hasRagdollInterface) {
@@ -2994,6 +2994,15 @@ void ProcessHavokHitJobsHook()
 
 	g_currentFrameTime = GetTime();
 
+	/*
+	hkMemoryRouter &router = hkGetMemoryRouter();
+	hkMemoryAllocator::MemoryStatistics stats;
+	router.heap().getMemoryStatistics(stats);
+	hkThreadMemory &threadMemory = (hkThreadMemory &)router.heap();
+	bhkThreadMemorySource *memorySource = (bhkThreadMemorySource *)threadMemory.m_memory;
+	PrintToFile(std::to_string(memorySource->totalAllocated), "mem.txt");
+	*/
+
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
 		g_playerCollisionGroup = filterInfo >> 16;
@@ -3321,6 +3330,10 @@ void ProcessHavokHitJobsHook()
 			}*/
 #endif // _DEBUG
 
+			if (std::string_view(name->name) == "Dorthe") {
+				//PrintVector(actor->pos);
+			}
+
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
 
@@ -3556,20 +3569,93 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
 	hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
 	hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
+	hkbGeneratorOutput::TrackHeader *poweredWorldFromModelModeHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_WORLD_FROM_MODEL_MODE);
 
 	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
 	if (!ragdoll) return;
 
 	ragdoll->deltaTime = deltaTime;
-	ragdoll->knockState = GetActorKnockState(actor);
 
-	if (Actor_IsInRagdollState(actor)) return;
+	KnockState prevKnockState = ragdoll->knockState;
+	ragdoll->knockState = GetActorKnockState(actor);
 
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
 
+	/*if ((ragdoll->knockState == KnockState::BeginGetUp || ragdoll->knockState == KnockState::GetUp) && (isPoweredOn && !isRigidBodyOn)) {
+		hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
+		for (int i = 0; i < poweredHeader->m_numData; i++) {
+			hkbPoweredRagdollControlData &elem = data[i];
+			elem.m_maxForce = Config::options.poweredMaxForce;
+			elem.m_tau = Config::options.poweredTau;
+			elem.m_damping = Config::options.poweredDaming;
+			elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
+			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
+		}
+	}*/
+
+	bool isComputingWorldFromModel = false;
+	if (poweredWorldFromModelModeHeader && poweredWorldFromModelModeHeader->m_onFraction > 0.f) {
+		hkbWorldFromModelModeData &worldFromModelMode = *(hkbWorldFromModelModeData *)Track_getData(generatorOutput, *poweredWorldFromModelModeHeader);
+		if (worldFromModelMode.mode == hkbWorldFromModelModeData::WorldFromModelMode::WORLD_FROM_MODEL_MODE_COMPUTE) {
+			isComputingWorldFromModel = true;
+		}
+	}
+
+	if (isComputingWorldFromModel && !ragdoll->wasComputingWorldFromModel) {
+		// Went from not computing worldfrommodel to computing it
+		ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
+		ragdoll->worldFromModelFadeTime = g_currentFrameTime;
+		ragdoll->fadeWorldFromModel = true;
+	}
+
+	ragdoll->wasComputingWorldFromModel = isComputingWorldFromModel;
+
+	if (prevKnockState == KnockState::Ragdoll && (ragdoll->knockState == KnockState::BeginGetUp || ragdoll->knockState == KnockState::GetUp)) {
+		_MESSAGE("Start get up");
+	}
+
+	if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+		hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+		ragdoll->worldFromModel = worldFromModel;
+	}
+
+	if (Actor_IsInRagdollState(actor)) return;
+
+	bool isPoweredOnly = !isRigidBodyOn && isPoweredOn;
+	if (isPoweredOnly) {
+		bool allNoForce = true;
+		if (poweredHeader->m_numData > 0) {
+			hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
+			for (int i = 0; i < poweredHeader->m_numData; i++) {
+				hkbPoweredRagdollControlData &elem = data[i];
+				if (elem.m_maxForce > 0.f) {
+					allNoForce = false;
+				}
+			}
+		}
+		if (allNoForce) {
+			// Only powered constraints are active and they are effectively disabled
+			return;
+		}
+
+		TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+		if (std::string_view(name->name) == "Dorthe") {
+		}
+		else {
+			_MESSAGE("%d %s: Powered only", *g_currentFrameCounter, name->name);
+
+		}
+	}
+
 	if (!isRigidBodyOn && !isPoweredOn) {
 		// No controls are active - try and force it to use the rigidbody controller
+		if (rigidBodyHeader) {
+			TryForceRigidBodyControls(generatorOutput, *rigidBodyHeader);
+			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
+		}
+	}
+	else if (!isRigidBodyOn) {
 		if (rigidBodyHeader) {
 			TryForceRigidBodyControls(generatorOutput, *rigidBodyHeader);
 			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
@@ -3597,6 +3683,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	if (isPoweredOn && ragdoll->disableConstraintMotorsForOneFrame) {
 		ragdoll->disableConstraintMotorsForOneFrame = false;
 		poweredHeader->m_onFraction = 0.f;
+		isPoweredOn = false;
 	}
 
 	if (Config::options.enableKeyframes) {
@@ -3628,6 +3715,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
 			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
 		}
+	}
+
+	if (isPoweredOnly) {
+		// Don't want to do foot ik / constraint loosening / disabling gravity when powered only
+		return;
 	}
 
 	if (Config::options.copyFootIkToPoseTrack) {
@@ -3820,9 +3912,13 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	}
 }
 
+hkbRagdollDriver *g_currentPostPhysicsDriver = nullptr;
+
 void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
 	// This hook is called right before hkbRagdollDriver::postPhysics()
+
+	g_currentPostPhysicsDriver = driver;
 
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (!actor) return;
@@ -3847,6 +3943,8 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
+	g_currentPostPhysicsDriver = nullptr;
+
 	Actor *actor = GetActorFromRagdollDriver(driver);
 	if (!actor) return;
 
@@ -3857,7 +3955,24 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
 	if (!ragdoll->isOn) return;
 
+	if (ragdoll->fadeWorldFromModel) {
+		double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime) * *g_globalTimeMultiplier;
+		double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime;
+		if (elapsedTimeFraction > 1.0) {
+			ragdoll->fadeWorldFromModel = false;
+		}
+	}
+
 	RagdollState state = ragdoll->state;
+
+	TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+	if (std::string_view(name->name) == "Dorthe") {
+		hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+		if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(inOut, *worldFromModelHeader);
+			PrintVector(HkVectorToNiPoint(worldFromModel.m_translation));
+		}
+	}
 
 	//PrintToFile(std::to_string((int)state), "state.txt");
 
@@ -4261,6 +4376,28 @@ void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObjec
 	BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, node);
 }
 
+void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaPoseMatchingUtility *_this, const hkQsTransform *animPoseModelSpace, const hkQsTransform *ragdollPoseWorldSpace, hkQsTransform &animWorldFromModel, hkQsTransform &ragdollWorldFromModel)
+{
+	hkaPoseMatchingUtility_computeReferenceFrame(_this, animPoseModelSpace, ragdollPoseWorldSpace, animWorldFromModel, ragdollWorldFromModel);
+
+	if (hkbRagdollDriver *driver = g_currentPostPhysicsDriver) {
+		if (Actor *actor = GetActorFromRagdollDriver(driver)) {
+			if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+
+				if (ragdoll->fadeWorldFromModel) {
+					double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime) * *g_globalTimeMultiplier;
+					double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime;
+					if (elapsedTimeFraction <= 1.0) {
+						animWorldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, animWorldFromModel, elapsedTimeFraction);
+						ragdollWorldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, ragdollWorldFromModel, elapsedTimeFraction);
+					}
+				}
+
+			}
+		}
+	}
+}
+
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -4304,6 +4441,8 @@ auto GetUpStart_ZeroOutPitchRoll_Loc = RelocAddr<uintptr_t>(0x74D65B);
 auto GetUpEnd_RemoveRagdollFromWorld_HookLoc = RelocAddr<uintptr_t>(0x68727D);
 auto GetUpEnd_SetMotionTypeKeyframed_HookLoc = RelocAddr<uintptr_t>(0x6872D0);
 auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
+
+auto hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc = RelocAddr<uintptr_t>(0xA2921E);
 
 
 void PerformHooks(void)
@@ -4407,6 +4546,11 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Call(GetUpEnd_SetMotionTypeKeyframed_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook));
 		g_branchTrampoline.Write5Call(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(GetUpEndHandler_Handle_RemoveCollision_Hook));
 		_MESSAGE("Stopped the game from removing/resetting the ragdoll when a character has finished getting up");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook));
+		_MESSAGE("hkbRagdollDriver::extractRagdollPoseInternal hkaPoseMatchingUtility::computeReferenceFrame hook complete");
 	}
 
 	{

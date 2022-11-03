@@ -22,6 +22,8 @@ struct ActiveRagdoll
 	std::vector<hkQsTransform> ragdollPose{};
 	std::vector<float> stress{};
 	std::optional<hkQsTransform> rootBoneTransform{};
+	hkQsTransform worldFromModel{};
+	hkQsTransform stickyWorldFromModel{};
 	NiPoint3 rootOffset{}; // meters
 	float rootOffsetAngle = 0.f; // radians
 	float avgStress = 0.f;
@@ -31,6 +33,9 @@ struct ActiveRagdoll
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
 	KnockState knockState = KnockState::Normal;
+	bool wasComputingWorldFromModel = false;
+	bool fadeWorldFromModel = false;
+	double worldFromModelFadeTime = 0.0;
 	bool isOn = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 	bool disableConstraintMotorsForOneFrame = false;

@@ -18,6 +18,8 @@ namespace Config {
 		bool enableKeyframes = true;
 		double blendInKeyframeTime = 0.05;
 
+		double stickyWorldFromModelTime = 0.5;
+
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;
 		double physicsHitRecoveryTime = 0.01;

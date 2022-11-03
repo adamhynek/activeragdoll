@@ -401,7 +401,8 @@ static_assert(sizeof(MovementControllerNPC) == 0x1D0);
 enum class KnockState : UInt8
 {
 	Normal = 0,
-	Ragdolled = 1,
+	Ragdoll = 1,
+	BeginRagdoll = 2,
 	BeginGetUp = 5,
 	GetUp = 6,
 };

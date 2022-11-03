@@ -6,6 +6,9 @@
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
 #include <Physics/Utilities/Actions/EaseConstraints/hkpEaseConstraintsAction.h>
+#include <Common\Base\Memory\Allocator\hkMemoryAllocator.h>
+#include <Common\Base\Memory\Allocator\Thread\hkThreadMemory.h>
+#include <Animation\Ragdoll\PoseMatching\hkaPoseMatchingUtility.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -102,6 +105,8 @@ extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
 
 extern RelocPtr<TES *> g_tes;
 extern RelocPtr<BGSImpactManager *> g_impactManager;
+
+extern RelocPtr<hkThreadMemory> g_hkThreadMemory;
 
 
 // Havok / Bethesda havok wrappers
@@ -241,6 +246,9 @@ extern RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos;
 
 typedef void(*_hkVector4_setTransformedInversePos)(hkVector4 &_this, const hkTransform &transform, const hkVector4 &pos);
 extern RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos;
+
+typedef void(*_hkaPoseMatchingUtility_computeReferenceFrame)(hkaPoseMatchingUtility *_this, const hkQsTransform *animPoseModelSpace, const hkQsTransform *ragdollPoseWorldSpace, hkQsTransform &animWorldFromModel, hkQsTransform &ragdollWorldFromModel);
+extern RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_computeReferenceFrame;
 
 
 // More havok-related
@@ -417,8 +425,8 @@ extern RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState;
 typedef bool(*_IAnimationGraphManagerHolder_SetAnimationVariableFloat)(IAnimationGraphManagerHolder *_this, const BSFixedString &variableName, float value);
 extern RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableFloat> IAnimationGraphManagerHolder_SetAnimationVariableFloat;
 
-typedef void(*_BSAnimationGraphManager_HasRagdollInterface)(BSAnimationGraphManager *_this, bool *out);
-extern RelocAddr<_BSAnimationGraphManager_HasRagdollInterface> BSAnimationGraphManager_HasRagdollInterface;
+typedef void(*_BSAnimationGraphManager_HasRagdoll)(BSAnimationGraphManager *_this, bool *out);
+extern RelocAddr<_BSAnimationGraphManager_HasRagdoll> BSAnimationGraphManager_HasRagdoll;
 
 typedef void(*_BSAnimationGraphManager_AddRagdollToWorld)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphManager_AddRagdollToWorld;

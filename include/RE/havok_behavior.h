@@ -31,10 +31,19 @@
 
 struct hkbWorldFromModelModeData
 {
+	enum class WorldFromModelMode : UInt8
+	{
+		WORLD_FROM_MODEL_MODE_USE_OLD, // 0
+		WORLD_FROM_MODEL_MODE_USE_INPUT, // 1
+		WORLD_FROM_MODEL_MODE_COMPUTE, // 2
+		WORLD_FROM_MODEL_MODE_NONE, // 3
+		WORLD_FROM_MODEL_MODE_USE_ROOT_BONE, // 4
+	};
+
 	hkInt16 poseMatchingBone0; // 00
 	hkInt16 poseMatchingBone1; // 02
 	hkInt16 poseMatchingBone2; // 04
-	UInt8 mode; // 06
+	WorldFromModelMode mode; // 06
 };
 
 struct hkbRagdollDriver : hkReferencedObject
@@ -307,12 +316,12 @@ struct ProjectDBData
 {
 	void *vtbl; // 00
 	UInt8 unk08[0x70 - 0x08]; // 08
-	UInt8 unk70[0x30]; // 70 - BSTHashMap<char *, hkInt32> // event name -> event id
-	UInt8 unkA0[0x30]; // A0 - BSTHashMap<char *, hkInt32> // event name -> event id. This one is read from when handling anim events.
-	tArray<char *> unkD0; // D0 - all anim events (~2000 total)
+	UInt8 variableNamesToIds[0x30]; // 70 - BSTHashMap<char *, hkInt32> // variable name -> event id
+	UInt8 eventNamesToIds[0x30]; // A0 - BSTHashMap<char *, hkInt32> // event name -> event id. This one is read from when handling anim events.
+	tArray<char *> eventNames; // D0 - all anim events (~2000 total)
 	tArray<char *> unkE8; // E8 - state names?
 };
-static_assert(offsetof(ProjectDBData, unkA0) == 0xA0);
+static_assert(offsetof(ProjectDBData, eventNamesToIds) == 0xA0);
 
 struct BShkbAnimationGraph
 {

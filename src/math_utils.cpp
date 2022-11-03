@@ -290,6 +290,15 @@ NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t)
 	return qm;
 }
 
+hkQsTransform lerphkQsTransform(hkQsTransform &a, hkQsTransform &b, double t)
+{
+	hkQsTransform lerped{};
+	lerped.m_translation = NiPointToHkVector(lerp(HkVectorToNiPoint(a.m_translation), HkVectorToNiPoint(b.m_translation), t));
+	lerped.m_scale = NiPointToHkVector(lerp(HkVectorToNiPoint(a.m_scale), HkVectorToNiPoint(b.m_scale), t));
+	lerped.m_rotation = NiQuatToHkQuat(slerp(HkQuatToNiQuat(a.m_rotation), HkQuatToNiQuat(b.m_rotation), t));
+	return lerped;
+}
+
 float Determinant33(const NiMatrix33 &m)
 {
 	float a = m.data[0][0];

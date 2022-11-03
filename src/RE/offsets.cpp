@@ -83,6 +83,8 @@ RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
 RelocPtr<TES *> g_tes(0x2FEB6F8);
 RelocPtr<BGSImpactManager *> g_impactManager(0x2FC52E0);
 
+RelocPtr<hkThreadMemory> g_hkThreadMemory(0x1EB59C8);
+
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
 RelocPtr<UInt64> unk_141E703B8(0x1E703B8);
@@ -135,6 +137,7 @@ RelocAddr<_hkReferencedObject_addReference> hkReferencedObject_addReference(0xA0
 RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReference(0xA01340);
 RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos(0xA05D80);
 RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos(0xA05DC0);
+RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_computeReferenceFrame(0xB515E0);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
@@ -206,7 +209,7 @@ RelocAddr<_hkMalleableConstraintCinfo_setWrappedConstraintData> hkMalleableConst
 RelocAddr<_hkMalleableConstraintCinfo_setStrength> hkMalleableConstraintCinfo_setStrength(0xE3DE90);
 RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState(0x5EBA50);
 RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableFloat> IAnimationGraphManagerHolder_SetAnimationVariableFloat(0x500990);
-RelocAddr<_BSAnimationGraphManager_HasRagdollInterface> BSAnimationGraphManager_HasRagdollInterface(0x20B320);
+RelocAddr<_BSAnimationGraphManager_HasRagdoll> BSAnimationGraphManager_HasRagdoll(0x20B320);
 RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphManager_AddRagdollToWorld(0x5D1B50);
 RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGraphManager_RemoveRagdollFromWorld(0x61A1E0);
 RelocAddr<_BSAnimationGraphManager_DisableOrEnableSyncOnUpdate> BSAnimationGraphManager_DisableOrEnableSyncOnUpdate(0x61A2E0);
