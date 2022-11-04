@@ -19,6 +19,7 @@ namespace Config {
 		double blendInKeyframeTime = 0.05;
 
 		double stickyWorldFromModelTime = 0.5;
+		double stickyWorldFromModelTime1 = 0.15;
 
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;

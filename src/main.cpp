@@ -3582,18 +3582,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	bool isRigidBodyOn = rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f;
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
 
-	/*if ((ragdoll->knockState == KnockState::BeginGetUp || ragdoll->knockState == KnockState::GetUp) && (isPoweredOn && !isRigidBodyOn)) {
-		hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
-		for (int i = 0; i < poweredHeader->m_numData; i++) {
-			hkbPoweredRagdollControlData &elem = data[i];
-			elem.m_maxForce = Config::options.poweredMaxForce;
-			elem.m_tau = Config::options.poweredTau;
-			elem.m_damping = Config::options.poweredDaming;
-			elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
-			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
-		}
-	}*/
-
 	bool isComputingWorldFromModel = false;
 	if (poweredWorldFromModelModeHeader && poweredWorldFromModelModeHeader->m_onFraction > 0.f) {
 		hkbWorldFromModelModeData &worldFromModelMode = *(hkbWorldFromModelModeData *)Track_getData(generatorOutput, *poweredWorldFromModelModeHeader);
@@ -3608,19 +3596,42 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		ragdoll->worldFromModelFadeTime = g_currentFrameTime;
 		ragdoll->fadeWorldFromModel = true;
 	}
+	else if (!isComputingWorldFromModel && ragdoll->wasComputingWorldFromModel) {
+		// Went from computing worldfrommodel to not computing it any more
+		ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
+		ragdoll->worldFromModelFadeTime1 = g_currentFrameTime;
+		ragdoll->fadeWorldFromModel1 = true;
+	}
 
 	ragdoll->wasComputingWorldFromModel = isComputingWorldFromModel;
 
-	if (prevKnockState == KnockState::Ragdoll && (ragdoll->knockState == KnockState::BeginGetUp || ragdoll->knockState == KnockState::GetUp)) {
-		_MESSAGE("Start get up");
+	if (ragdoll->fadeWorldFromModel1) {
+		if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+
+			double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime1) * *g_globalTimeMultiplier;
+			double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime1;
+
+			if (elapsedTimeFraction <= 1.0) {
+				worldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, worldFromModel, elapsedTimeFraction);
+			}
+			else {
+				ragdoll->fadeWorldFromModel1 = false;
+			}
+		}
+	}
+
+	if (prevKnockState == KnockState::Ragdoll && ragdoll->knockState == KnockState::BeginGetUp) {
+		_MESSAGE("Begin get up");
+	}
+	else if (prevKnockState == KnockState::BeginGetUp && ragdoll->knockState == KnockState::GetUp) {
+		_MESSAGE("Get up");
 	}
 
 	if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 		hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 		ragdoll->worldFromModel = worldFromModel;
 	}
-
-	if (Actor_IsInRagdollState(actor)) return;
 
 	bool isPoweredOnly = !isRigidBodyOn && isPoweredOn;
 	if (isPoweredOnly) {
@@ -3716,6 +3727,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
 		}
 	}
+
+	if (Actor_IsInRagdollState(actor)) return;
 
 	if (isPoweredOnly) {
 		// Don't want to do foot ik / constraint loosening / disabling gravity when powered only

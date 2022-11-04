@@ -35,7 +35,9 @@ struct ActiveRagdoll
 	KnockState knockState = KnockState::Normal;
 	bool wasComputingWorldFromModel = false;
 	bool fadeWorldFromModel = false;
+	bool fadeWorldFromModel1 = false;
 	double worldFromModelFadeTime = 0.0;
+	double worldFromModelFadeTime1 = 0.0;
 	bool isOn = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 	bool disableConstraintMotorsForOneFrame = false;
