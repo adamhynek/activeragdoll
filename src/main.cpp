@@ -4343,10 +4343,20 @@ bool AttackStopHandler_Handle_Hook(void* _this, Actor* actor)
 bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
 {
 	if (g_rightHeldRefr == actor || g_leftHeldRefr == actor) {
-		if (ActorProcessManager *process = actor->processManager) {
-			*(float *)&process->middleProcess->unk2B0 = *g_fExplosionKnockStateExplodeDownTime; // reset knocked down timer
+		if (Config::options.resetFallStateWhenRagdollIsGrabbed) {
+			if (bhkCharacterController *controller = GetCharacterController(actor)) {
+				// Reset fall height/time while we have them grabbed, so that grabbing them and carrying them somewhere lower than they were ragdolled doesn't trigger fall damage
+				hkVector4 controllerPos; controller->GetPositionImpl(controllerPos, true);
+				controller->fallTime = 0.f;
+				controller->fallStartHeight = HkVectorToNiPoint(controllerPos).z * *g_inverseHavokWorldScale;
+			}
 		}
-		return false;
+		if (Config::options.preventGetUpWhenRagdollIsGrabbed) {
+			if (ActorProcessManager *process = actor->processManager) {
+				*(float *)&process->middleProcess->unk2B0 = *g_fExplosionKnockStateExplodeDownTime; // reset knocked down timer
+			}
+			return false;
+		}
 	}
 
 	return Actor_IsRagdollMovingSlowEnoughToGetUp(actor);
@@ -4543,7 +4553,7 @@ void PerformHooks(void)
 		_MESSAGE("Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool hook complete");
 	}
 
-	if (Config::options.preventGetUpWhenRagdollIsGrabbed) {
+	{
 		g_branchTrampoline.Write5Call(Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc.GetUIntPtr(), uintptr_t(Actor_IsRagdollMovingSlowEnoughToGetUp_Hook));
 		_MESSAGE("Actor_IsRagdollMovingSlowEnoughToGetUp hook complete");
 	}

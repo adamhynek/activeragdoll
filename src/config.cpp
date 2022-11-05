@@ -337,6 +337,7 @@ namespace Config {
 
 		if (!RegisterBool("dontResetPitchRollWhenGettingUp", options.dontResetPitchRollWhenGettingUp)) success = false;
 		if (!RegisterBool("preventGetUpWhenRagdollIsGrabbed", options.preventGetUpWhenRagdollIsGrabbed)) success = false;
+		if (!RegisterBool("resetFallStateWhenRagdollIsGrabbed", options.resetFallStateWhenRagdollIsGrabbed)) success = false;
 		if (!RegisterBool("dontRemoveRagdollWhenDoneGettingUp", options.dontRemoveRagdollWhenDoneGettingUp)) success = false;
 
 		if (!RegisterFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) success = false;
