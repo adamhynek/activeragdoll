@@ -33,11 +33,12 @@ struct ActiveRagdoll
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
 	KnockState knockState = KnockState::Normal;
+	bool wasRigidBodyOn = true;
 	bool wasComputingWorldFromModel = false;
-	bool fadeWorldFromModel = false;
-	bool fadeWorldFromModel1 = false;
-	double worldFromModelFadeTime = 0.0;
-	double worldFromModelFadeTime1 = 0.0;
+	bool fadeInWorldFromModel = false;
+	bool fadeOutWorldFromModel = false;
+	double worldFromModelFadeInTime = 0.0;
+	double worldFromModelFadeOutTime = 0.0;
 	bool isOn = false;
 	bool shouldNullOutWorldWhenRemovingFromWorld = false;
 	bool disableConstraintMotorsForOneFrame = false;

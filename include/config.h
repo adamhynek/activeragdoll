@@ -18,8 +18,12 @@ namespace Config {
 		bool enableKeyframes = true;
 		double blendInKeyframeTime = 0.05;
 
-		double stickyWorldFromModelTime = 0.5;
-		double stickyWorldFromModelTime1 = 0.15;
+		bool knockDownAfterBuggedGetUp = true;
+
+		bool fadeInComputedWorldFromModel = true;
+		bool fadeOutComputedWorldFromModel = true;
+		double computeWorldFromModelFadeInTime = 0.5;
+		double computeWorldFromModelFadeOutTime = 0.15;
 
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;
@@ -128,6 +132,13 @@ namespace Config {
 		float poweredDaming = 1.0f;
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
+
+		bool blendWhenGettingUp = true;
+		float getUpMaxForce = 50.f;
+		float getUpTau = 0.8f;
+		float getUpDaming = 1.0f;
+		float getUpProportionalRecoveryVelocity = 5.f;
+		float getUpConstantRecoveryVelocity = 0.2f;
 
 		float ragdollBoneMaxLinearVelocity = 500.f;
 		float ragdollBoneMaxAngularVelocity = 500.f;

@@ -3583,40 +3583,48 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	bool isPoweredOn = poweredHeader && poweredHeader->m_onFraction > 0.f;
 
 	bool isComputingWorldFromModel = false;
+	bool isUsingRootBoneAsWorldFromModel = false;
 	if (poweredWorldFromModelModeHeader && poweredWorldFromModelModeHeader->m_onFraction > 0.f) {
 		hkbWorldFromModelModeData &worldFromModelMode = *(hkbWorldFromModelModeData *)Track_getData(generatorOutput, *poweredWorldFromModelModeHeader);
 		if (worldFromModelMode.mode == hkbWorldFromModelModeData::WorldFromModelMode::WORLD_FROM_MODEL_MODE_COMPUTE) {
 			isComputingWorldFromModel = true;
 		}
+		else if (worldFromModelMode.mode == hkbWorldFromModelModeData::WorldFromModelMode::WORLD_FROM_MODEL_MODE_USE_ROOT_BONE) {
+			isUsingRootBoneAsWorldFromModel = true;
+		}
 	}
 
 	if (isComputingWorldFromModel && !ragdoll->wasComputingWorldFromModel) {
 		// Went from not computing worldfrommodel to computing it
-		ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
-		ragdoll->worldFromModelFadeTime = g_currentFrameTime;
-		ragdoll->fadeWorldFromModel = true;
+		if (Config::options.fadeInComputedWorldFromModel) {
+			ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
+			ragdoll->worldFromModelFadeInTime = g_currentFrameTime;
+			ragdoll->fadeInWorldFromModel = true;
+		}
 	}
 	else if (!isComputingWorldFromModel && ragdoll->wasComputingWorldFromModel) {
 		// Went from computing worldfrommodel to not computing it any more
-		ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
-		ragdoll->worldFromModelFadeTime1 = g_currentFrameTime;
-		ragdoll->fadeWorldFromModel1 = true;
+		if (Config::options.fadeOutComputedWorldFromModel) {
+			ragdoll->stickyWorldFromModel = ragdoll->worldFromModel; // We haven't updated ragdoll->worldFromModel yet this frame, so this actually the previous worldFromModel
+			ragdoll->worldFromModelFadeOutTime = g_currentFrameTime;
+			ragdoll->fadeOutWorldFromModel = true;
+		}
 	}
 
 	ragdoll->wasComputingWorldFromModel = isComputingWorldFromModel;
 
-	if (ragdoll->fadeWorldFromModel1) {
+	if (ragdoll->fadeOutWorldFromModel) {
 		if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
 			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 
-			double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime1) * *g_globalTimeMultiplier;
-			double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime1;
+			double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeOutTime) * *g_globalTimeMultiplier;
+			double elapsedTimeFraction = elapsedTime / Config::options.computeWorldFromModelFadeOutTime;
 
 			if (elapsedTimeFraction <= 1.0) {
 				worldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, worldFromModel, elapsedTimeFraction);
 			}
 			else {
-				ragdoll->fadeWorldFromModel1 = false;
+				ragdoll->fadeOutWorldFromModel = false;
 			}
 		}
 	}
@@ -3633,6 +3641,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		ragdoll->worldFromModel = worldFromModel;
 	}
 
+	bool isInRagdollState = Actor_IsInRagdollState(actor);
+
 	bool isPoweredOnly = !isRigidBodyOn && isPoweredOn;
 	if (isPoweredOnly) {
 		bool allNoForce = true;
@@ -3645,28 +3655,26 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 				}
 			}
 		}
+
+		if (Config::options.knockDownAfterBuggedGetUp) {
+			if (allNoForce && isUsingRootBoneAsWorldFromModel && !isInRagdollState) {
+				if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+					_MESSAGE("%s bugged out while getting up. Knocking them down again.", name->name);
+				}
+				if (ActorProcessManager *process = actor->processManager) {
+					ActorProcess_PushActorAway(process, actor, (*g_thePlayer)->pos, 0.f);
+				}
+			}
+		}
+
 		if (allNoForce) {
 			// Only powered constraints are active and they are effectively disabled
 			return;
 		}
-
-		TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-		if (std::string_view(name->name) == "Dorthe") {
-		}
-		else {
-			_MESSAGE("%d %s: Powered only", *g_currentFrameCounter, name->name);
-
-		}
 	}
 
-	if (!isRigidBodyOn && !isPoweredOn) {
-		// No controls are active - try and force it to use the rigidbody controller
-		if (rigidBodyHeader) {
-			TryForceRigidBodyControls(generatorOutput, *rigidBodyHeader);
-			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
-		}
-	}
-	else if (!isRigidBodyOn) {
+	if (!isRigidBodyOn && (!isPoweredOn || !isComputingWorldFromModel)) {
+		// No controls are active, or powered only and not computing world from model - try and force it to use the rigidbody controller
 		if (rigidBodyHeader) {
 			TryForceRigidBodyControls(generatorOutput, *rigidBodyHeader);
 			isRigidBodyOn = rigidBodyHeader->m_onFraction > 0.f;
@@ -3684,18 +3692,20 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		}
 	}
 
-	ragdoll->isOn = true;
-	if (!isRigidBodyOn) {
-		ragdoll->isOn = false;
-		ragdoll->state = RagdollState::Idle; // reset state
-		return;
-	}
-
 	if (isPoweredOn && ragdoll->disableConstraintMotorsForOneFrame) {
 		ragdoll->disableConstraintMotorsForOneFrame = false;
 		poweredHeader->m_onFraction = 0.f;
 		isPoweredOn = false;
 	}
+
+	if (Config::options.blendWhenGettingUp) {
+		if (isRigidBodyOn && !ragdoll->wasRigidBodyOn) {
+			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, g_currentFrameTime, Config::options.blendInTime);
+			ragdoll->blender.initialPose = ragdoll->ragdollPose; // the previous ragdoll pose
+			ragdoll->blender.isFirstBlendFrame = false;
+		}
+	}
+	ragdoll->wasRigidBodyOn = isRigidBodyOn;
 
 	if (Config::options.enableKeyframes) {
 		double elapsedTime = (g_currentFrameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
@@ -3718,14 +3728,32 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 	if (poweredHeader && poweredHeader->m_onFraction > 0.f && poweredHeader->m_numData > 0) {
 		hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
-		for (int i = 0; i < poweredHeader->m_numData; i++) {
-			hkbPoweredRagdollControlData &elem = data[i];
-			elem.m_maxForce = Config::options.poweredMaxForce;
-			elem.m_tau = Config::options.poweredTau;
-			elem.m_damping = Config::options.poweredDaming;
-			elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
-			elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
+		if (isComputingWorldFromModel) {
+			for (int i = 0; i < poweredHeader->m_numData; i++) {
+				hkbPoweredRagdollControlData &elem = data[i];
+				elem.m_maxForce = Config::options.getUpMaxForce;
+				elem.m_tau = Config::options.getUpTau;
+				elem.m_damping = Config::options.getUpDaming;
+				elem.m_proportionalRecoveryVelocity = Config::options.getUpProportionalRecoveryVelocity;
+				elem.m_constantRecoveryVelocity = Config::options.getUpConstantRecoveryVelocity;
+			}
 		}
+		else {
+			for (int i = 0; i < poweredHeader->m_numData; i++) {
+				hkbPoweredRagdollControlData &elem = data[i];
+				elem.m_maxForce = Config::options.poweredMaxForce;
+				elem.m_tau = Config::options.poweredTau;
+				elem.m_damping = Config::options.poweredDaming;
+				elem.m_proportionalRecoveryVelocity = Config::options.poweredProportionalRecoveryVelocity;
+				elem.m_constantRecoveryVelocity = Config::options.poweredConstantRecoveryVelocity;
+			}
+		}
+	}
+
+	ragdoll->isOn = isRigidBodyOn;
+	if (!ragdoll->isOn) {
+		ragdoll->state = RagdollState::Idle; // reset state
+		return;
 	}
 
 	if (Actor_IsInRagdollState(actor)) return;
@@ -3941,8 +3969,6 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
 	if (!ragdoll) return;
 
-	if (!ragdoll->isOn) return;
-
 	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
@@ -3966,30 +3992,28 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
 	if (!ragdoll) return;
 
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+
+	if (poseHeader && poseHeader->m_onFraction > 0.f) {
+		int numPoses = poseHeader->m_numData;
+		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+
+		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
+		ragdoll->ragdollPose.assign(poseOut, poseOut + numPoses);
+	}
+
 	if (!ragdoll->isOn) return;
 
-	if (ragdoll->fadeWorldFromModel) {
-		double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime) * *g_globalTimeMultiplier;
-		double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime;
+	if (ragdoll->fadeInWorldFromModel) {
+		double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeInTime) * *g_globalTimeMultiplier;
+		double elapsedTimeFraction = elapsedTime / Config::options.computeWorldFromModelFadeInTime;
 		if (elapsedTimeFraction > 1.0) {
-			ragdoll->fadeWorldFromModel = false;
+			ragdoll->fadeInWorldFromModel = false;
 		}
 	}
 
 	RagdollState state = ragdoll->state;
-
-	TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-	if (std::string_view(name->name) == "Dorthe") {
-		hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-		if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(inOut, *worldFromModelHeader);
-			PrintVector(HkVectorToNiPoint(worldFromModel.m_translation));
-		}
-	}
-
 	//PrintToFile(std::to_string((int)state), "state.txt");
-
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
 		if (ragdoll->easeConstraintsAction) {
@@ -4019,14 +4043,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 			hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
 			rigidBody->setGravityFactor(1.f);
 		}
-	}
-
-	if (poseHeader && poseHeader->m_onFraction > 0.f) {
-		int numPoses = poseHeader->m_numData;
-		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
-
-		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
-		ragdoll->ragdollPose.assign(poseOut, poseOut + numPoses);
 	}
 
 	Blender &blender = ragdoll->blender;
@@ -4407,9 +4423,9 @@ void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaP
 		if (Actor *actor = GetActorFromRagdollDriver(driver)) {
 			if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
 
-				if (ragdoll->fadeWorldFromModel) {
-					double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeTime) * *g_globalTimeMultiplier;
-					double elapsedTimeFraction = elapsedTime / Config::options.stickyWorldFromModelTime;
+				if (ragdoll->fadeInWorldFromModel) {
+					double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeInTime) * *g_globalTimeMultiplier;
+					double elapsedTimeFraction = elapsedTime / Config::options.computeWorldFromModelFadeInTime;
 					if (elapsedTimeFraction <= 1.0) {
 						animWorldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, animWorldFromModel, elapsedTimeFraction);
 						ragdollWorldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, ragdollWorldFromModel, elapsedTimeFraction);
