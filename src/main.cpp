@@ -3699,8 +3699,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 
 	if (Config::options.blendWhenGettingUp) {
-		if (isRigidBodyOn && !ragdoll->wasRigidBodyOn) {
-			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, g_currentFrameTime, Config::options.blendInTime);
+		if (prevKnockState == KnockState::BeginGetUp && ragdoll->knockState == KnockState::GetUp) {
+			ragdoll->blender.StartBlend(Blender::BlendType::RagdollToCurrentRagdoll, g_currentFrameTime, Config::options.getUpBlendInTime, true);
 			ragdoll->blender.initialPose = ragdoll->ragdollPose; // the previous ragdoll pose
 			ragdoll->blender.isFirstBlendFrame = false;
 		}

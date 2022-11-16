@@ -86,6 +86,8 @@ extern RelocPtr<float> g_fShieldLinearVelocityThreshold;
 
 extern RelocPtr<float> g_fExplosionKnockStateExplodeDownTime;
 
+extern RelocPtr<float> g_fQuadrupedPitchMult;
+
 extern RelocPtr<DWORD> g_dwTlsIndex;
 
 extern RelocAddr<void *> PlayerCharacter_vtbl;

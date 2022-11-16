@@ -24,7 +24,7 @@ float Blender::PowerCurve::GetBlendValueAtTime(double time)
 	return std::clamp(a * pow(time, b), 0.0, 1.0);
 }
 
-void Blender::StartBlend(BlendType blendType, double currentTime, const Curve &blendCurve)
+void Blender::StartBlend(BlendType blendType, double currentTime, const Curve &blendCurve, bool ignoreRoot)
 {
 	if (isActive) {
 		// We were already blending before, so set the initial pose to the current blend pose
@@ -38,7 +38,27 @@ void Blender::StartBlend(BlendType blendType, double currentTime, const Curve &b
 	startTime = currentTime;
 	type = blendType;
 	curve = blendCurve;
+	this->ignoreRoot = ignoreRoot;
 	isActive = true;
+}
+
+int GetAnimBoneIndexFromRagdollBoneIndex(const hkbRagdollDriver &driver, int ragdollBoneIndex)
+{
+	if (hkbCharacter *character = driver.character) {
+		if (hkbCharacterSetup *setup = character->setup) {
+			if (hkaSkeleton *animationSkeleton = setup->m_animationSkeleton) {
+				if (hkaSkeletonMapper *ragdollToAnimationMapper = setup->m_ragdollToAnimationSkeletonMapper) {
+					for (const hkaSkeletonMapperData::SimpleMapping &mapping : ragdollToAnimationMapper->m_mapping.m_simpleMappings) {
+						if (mapping.m_boneA == ragdollBoneIndex) {
+							return mapping.m_boneB;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return -1;
 }
 
 bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &driver, hkbGeneratorOutput &inOut, double frameTime)
@@ -65,6 +85,15 @@ bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &drive
 		}
 		isFirstBlendFrame = false;
 
+		hkQsTransform rootTransform;
+		int animRootIndex = -1;
+		if (ignoreRoot) {
+			animRootIndex = GetAnimBoneIndexFromRagdollBoneIndex(driver, 0);
+			if (animRootIndex != -1) {
+				rootTransform = poseOut[animRootIndex];
+			}
+		}
+
 		// Blend poses
 		if (type == BlendType::AnimToRagdoll) {
 			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.ragdollPose.data(), lerpAmount, poseOut);
@@ -80,6 +109,10 @@ bool Blender::Update(const ActiveRagdoll &ragdoll, const hkbRagdollDriver &drive
 		}
 		else if (type == BlendType::RagdollToCurrentRagdoll) {
 			hkbBlendPoses(numPoses, initialPose.data(), ragdoll.ragdollPose.data(), lerpAmount, poseOut);
+		}
+
+		if (ignoreRoot && animRootIndex != -1) {
+			poseOut[animRootIndex] = rootTransform;
 		}
 
 		currentPose.assign(poseOut, poseOut + numPoses); // save the blended pose in case we need to blend out from here

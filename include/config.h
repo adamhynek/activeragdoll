@@ -15,6 +15,9 @@ namespace Config {
 
 		double blendInTime = 0.2;
 
+		bool blendWhenGettingUp = true;
+		double getUpBlendInTime = 0.3;
+
 		bool enableKeyframes = true;
 		double blendInKeyframeTime = 0.05;
 
@@ -23,7 +26,7 @@ namespace Config {
 		bool fadeInComputedWorldFromModel = true;
 		bool fadeOutComputedWorldFromModel = true;
 		double computeWorldFromModelFadeInTime = 0.5;
-		double computeWorldFromModelFadeOutTime = 0.15;
+		double computeWorldFromModelFadeOutTime = 0.3;
 
 		double hitCooldownTimeStoppedColliding = 0.2;
 		double hitCooldownTimeFallback = 1.0;
@@ -133,8 +136,7 @@ namespace Config {
 		float poweredProportionalRecoveryVelocity = 5.f;
 		float poweredConstantRecoveryVelocity = 0.2f;
 
-		bool blendWhenGettingUp = true;
-		float getUpMaxForce = 50.f;
+		float getUpMaxForce = 0.f; // TODO: Make it non-zero for non-humans like skeevers...
 		float getUpTau = 0.8f;
 		float getUpDaming = 1.0f;
 		float getUpProportionalRecoveryVelocity = 5.f;

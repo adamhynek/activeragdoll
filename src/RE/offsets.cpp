@@ -64,6 +64,8 @@ RelocPtr<float> g_fShieldLinearVelocityThreshold(0x1EAE5A8);
 
 RelocPtr<float> g_fExplosionKnockStateExplodeDownTime(0x1EA0778);
 
+RelocPtr<float> g_fQuadrupedPitchMult(0x1EACF10);
+
 RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
 
 RelocAddr<void *> PlayerCharacter_vtbl(0x16E2230);

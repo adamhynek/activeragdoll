@@ -35,7 +35,7 @@ struct Blender
 		double b;
 	};
 
-	void StartBlend(BlendType blendType, double currentTime, const Curve &blendCurve);
+	void StartBlend(BlendType blendType, double currentTime, const Curve &blendCurve, bool ignoreRoot = false);
 
 	inline void StopBlend() { isActive = false; }
 
@@ -43,12 +43,12 @@ struct Blender
 
 	std::vector<hkQsTransform> initialPose{};
 	std::vector<hkQsTransform> currentPose{};
-	std::vector<hkQsTransform> scratchPose{};
 	double startTime = 0.0;
 	BlendType type = BlendType::AnimToRagdoll;
 	Curve curve{ 1.0 };
 	bool isFirstBlendFrame = false;
 	bool isActive = false;
+	bool ignoreRoot = false;
 };
 
 void BlendPoses(const hkQsTransform *srcPoses, const hkQsTransform *dstPoses, hkQsTransform *outPoses, float *weights, int numPoses);
