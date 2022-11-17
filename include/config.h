@@ -122,6 +122,7 @@ namespace Config {
 		float collisionDamageMinMassPlayerInflicted = 6.f;
 
 		bool doWarp = true;
+		bool disableWarpWhenGettingUp = true;
 		float maxAllowedDistBeforeWarp = 15.f;
 
 		float hierarchyGain = 0.6f;
@@ -144,6 +145,9 @@ namespace Config {
 
 		float ragdollBoneMaxLinearVelocity = 500.f;
 		float ragdollBoneMaxAngularVelocity = 500.f;
+
+		bool disableCollisionSoundsWhenGettingUp = true;
+		double getUpDisableCollisionSoundsTime = 0.5;
 
 		bool overrideSoundVelForRagdollCollisions = true;
 		float ragdollSoundVel = 1000.f;

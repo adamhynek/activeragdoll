@@ -1381,6 +1381,7 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
 
 
 float g_savedMinSoundVel;
+double g_restoreSoundVelTime = 0.0;
 
 struct PhysicsListener :
 	hkpContactListener,
@@ -1780,7 +1781,9 @@ struct PhysicsListener :
 	virtual void postSimulationCallback(hkpWorld* world) override
 	{
 		// Restore the game's original value for fMinSoundVel after any contact callbacks would have been called.
-		*g_fMinSoundVel = g_savedMinSoundVel;
+		if (g_currentFrameTime >= g_restoreSoundVelTime) {
+			*g_fMinSoundVel = g_savedMinSoundVel;
+		}
 
 		// First just accumulate adds/removes. Why? While Added always occurs before Removed for a single contact point,
 		// a single pair of rigid bodies can have multiple contact points, and adds/removes between these different contact points can be non-deterministic.
@@ -3610,7 +3613,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			ragdoll->fadeOutWorldFromModel = true;
 		}
 	}
-
 	ragdoll->wasComputingWorldFromModel = isComputingWorldFromModel;
 
 	if (ragdoll->fadeOutWorldFromModel) {
@@ -3633,6 +3635,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 		_MESSAGE("Begin get up");
 	}
 	else if (prevKnockState == KnockState::BeginGetUp && ragdoll->knockState == KnockState::GetUp) {
+		if (Config::options.disableCollisionSoundsWhenGettingUp) {
+			*g_fMinSoundVel = Config::options.ragdollSoundVel;
+			g_restoreSoundVelTime = g_currentFrameTime + Config::options.getUpDisableCollisionSoundsTime;
+		}
 		_MESSAGE("Get up");
 	}
 
@@ -3882,7 +3888,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							float actualAngle = atan2f(actualForward.x, actualForward.y);
 							ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
 
-							if (Config::options.doWarp && VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp) {
+							if (
+								Config::options.doWarp &&
+								(!Config::options.disableWarpWhenGettingUp || ragdoll->knockState != KnockState::GetUp) &&
+								VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp
+							) {
 #ifdef _DEBUG
 								TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
 								_MESSAGE("%d %s: Warp", *g_currentFrameCounter, name->name);
@@ -3955,7 +3965,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 
 hkbRagdollDriver *g_currentPostPhysicsDriver = nullptr;
 
-void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
 	// This hook is called right before hkbRagdollDriver::postPhysics()
 
@@ -3969,16 +3979,16 @@ void PrePostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkb
 	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
 	if (!ragdoll) return;
 
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
-		hkQsTransform *animPose = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+		hkQsTransform *animPose = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 		// Copy anim pose track before postPhysics() as postPhysics() will overwrite it with the ragdoll pose
 		ragdoll->animPose.assign(animPose, animPose + numPoses);
 	}
 }
 
-void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
+void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
 	// This hook is called right after hkbRagdollDriver::postPhysics()
 
@@ -3992,14 +4002,20 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
 	if (!ragdoll) return;
 
-	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(inOut, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+	hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
 
 	if (poseHeader && poseHeader->m_onFraction > 0.f) {
 		int numPoses = poseHeader->m_numData;
-		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+		hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
 		// Copy pose track now since postPhysics() just set it to the high-res ragdoll pose
 		ragdoll->ragdollPose.assign(poseOut, poseOut + numPoses);
+	}
+
+	hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+	if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+		hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+		ragdoll->worldFromModelPostPhysics = worldFromModel;
 	}
 
 	if (!ragdoll->isOn) return;
@@ -4013,7 +4029,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	}
 
 	RagdollState state = ragdoll->state;
-	//PrintToFile(std::to_string((int)state), "state.txt");
 
 	if (Config::options.loosenRagdollContraintsToMatchPose) {
 		if (ragdoll->easeConstraintsAction) {
@@ -4045,11 +4060,13 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 		}
 	}
 
+	// TODO: Figure out blending fully in world space
+
 	Blender &blender = ragdoll->blender;
 	if (blender.isActive) {
 		bool done = !Config::options.doBlending;
 		if (!done) {
-			done = blender.Update(*ragdoll, *driver, inOut, g_currentFrameTime);
+			done = blender.Update(*ragdoll, *driver, generatorOutput, g_currentFrameTime);
 		}
 		if (done) {
 			if (state == RagdollState::BlendIn) {
@@ -4064,14 +4081,14 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 	if (Config::options.forceAnimPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->animPose.data()) {
 			int numPoses = poseHeader->m_numData;
-			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 			memcpy(poseOut, ragdoll->animPose.data(), ragdoll->animPose.size() * sizeof(hkQsTransform));
 		}
 	}
 	else if (Config::options.forceRagdollPose) {
 		if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->ragdollPose.data()) {
 			int numPoses = poseHeader->m_numData;
-			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(inOut, *poseHeader);
+			hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 			memcpy(poseOut, ragdoll->ragdollPose.data(), ragdoll->ragdollPose.size() * sizeof(hkQsTransform));
 		}
 	}
@@ -4422,7 +4439,6 @@ void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaP
 	if (hkbRagdollDriver *driver = g_currentPostPhysicsDriver) {
 		if (Actor *actor = GetActorFromRagdollDriver(driver)) {
 			if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-
 				if (ragdoll->fadeInWorldFromModel) {
 					double elapsedTime = (g_currentFrameTime - ragdoll->worldFromModelFadeInTime) * *g_globalTimeMultiplier;
 					double elapsedTimeFraction = elapsedTime / Config::options.computeWorldFromModelFadeInTime;
@@ -4431,7 +4447,6 @@ void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaP
 						ragdollWorldFromModel = lerphkQsTransform(ragdoll->stickyWorldFromModel, ragdollWorldFromModel, elapsedTimeFraction);
 					}
 				}
-
 			}
 		}
 	}

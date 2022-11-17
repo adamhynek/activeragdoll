@@ -23,6 +23,7 @@ struct ActiveRagdoll
 	std::vector<float> stress{};
 	std::optional<hkQsTransform> rootBoneTransform{};
 	hkQsTransform worldFromModel{};
+	hkQsTransform worldFromModelPostPhysics{};
 	hkQsTransform stickyWorldFromModel{};
 	NiPoint3 rootOffset{}; // meters
 	float rootOffsetAngle = 0.f; // radians
