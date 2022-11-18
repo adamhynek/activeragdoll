@@ -15,7 +15,7 @@ namespace Config {
 
 		double blendInTime = 0.2;
 
-		bool blendWhenGettingUp = true;
+		bool blendWhenGettingUp = false;
 		double getUpBlendInTime = 0.3;
 
 		bool enableKeyframes = true;

@@ -688,7 +688,7 @@ struct SwingHandler
 	}
 
 	// Return true if power attack succeeded, false if regular attack
-	bool TrySwingPowerAttack(bool isOffhand, bool isBash)
+	bool TrySwingPowerAttack(bool isOffhand, bool isBash, bool isWeaponSwingWhileBlockingWithShield)
 	{
 		PlayerCharacter* player = *g_thePlayer;
 
@@ -707,6 +707,11 @@ struct SwingHandler
 			}
 			FlashHudMenuMeter(26);
 			return false;
+		}
+
+		if (isWeaponSwingWhileBlockingWithShield) {
+			// Stop blocking with the shield right before performing the swing action
+			PlayerControls_SendAction(PlayerControls::GetSingleton(), 47, 2); // kActionLeftRelease
 		}
 
 		// We send this first, as it is a regular attack and executes some side effects, and does not deduct stamina since we don't make this a power attack.
@@ -850,6 +855,8 @@ struct SwingHandler
 		bool allowWeaponBash = Config::options.enableWeaponBash && (isHit || !Config::options.weaponBashOnlyOnHits) && !isTriggerHeld;
 		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, allowWeaponBash);
 
+		bool isWeaponSwingWhileBlockingWithShield = Actor_IsBlocking(player) && !isBash && !isOffhand && equippedShield;
+
 		// Need to set attackState before UpdateAndGetAttackData()
 		UInt32 newAttackState = isBash ? 6 : 2; // kBash if bashing else kSwing
 		SetAttackState(player, newAttackState);
@@ -857,7 +864,7 @@ struct SwingHandler
 		didLastSwingFail = false;
 		wasLastSwingBash = false;
 		if (isTriggerHeld && canPowerAttack) {
-			bool didPowerAttackSucceed = TrySwingPowerAttack(isOffhand, isBash); // this also sets the attackData
+			bool didPowerAttackSucceed = TrySwingPowerAttack(isOffhand, isBash, isWeaponSwingWhileBlockingWithShield); // this also sets the attackData
 			if (!didPowerAttackSucceed && isBash) {
 				bool didBashSucceed = TryBash(isOffhand);
 				if (didBashSucceed) {
@@ -893,6 +900,11 @@ struct SwingHandler
 				didLastSwingFail = !didBashSucceed;
 			}
 			else {
+				if (isWeaponSwingWhileBlockingWithShield) {
+					// Stop blocking with the shield right before performing the swing action
+					PlayerControls_SendAction(PlayerControls::GetSingleton(), 47, 2); // kActionLeftRelease
+				}
+
 				// This sends the ActionLeftAttack/ActionRightAttack action, which sets the last BGSAttackData (overrides us from before...) to the regular attackStart attackdata.
 				// That means it notifies the anim graph with attackStart/attackStartLeftHand too.
 				// It also sets the attackState to kDraw (1)

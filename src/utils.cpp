@@ -215,18 +215,17 @@ bool IsUnarmed(TESForm *equippedObject)
 
 bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool allowWeaponBash)
 {
-	TESForm* equippedObj = actor->GetEquippedObject(isOffhand);
-	TESObjectWEAP* weapon = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
+	TESForm *equippedObj = actor->GetEquippedObject(isOffhand);
+	TESObjectWEAP *weapon = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
 	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
 
-	TESForm* offhandObj = actor->GetEquippedObject(true);
-	TESObjectARMO* equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
+	TESForm *offhandObj = actor->GetEquippedObject(true);
+	TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
 	bool isShield = isOffhand && equippedShield;
 
-	TESObjectLIGH* equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
+	TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
 	bool isTorch = isOffhand && equippedLight;
 
-	bool isBash = false;
 	if (isBowOrCrossbow || isShield || isTorch) {
 		// We hit with a bow, crossbow, shield, or torch
 		return true;
