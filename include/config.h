@@ -36,6 +36,9 @@ namespace Config {
 
 		double worldChangedWaitTime = 0.4;
 
+		bool disablePlayerFollowerCollision = false;
+		bool disablePlayerSummonCollision = false;
+
 		bool enableActorShove = true;
 		bool disableShoveWhileWeaponsDrawn = true;
 		bool enableShoveFromFurniture = true;

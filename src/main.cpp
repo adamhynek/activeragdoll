@@ -441,6 +441,7 @@ ControllerTrackingData g_controllerData[2]; // one for each hand
 
 std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<UInt16> g_activeBipedGroups{};
+std::unordered_set<UInt16> g_noPlayerCharControllerCollideGroups{};
 std::unordered_set<UInt16> g_hittableCharControllerGroups{};
 std::unordered_set<UInt16> g_selfCollidableBipedGroups{};
 
@@ -2063,6 +2064,10 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 				return CollisionFilterComparisonResult::Ignore;
 			}
 
+			if (g_noPlayerCharControllerCollideGroups.count(otherGroup)) {
+				return CollisionFilterComparisonResult::Ignore;
+			}
+
 			return CollisionFilterComparisonResult::Collide;
 		}
 	}
@@ -2957,6 +2962,7 @@ void ResetObjects()
 	g_activeActors.clear();
 	g_activeRagdolls.clear();
 	g_activeBipedGroups.clear();
+	g_noPlayerCharControllerCollideGroups.clear();
 	g_hittableCharControllerGroups.clear();
 	g_selfCollidableBipedGroups.clear();
 	g_higgsLingeringRigidBodies.clear();
@@ -3475,6 +3481,16 @@ void ProcessHavokHitJobsHook()
 				if (isActiveActor) {
 					if (collisionGroup != 0) {
 						g_activeBipedGroups.insert(collisionGroup);
+
+						if (
+							(Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
+							(Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
+						) {
+							g_noPlayerCharControllerCollideGroups.insert(collisionGroup);
+						}
+						else {
+							g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
+						}
 					}
 
 					// Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
@@ -3513,6 +3529,7 @@ void ProcessHavokHitJobsHook()
 				if (isAddedToWorld && canAddToWorld) {
 					RemoveRagdollFromWorld(actor);
 					g_activeBipedGroups.erase(collisionGroup);
+					g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
 				}
 				else if (isHittableCharController) {
 					g_hittableCharControllerGroups.erase(collisionGroup);
