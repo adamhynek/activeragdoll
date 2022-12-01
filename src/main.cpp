@@ -3351,10 +3351,6 @@ void ProcessHavokHitJobsHook()
 			}*/
 #endif // _DEBUG
 
-			if (std::string_view(name->name) == "Dorthe") {
-				//PrintVector(actor->pos);
-			}
-
 			UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
 			UInt16 collisionGroup = filterInfo >> 16;
 
@@ -3661,14 +3657,22 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 	}
 
 	if (prevKnockState == KnockState::Ragdoll && ragdoll->knockState == KnockState::BeginGetUp) {
-		_MESSAGE("Begin get up");
+#ifdef _DEBUG
+		if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+			_MESSAGE("%d %s: Begin get up", *g_currentFrameCounter, name->name);
+		}
+#endif // _DEBUG
 	}
 	else if (prevKnockState == KnockState::BeginGetUp && ragdoll->knockState == KnockState::GetUp) {
 		if (Config::options.disableCollisionSoundsWhenGettingUp) {
 			*g_fMinSoundVel = Config::options.ragdollSoundVel;
 			g_restoreSoundVelTime = g_currentFrameTime + Config::options.getUpDisableCollisionSoundsTime;
 		}
-		_MESSAGE("Get up");
+#ifdef _DEBUG
+		if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+			_MESSAGE("%d %s: Get up", *g_currentFrameCounter, name->name);
+		}
+#endif // _DEBUG
 	}
 
 	if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
