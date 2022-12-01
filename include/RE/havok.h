@@ -100,19 +100,6 @@ static_assert(offsetof(bhkWorld, world) == 0x10);
 static_assert(offsetof(bhkWorld, worldLock) == 0xC598);
 static_assert(sizeof(bhkWorld) == 0xC600);
 
-struct TriggerEntry : NiRefObject
-{
-	// These are created whenever a phantom is added to the world on one of the layers in bhkCollisionFilter::triggerBitfield1
-	// Then bhkTrapListener iterates through them during the physics step and does getPenetrations().
-
-	TriggerEntry *next; // 10
-	hkpCollidable *collidable; // 18
-	UInt32 handle; // 20 - handle of the trigger object
-	UInt32 unk24;
-	tArray<UInt64> unk28;
-	UInt64 triggerEventList; // 38 - BSList<TriggerEntry::TriggerEvent>
-};
-
 struct bhkTrapListener : hkpEntityListener
 {
 	virtual void PhysicsStepCallback(float deltaTime); // 06
@@ -120,7 +107,7 @@ struct bhkTrapListener : hkpEntityListener
 	UInt64 unk08;
 	UInt64 unk10;
 	hkpPhantomListener phantomListener; // 18
-	TriggerEntry *triggers; // 20
+	struct TriggerEntry *triggers; // 20
 	bool unk28;
 };
 static_assert(offsetof(bhkTrapListener, triggers) == 0x20);

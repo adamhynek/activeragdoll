@@ -14,6 +14,41 @@ extern RelocAddr<_CleanupCloneList> CleanupCloneList2;
 extern RelocPtr<UInt64> unk_141E703BC;
 extern RelocPtr<UInt64> unk_141E703B8;
 
+template <class T>
+struct NiTListItem
+{
+	NiTListItem *next; // 00
+	NiTListItem *prev; // 08
+	T item; // 10
+};
+static_assert(sizeof(NiTListItem<void *>) == 0x18);
+
+template <class T>
+struct NiTPointerList
+{
+	NiTListItem<T> *head; // 00
+	NiTListItem<T> *tail; // 08
+	UInt64 allocator; // 10
+};
+static_assert(sizeof(NiTPointerList<void *>) == 0x18);
+
+template <class T>
+struct BSList
+{
+	void *vtbl; // 00
+	NiTListItem<T> *begin; // 08
+	NiTListItem<T> *end; // 10
+	UInt32 size; // 18
+};
+
+template <class T>
+struct SimpleArray
+{
+	T *items; // 00
+	UInt32 count; // 08
+	UInt32 capacity; // 0C
+};
+
 class NiCloningProcess
 {
 public:
@@ -42,9 +77,12 @@ public:
 	UInt8 copyType = 1; // 60 - CopyType - default 1
 	UInt8 m_eAffectedNodeRelationBehavior = 0; // 61 - CloneRelationBehavior - default 0
 	UInt8 m_eDynamicEffectRelationBehavior = 0; // 62 - CloneRelationBehavior - default 0
+	UInt8 pad63;
 	char m_cAppendChar = '$'; // 64 - default '$'
 	NiPoint3 scale = { 1.0f, 1.0f, 1.0f }; // 0x68 - default {1, 1, 1}
 };
+static_assert(offsetof(NiCloningProcess, m_cAppendChar) == 0x64);
+static_assert(offsetof(NiCloningProcess, scale) == 0x68);
 
 struct VRMeleeData
 {
@@ -565,6 +603,37 @@ struct ImpactSoundData
 	void *unk30; // 30
 };
 static_assert(sizeof(ImpactSoundData) == 0x38);
+
+struct TriggerEntry : NiRefObject
+{
+	// These are created whenever a phantom is added to the world on one of the layers in bhkCollisionFilter::triggerBitfield1
+	// Then bhkTrapListener iterates through them during the physics step and does getPenetrations().
+
+	struct TriggerEvent
+	{
+		enum EventType : UInt32
+		{
+			kNone = 0,
+			kEntered = 1,
+			kLeft = 2,
+		};
+
+		UInt32 formId; // 00
+		EventType type; // 04
+	};
+
+	TriggerEntry *next; // 10
+	hkpCollidable *collidable; // 18
+	UInt32 handle; // 20 - handle of the trigger object
+	UInt32 unk24;
+	SimpleArray<UInt32> overlappingForms; // 28
+	BSList<TriggerEvent> triggerEvents; // 38 - BSList<TriggerEntry::TriggerEvent>
+	float unk58;
+	UInt32 unk5C;
+};
+static_assert(offsetof(TriggerEntry, overlappingForms) == 0x28);
+static_assert(offsetof(TriggerEntry, triggerEvents) == 0x38);
+static_assert(offsetof(TriggerEntry, unk58) == 0x58);
 
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString& a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder* _this, const BSFixedString& a_variableName, SInt32& a_out); // 11
