@@ -199,6 +199,7 @@ namespace Config {
 
 		bool dontResetPitchRollWhenGettingUp = true;
 		bool preventGetUpWhenRagdollIsGrabbed = true;
+		bool resetKnockedDownTimerWhenRagdollIsGrabbed = true;
 		bool resetFallStateWhenRagdollIsGrabbed = true;
 		bool dontRemoveRagdollWhenDoneGettingUp = true;
 

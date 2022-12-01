@@ -4414,8 +4414,10 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
 			}
 		}
 		if (Config::options.preventGetUpWhenRagdollIsGrabbed) {
-			if (ActorProcessManager *process = actor->processManager) {
-				*(float *)&process->middleProcess->unk2B0 = *g_fExplosionKnockStateExplodeDownTime; // reset knocked down timer
+			if (Config::options.resetKnockedDownTimerWhenRagdollIsGrabbed) {
+				if (ActorProcessManager *process = actor->processManager) {
+					*(float *)&process->middleProcess->unk2B0 = *g_fExplosionKnockStateExplodeDownTime; // reset knocked down timer - it's 15 seconds by default
+				}
 			}
 			return false;
 		}
