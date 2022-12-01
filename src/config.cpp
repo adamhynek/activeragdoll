@@ -193,8 +193,18 @@ namespace Config {
 
 		if (!RegisterDouble("blendInTime", options.blendInTime)) success = false;
 
+		if (!RegisterBool("blendWhenGettingUp", options.blendWhenGettingUp)) success = false;
+		if (!RegisterDouble("getUpBlendInTime", options.getUpBlendInTime)) success = false;
+
 		if (!RegisterBool("enableKeyframes", options.enableKeyframes)) success = false;
 		if (!RegisterDouble("blendInKeyframeTime", options.blendInKeyframeTime)) success = false;
+
+		if (!RegisterBool("knockDownAfterBuggedGetUp", options.knockDownAfterBuggedGetUp)) success = false;
+
+		if (!RegisterBool("fadeInComputedWorldFromModel", options.fadeInComputedWorldFromModel)) success = false;
+		if (!RegisterBool("fadeOutComputedWorldFromModel", options.fadeOutComputedWorldFromModel)) success = false;
+		if (!RegisterDouble("computeWorldFromModelFadeInTime", options.computeWorldFromModelFadeInTime)) success = false;
+		if (!RegisterDouble("computeWorldFromModelFadeOutTime", options.computeWorldFromModelFadeOutTime)) success = false;
 
 		if (!RegisterDouble("hitCooldownTimeStoppedColliding", options.hitCooldownTimeStoppedColliding)) success = false;
 		if (!RegisterDouble("hitCooldownTimeFallback", options.hitCooldownTimeFallback)) success = false;
@@ -203,6 +213,9 @@ namespace Config {
 		if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
 
 		if (!RegisterDouble("worldChangedWaitTime", options.worldChangedWaitTime)) success = false;
+
+		if (!RegisterBool("disablePlayerFollowerCollision", options.disablePlayerFollowerCollision)) success = false;
+		if (!RegisterBool("disablePlayerSummonCollision", options.disablePlayerSummonCollision)) success = false;
 
 		if (!RegisterBool("enableActorShove", options.enableActorShove)) success = false;
 		if (!RegisterBool("disableShoveWhileWeaponsDrawn", options.disableShoveWhileWeaponsDrawn)) success = false;
@@ -273,6 +286,7 @@ namespace Config {
 		if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;
 
 		if (!RegisterBool("doWarp", options.doWarp)) success = false;
+		if (!RegisterBool("disableWarpWhenGettingUp", options.disableWarpWhenGettingUp)) success = false;
 		if (!RegisterFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) success = false;
 
 		if (!RegisterFloat("hierarchyGain", options.hierarchyGain)) success = false;
@@ -287,8 +301,17 @@ namespace Config {
 		if (!RegisterFloat("poweredProportionalRecoveryVelocity", options.poweredProportionalRecoveryVelocity)) success = false;
 		if (!RegisterFloat("poweredConstantRecoveryVelocity", options.poweredConstantRecoveryVelocity)) success = false;
 
+		if (!RegisterFloat("getUpMaxForce", options.getUpMaxForce)) success = false;
+		if (!RegisterFloat("getUpTau", options.getUpTau)) success = false;
+		if (!RegisterFloat("getUpDaming", options.getUpDaming)) success = false;
+		if (!RegisterFloat("getUpProportionalRecoveryVelocity", options.getUpProportionalRecoveryVelocity)) success = false;
+		if (!RegisterFloat("getUpConstantRecoveryVelocity", options.getUpConstantRecoveryVelocity)) success = false;
+
 		if (!RegisterFloat("ragdollBoneMaxLinearVelocity", options.ragdollBoneMaxLinearVelocity)) success = false;
 		if (!RegisterFloat("ragdollBoneMaxAngularVelocity", options.ragdollBoneMaxAngularVelocity)) success = false;
+
+		if (!RegisterBool("disableCollisionSoundsWhenGettingUp", options.disableCollisionSoundsWhenGettingUp)) success = false;
+		if (!RegisterDouble("getUpDisableCollisionSoundsTime ", options.getUpDisableCollisionSoundsTime)) success = false;
 
 		if (!RegisterBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) success = false;
 		if (!RegisterFloat("ragdollSoundVel", options.ragdollSoundVel)) success = false;
@@ -337,6 +360,7 @@ namespace Config {
 
 		if (!RegisterBool("dontResetPitchRollWhenGettingUp", options.dontResetPitchRollWhenGettingUp)) success = false;
 		if (!RegisterBool("preventGetUpWhenRagdollIsGrabbed", options.preventGetUpWhenRagdollIsGrabbed)) success = false;
+		if (!RegisterBool("resetKnockedDownTimerWhenRagdollIsGrabbed", options.resetKnockedDownTimerWhenRagdollIsGrabbed)) success = false;
 		if (!RegisterBool("resetFallStateWhenRagdollIsGrabbed", options.resetFallStateWhenRagdollIsGrabbed)) success = false;
 		if (!RegisterBool("dontRemoveRagdollWhenDoneGettingUp", options.dontRemoveRagdollWhenDoneGettingUp)) success = false;
 
