@@ -63,9 +63,6 @@ SKSEPapyrusInterface *g_papyrus = nullptr;
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
-bool g_isRightTriggerHeld = false;
-bool g_isLeftTriggerHeld = false;
-
 vr_src::VRControllerAxis_t g_rightStick;
 vr_src::VRControllerAxis_t g_leftStick;
 
@@ -852,7 +849,7 @@ struct SwingHandler
 
 		bool canPowerAttack = !isTorch && !isStaffOrBowOrCrossbow; // unarmed, melee weapon, or shield
 
-		bool isTriggerHeld = isLeft ? g_isLeftTriggerHeld : g_isRightTriggerHeld;
+		bool isTriggerHeld = isOffhand ? PlayerControls_IsTriggerHeldOffHand(PlayerControls::GetSingleton()) : PlayerControls_IsTriggerHeldMainHand(PlayerControls::GetSingleton());
 		bool allowWeaponBash = Config::options.enableWeaponBash && (isHit || !Config::options.weaponBashOnlyOnHits) && !isTriggerHeld;
 		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, allowWeaponBash);
 
@@ -2431,7 +2428,7 @@ void ModifyConstraints(Actor *actor)
 		for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
 			if (NiPointer<NiAVObject> node = GetNodeFromCollidable(&rigidBody->m_collidable)) {
 				if (NiPointer<bhkRigidBody> wrapper = GetRigidBody(node)) {
-					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC, HK_ENTITY_ACTIVATION_DO_ACTIVATE, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK);
+					bhkRigidBody_setMotionType(wrapper, hkpMotion::MotionType::MOTION_DYNAMIC);
 
 					hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxLinearVelocity, Config::options.ragdollBoneMaxLinearVelocity);
 					hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxAngularVelocity, Config::options.ragdollBoneMaxAngularVelocity);
@@ -5066,10 +5063,6 @@ void ControllerStateCB(uint32_t unControllerDeviceIndex, vr_src::VRControllerSta
 		vr_src::IVRSystem *vrSystem = openVR->vrSystem;
 
 		if (unControllerDeviceIndex == rightController) {
-			// Check if the trigger is pressed
-			const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
-			g_isRightTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
-
 			for (int i = 0; i < vr_src::k_unControllerStateAxisCount; i++) {
 				vr_src::EVRControllerAxisType axisType = static_cast<vr_src::EVRControllerAxisType>(vrSystem->GetInt32TrackedDeviceProperty(unControllerDeviceIndex, static_cast<vr_src::ETrackedDeviceProperty>(vr_src::ETrackedDeviceProperty::Prop_Axis0Type_Int32 + i)));
 				if (axisType == vr_src::EVRControllerAxisType::k_eControllerAxis_Joystick) {
@@ -5079,9 +5072,6 @@ void ControllerStateCB(uint32_t unControllerDeviceIndex, vr_src::VRControllerSta
 			}
 		}
 		else if (unControllerDeviceIndex == leftController) {
-			const uint64_t triggerMask = vr_src::ButtonMaskFromId(vr_src::EVRButtonId::k_EButton_SteamVR_Trigger);
-			g_isLeftTriggerHeld = pControllerState->ulButtonPressed & triggerMask;
-
 			for (int i = 0; i < vr_src::k_unControllerStateAxisCount; i++) {
 				vr_src::EVRControllerAxisType axisType = static_cast<vr_src::EVRControllerAxisType>(vrSystem->GetInt32TrackedDeviceProperty(unControllerDeviceIndex, static_cast<vr_src::ETrackedDeviceProperty>(vr_src::ETrackedDeviceProperty::Prop_Axis0Type_Int32 + i)));
 				if (axisType == vr_src::EVRControllerAxisType::k_eControllerAxis_Joystick) {

@@ -130,8 +130,14 @@ extern RelocAddr<_hkpWorld_GetClosestPoints> hkpWorld_GetClosestPoints;
 typedef hkpEntity* (*_hkpWorld_AddEntity)(hkpWorld *world, hkpEntity* entity, hkpEntityActivation initialActivationState);
 extern RelocAddr<_hkpWorld_AddEntity> hkpWorld_AddEntity;
 
-typedef hkpEntity* (*_hkpWorld_RemoveEntity)(hkpWorld *world, hkBool *ret, hkpEntity* entity);
+typedef hkBool (*_hkpWorld_RemoveEntity)(hkpWorld *world, hkBool *ret, hkpEntity* entity);
 extern RelocAddr<_hkpWorld_RemoveEntity> hkpWorld_RemoveEntity;
+
+typedef void(*_bhkWorld_AddEntity)(bhkWorld *world, hkpEntity *entity);
+extern RelocAddr<_bhkWorld_AddEntity> bhkWorld_AddEntity;
+
+typedef bool(*_bhkWorld_RemoveEntity)(bhkWorld *world, hkpEntity *entity);
+extern RelocAddr<_bhkWorld_RemoveEntity> bhkWorld_RemoveEntity;
 
 typedef void* (*_hkpWorld_addContactListener)(hkpWorld *world, hkpContactListener* worldListener);
 extern RelocAddr<_hkpWorld_addContactListener> hkpWorld_addContactListener;
@@ -210,7 +216,7 @@ extern RelocAddr<_bhkCollisionFilter_CompareFilterInfos> bhkCollisionFilter_Comp
 typedef void(*_hkpRigidBody_setMotionType)(hkpRigidBody *_this, UInt64 newState, hkpEntityActivation preferredActivationState, hkpUpdateCollisionFilterOnEntityMode collisionFilterUpdateMode);
 extern RelocAddr<_hkpRigidBody_setMotionType> hkpRigidBody_setMotionType;
 
-typedef void(*_bhkRigidBody_setMotionType)(bhkRigidBody *_this, UInt64 newState, hkpEntityActivation preferredActivationState, hkpUpdateCollisionFilterOnEntityMode collisionFilterUpdateMode);
+typedef void(*_bhkRigidBody_setMotionType)(bhkRigidBody *_this, UInt64 newState);
 extern RelocAddr<_bhkRigidBody_setMotionType> bhkRigidBody_setMotionType;
 
 typedef void(*_bhkRigidBody_MoveToPositionAndRotation)(bhkRigidBody *_this, NiPoint3 &pos, NiQuaternion &rot);
@@ -696,6 +702,12 @@ extern RelocAddr<_ActorProcess_UpdateRegenDelay> ActorProcess_UpdateRegenDelay;
 
 typedef void(*_FlashHudMenuMeter)(UInt32 actorValue);
 extern RelocAddr<_FlashHudMenuMeter> FlashHudMenuMeter;
+
+typedef bool(*_PlayerControls_IsTriggerHeldMainHand)(PlayerControls *_this);
+extern RelocAddr<_PlayerControls_IsTriggerHeldMainHand> PlayerControls_IsTriggerHeldMainHand;
+
+typedef bool(*_PlayerControls_IsTriggerHeldOffHand)(PlayerControls *_this);
+extern RelocAddr<_PlayerControls_IsTriggerHeldOffHand> PlayerControls_IsTriggerHeldOffHand;
 
 typedef float(*_PlayerControls_SendAction)(PlayerControls *_this, UInt32 defaultActionObject, UInt32 priority);
 extern RelocAddr<_PlayerControls_SendAction> PlayerControls_SendAction;
