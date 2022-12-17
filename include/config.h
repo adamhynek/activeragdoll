@@ -13,6 +13,8 @@ namespace Config {
 		float activeRagdollStartDistance = 50.f;
 		float activeRagdollEndDistance = 60.f;
 
+		bool skipRootCalculations = false;
+
 		double blendInTime = 0.2;
 
 		bool blendWhenGettingUp = false;

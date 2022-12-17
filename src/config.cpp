@@ -191,6 +191,8 @@ namespace Config {
 		if (!RegisterFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) success = false;
 		if (!RegisterFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) success = false;
 
+		if (!RegisterBool("skipRootCalculations", options.skipRootCalculations)) success = false;
+
 		if (!RegisterDouble("blendInTime", options.blendInTime)) success = false;
 
 		if (!RegisterBool("blendWhenGettingUp", options.blendWhenGettingUp)) success = false;
