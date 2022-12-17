@@ -142,6 +142,8 @@ RelocAddr<_hkReferencedObject_removeReference> hkReferencedObject_removeReferenc
 RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos(0xA05D80);
 RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos(0xA05DC0);
 RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_computeReferenceFrame(0xB515E0);
+RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor(0xAA27B0);
+RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape(0xE5F620);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
@@ -187,6 +189,7 @@ RelocAddr<_NiMatrixToNiQuaternion> NiMatrixToNiQuaternion(0xCB4460);
 RelocAddr<_NiMatrixFromForwardVector> NiMatrixFromForwardVector(0xC4C1E0);
 RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl(0xC9AAA0);
 RelocAddr<_EulerToNiMatrix> EulerToNiMatrix(0xC995A0);
+RelocAddr<_hkQsTransformToNiTransform> hkQsTransformToNiTransform(0x4FF590);
 RelocAddr<_UpdateClavicleToTransformHand> UpdateClavicleToTransformHand(0xC4C5A0);
 RelocAddr<_NiSkinInstance_UpdateBoneMatrices> NiSkinInstance_UpdateBoneMatrices(0xDC7DC0);
 RelocAddr<_NiObject_Clone> NiObject_Clone(0xC978E0);
@@ -213,6 +216,7 @@ RelocAddr<_hkMalleableConstraintCinfo_setWrappedConstraintData> hkMalleableConst
 RelocAddr<_hkMalleableConstraintCinfo_setStrength> hkMalleableConstraintCinfo_setStrength(0xE3DE90);
 RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState(0x5EBA50);
 RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableFloat> IAnimationGraphManagerHolder_SetAnimationVariableFloat(0x500990);
+RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableBool> IAnimationGraphManagerHolder_SetAnimationVariableBool(0x500950);
 RelocAddr<_BSAnimationGraphManager_HasRagdoll> BSAnimationGraphManager_HasRagdoll(0x20B320);
 RelocAddr<_BSAnimationGraphManager_AddRagdollToWorld> BSAnimationGraphManager_AddRagdollToWorld(0x5D1B50);
 RelocAddr<_BSAnimationGraphManager_RemoveRagdollFromWorld> BSAnimationGraphManager_RemoveRagdollFromWorld(0x61A1E0);

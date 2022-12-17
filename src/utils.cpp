@@ -274,25 +274,23 @@ std::set<std::string, std::less<>> SplitStringToSet(const std::string &s, char d
 	return result;
 }
 
-bool VisitNodes(NiAVObject  *parent, std::function<bool(NiAVObject*, int)> functor, int depth = 0)
+bool VisitNodes(NiAVObject *parent, std::function<bool(NiAVObject *, int)> functor, int depth)
 {
 	if (!parent) return false;
-	NiNode * node = parent->GetAsNiNode();
-	if (node) {
-		if (functor(parent, depth))
-			return true;
 
-		auto children = &node->m_children;
-		for (UInt32 i = 0; i < children->m_emptyRunStart; i++) {
-			NiAVObject * object = children->m_data[i];
-			if (object) {
-				if (VisitNodes(object, functor, depth + 1))
+	if (functor(parent, depth)) {
+		return true;
+	}
+
+	if (NiNode *node = parent->GetAsNiNode()) {
+		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
+			if (NiAVObject *child = node->m_children.m_data[i]) {
+				if (VisitNodes(child, functor, depth + 1)) {
 					return true;
+				}
 			}
 		}
 	}
-	else if (functor(parent, depth))
-		return true;
 
 	return false;
 }
@@ -621,11 +619,9 @@ bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
 		return true;
 	}
 
-	NiNode *node = root->GetAsNiNode();
-	if (node) {
+	if (NiNode *node = root->GetAsNiNode()) {
 		for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
-			auto child = node->m_children.m_data[i];
-			if (child) {
+			if (NiAVObject *child = node->m_children.m_data[i]) {
 				if (FindRigidBody(child, query)) {
 					return true;
 				}
@@ -634,6 +630,22 @@ bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
 	}
 
 	return false;
+}
+
+NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignoreSelf)
+{
+	NiPointer<NiAVObject> nodeWithCollision = node;
+	while (nodeWithCollision) {
+		if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(nodeWithCollision)) {
+			if (rigidBody->hkBody->m_world) {
+				if (!ignoreSelf || nodeWithCollision != node) {
+					return nodeWithCollision;
+				}
+			}
+		}
+		nodeWithCollision = nodeWithCollision->m_parent;
+	}
+	return nullptr;
 }
 
 void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f)

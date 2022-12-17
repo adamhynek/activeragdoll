@@ -126,6 +126,8 @@ struct bhkShape : bhkSerializable
 };
 static_assert(sizeof(bhkShape) == 0x28);
 
+struct bhkTransformShape : bhkShape {};
+
 struct bhkShapeCollection : bhkShape
 {
 	virtual UInt32 GetMaterialId(hkpShapeKey shapeKey); // 36

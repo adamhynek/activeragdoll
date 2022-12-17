@@ -1426,6 +1426,8 @@ struct PhysicsListener :
 	std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
 	std::vector<CollisionEvent> events{};
 
+	std::unordered_map<TESObjectREFR *, double> physicalBlockTimes{};
+
 	inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
 		if ((uint64_t)a <= (uint64_t)b) return { a, b };
 		else return { b, a };
@@ -1520,8 +1522,19 @@ struct PhysicsListener :
 		UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 		UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
+		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && layerB != g_higgsCollisionLayer) ||
+			(layerB == BGSCollisionLayer::kCollisionLayer_Biped && layerA != g_higgsCollisionLayer))
+		{
+			if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(rigidBodyA) == 20) || (layerB == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(rigidBodyB) == 20)) {
+				// One of the collidees is a weapon rigidbody on the biped layer, and it didn't collide with a higgs rigidbody
+				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+				return;
+			}
+		}
+
 		if ((layerA == BGSCollisionLayer::kCollisionLayer_CharController && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
-			(layerB == BGSCollisionLayer::kCollisionLayer_CharController && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon))) {
+			(layerB == BGSCollisionLayer::kCollisionLayer_CharController && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon)))
+		{
 			if (Config::options.disableClutterVsCharacterControllerCollisionForActiveActors) {
 				hkpCollidable *charControllerCollidable = layerA == BGSCollisionLayer::kCollisionLayer_CharController ? &rigidBodyA->m_collidable : &rigidBodyB->m_collidable;
 				if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(charControllerCollidable)) {
@@ -1539,7 +1552,8 @@ struct PhysicsListener :
 		}
 
 		if (((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
-			((layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon))) {
+			((layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC) && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon)))
+		{
 			if (NiPointer<TESObjectREFR> refrA = GetRefFromCollidable(&rigidBodyA->m_collidable)) {
 				if (NiPointer<TESObjectREFR> refrB = GetRefFromCollidable(&rigidBodyB->m_collidable)) {
 					bool isATarget = refrA->formType == kFormType_Character;
@@ -1572,7 +1586,8 @@ struct PhysicsListener :
 		}
 
 		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped || layerA == BGSCollisionLayer::kCollisionLayer_BipedNoCC || layerA == BGSCollisionLayer::kCollisionLayer_DeadBip) &&
-			(layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC || layerB == BGSCollisionLayer::kCollisionLayer_DeadBip)) {
+			(layerB == BGSCollisionLayer::kCollisionLayer_Biped || layerB == BGSCollisionLayer::kCollisionLayer_BipedNoCC || layerB == BGSCollisionLayer::kCollisionLayer_DeadBip))
+		{
 			if (Config::options.overrideSoundVelForRagdollCollisions) {
 				// Disable collision sounds for this frame
 				*g_fMinSoundVel = Config::options.ragdollSoundVel;
@@ -1652,6 +1667,16 @@ struct PhysicsListener :
 		}
 
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
+
+		if (hitLayer == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(hitRigidBody) == 20) {
+			// Physical block
+			_MESSAGE("%d: Physical block", *g_currentFrameCounter);
+
+			physicalBlockTimes[hitRefr] = g_currentFrameTime;
+
+			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+			return;
+		}
 
 		bool isLeft = IsLeftRigidBody(hittingRigidBody);
 
@@ -2481,8 +2506,7 @@ bool AddRagdollToWorld(Actor *actor)
 				SimpleLocker lock(&manager->updateLock);
 				for (int i = 0; i < manager->graphs.size; i++) {
 					BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-					hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-					if (driver) {
+					if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
 						g_activeActors.insert(actor);
 
 						std::shared_ptr<ActiveRagdoll> activeRagdoll(new ActiveRagdoll());
@@ -3516,6 +3540,123 @@ void ProcessHavokHitJobsHook()
 							}
 						}
 					}
+
+					{
+						if (BipedModel *biped = actor->GetBipedSmall()) {
+							if (Biped *bipedData = biped->bipedData) {
+								// TODO: This doesn't handle weapons equipped in the offhand. We want to include those, but likely ignore shields.
+								// Shield / offhand is index 9.
+
+								UInt8 drawState = actor->actorState.flags08 >> 5 & 0x7;
+								bool isWeaponDrawn = drawState == 3;
+								bool isDead = actor->IsDead(1);
+								bool shouldAddToWorld = isWeaponDrawn || isDead;
+
+								for (int i = 32; i < 42; i++) {
+									if (NiPointer<NiAVObject> geomNode = bipedData->unk10[i].object) {
+										if (shouldAddToWorld) {
+											ForEachRagdollDriver(actor, [geomNode](hkbRagdollDriver *driver) {
+												if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+													ragdoll->weaponRoot = geomNode;
+												}
+											});
+										}
+
+										/*
+										VisitNodes(geomNode, [i, isDead, shouldAddToWorld, world](NiAVObject *node, int depth) -> bool {
+											if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(node)) {
+												if (shouldAddToWorld) {
+													if (!rigidBody->hkBody->getWorld()) {
+														_MESSAGE("%d Add: %s", i, node->m_name);
+														bhkWorld_AddEntity(world, rigidBody->hkBody);
+
+														_MESSAGE("%d", GetPartNumber(rigidBody->hkBody));
+
+														// Part numbers
+														// 20 == WEAPON
+														// 18 == SHIELD
+													}
+
+													if (!isDead) {
+														//if (rigidBody->hkBody->getMotionType() != hkpMotion::MotionType::MOTION_KEYFRAMED) {
+														//	bhkRigidBody_setMotionType(rigidBody, hkpMotion::MotionType::MOTION_KEYFRAMED);
+														//}
+														if (!IsMoveableEntity(rigidBody->hkBody)) {
+															bhkRigidBody_setMotionType(rigidBody, hkpMotion::MotionType::MOTION_DYNAMIC);
+														}
+
+														if (GetCollisionLayer(rigidBody->hkBody) != BGSCollisionLayer::kCollisionLayer_Biped) {
+															SetCollisionLayer(rigidBody->hkBody, BGSCollisionLayer::kCollisionLayer_Biped);
+															bhkWorld_UpdateCollisionFilterOnWorldObject(world, rigidBody);
+														}
+													}
+												}
+												else {
+													if (rigidBody->hkBody->getWorld()) {
+														_MESSAGE("%d Remove: %s", i, node->m_name);
+														rigidBody->RemoveFromCurrentWorld();
+													}
+												}
+											}
+											return false;
+										});
+										*/
+									}
+								}
+							}
+						}
+
+						ForEachRagdollDriver(actor, [world](hkbRagdollDriver *driver) {
+							if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+								if (NiPointer<NiAVObject> weaponRoot = ragdoll->weaponRoot) {
+									if (NiPointer<bhkRigidBody> weaponBody = GetRigidBody(weaponRoot)) {
+										if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
+											if (std::string_view(parent->m_name).find("Hand") != std::string::npos) {
+												if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
+													if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
+														if (weaponShapeWrapper != ragdoll->clonedFromShape) {
+															NiCloningProcess cloningProcess = NiCloningProcess();
+
+															// TODO: We need to transform the cloned shape so that it matches the offset/rotation of the weapon in the space of the hand
+															// Probably need to create a hkpTransformShape / bhkTransformShape for this...
+
+															// TODO: Probably best to do a list shape including the original hand shape as well here.
+
+															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
+															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
+
+															if (bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess)) {
+
+																if (bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape()) {
+																	hkpTransformShape *transformShape = (hkpTransformShape *)hkHeapAlloc(sizeof(hkpTransformShape));
+																	hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
+																	transformShapeWrapper->shape = transformShape;
+																	hkReferencedObject_removeReference(transformShape); // TODO: Check that it's correct to do this here
+																	transformShape->m_userData = (hkUlong)transformShapeWrapper;
+
+																	{
+																		BSWriteLocker lock(&world->worldLock);
+
+																		handBody->RemoveFromCurrentWorld();
+
+																		handBody->hkBody->setShape(transformShapeWrapper->shape);
+
+																		bhkWorld_AddEntity(world, handBody->hkBody);
+
+																		ragdoll->clonedFromShape = weaponShapeWrapper;
+																	}
+																}
+															}
+														}
+													}
+												}
+											}
+										}
+									}
+								}
+							}
+						});
+					}
 				}
 			}
 			else if (shouldRemoveFromWorld) {
@@ -3988,6 +4129,113 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
 	//_MESSAGE("stress: %.2f", avgStress);
 	//PrintToFile(std::to_string(ragdoll->avgStress), "stress.txt");
 
+	NiPointer<bhkWorld> world = context.world->m_userData;
+	if (!world) return;
+
+	/*if (BipedModel *biped = actor->GetBipedSmall()) {
+		if (Biped *bipedData = biped->bipedData) {
+			// TODO: This doesn't handle weapons equipped in the offhand. We want to include those, but likely ignore shields.
+			// Shield / offhand is index 9.
+
+			UInt8 drawState = actor->actorState.flags08 >> 5 & 0x7;
+			bool isWeaponDrawn = drawState == 3;
+			bool isDead = actor->IsDead(1);
+			bool shouldAddToWorld = isWeaponDrawn || isDead;
+
+			for (int i = 32; i < 42; i++) {
+				if (NiPointer<NiAVObject> geomNode = bipedData->unk10[i].object) {
+					if (shouldAddToWorld) {
+						ForEachRagdollDriver(actor, [geomNode](hkbRagdollDriver *driver) {
+							if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+								ragdoll->weaponRoot = geomNode;
+							}
+						});
+					}
+
+					VisitNodes(geomNode, [i, isDead, shouldAddToWorld, world](NiAVObject *node, int depth) -> bool {
+						if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(node)) {
+							if (shouldAddToWorld) {
+								if (!rigidBody->hkBody->getWorld()) {
+									_MESSAGE("%d Add: %s", i, node->m_name);
+									bhkWorld_AddEntity(world, rigidBody->hkBody);
+
+									_MESSAGE("%d", GetPartNumber(rigidBody->hkBody));
+
+									// Part numbers
+									// 20 == WEAPON
+									// 18 == SHIELD
+								}
+
+								if (!isDead) {
+									//if (rigidBody->hkBody->getMotionType() != hkpMotion::MotionType::MOTION_KEYFRAMED) {
+									//	bhkRigidBody_setMotionType(rigidBody, hkpMotion::MotionType::MOTION_KEYFRAMED);
+									//}
+									if (!IsMoveableEntity(rigidBody->hkBody)) {
+										bhkRigidBody_setMotionType(rigidBody, hkpMotion::MotionType::MOTION_DYNAMIC);
+									}
+
+									if (GetCollisionLayer(rigidBody->hkBody) != BGSCollisionLayer::kCollisionLayer_Biped) {
+										SetCollisionLayer(rigidBody->hkBody, BGSCollisionLayer::kCollisionLayer_Biped);
+										bhkWorld_UpdateCollisionFilterOnWorldObject(world, rigidBody);
+									}
+								}
+							}
+							else {
+								if (rigidBody->hkBody->getWorld()) {
+									_MESSAGE("%d Remove: %s", i, node->m_name);
+									rigidBody->RemoveFromCurrentWorld();
+								}
+							}
+						}
+						return false;
+					});
+				}
+			}
+		}
+	}*/
+
+	if (NiPointer<NiAVObject> weaponRoot = ragdoll->weaponRoot) {
+		if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(weaponRoot)) {
+
+			/*
+			TODO:
+			Instead of this, we could "replace" the hand rigidbodies with the equivalent weapon rigidbody. Or, replace the physics shapes of the hand rigidbodies?
+
+			- clone weapon rigidbody
+			- replace hand rigidbody with the cloned one (remove old one from the world, add the new one)
+
+			- swap back to the old hand rigidbody when they die (and drop the weapon)?
+
+			*/
+
+
+
+			/*
+			// TODO: In order to have the weapon act upon the ragdoll, we need to introduce a constraint to binds the weapon to the hand
+			// TODO: This should actually be the closest ragdoll rigidbody with collision
+			// TODO: We also want to make sure it's actually a hand, as there can be frames when initially unsheathing where it is still parented to the pelvis
+			if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
+				// assume the parent is the hand
+				if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
+					NiTransform handTransform = hkTransformToNiTransform(handBody->hkBody->getTransform(), 1.f);
+					NiTransform weaponTransform = hkTransformToNiTransform(rigidBody->hkBody->getTransform(), 1.f);
+
+					//NiTransform handToWeapon = InverseTransform(handTransform) * weaponTransform;
+					NiTransform handToWeapon = InverseTransform(parent->m_worldTransform) * weaponRoot->m_worldTransform;
+					NiTransform desiredWeapon = handTransform * handToWeapon;
+
+					// figure out where the hand is trying to move (current + velocity * deltaTime)
+
+					// apply hard keyframe to weapon to reach the transform that it would be at if the hand were at its desired transform
+
+					hkTransform hkDesiredWeapon = NiTransformTohkTransform(desiredWeapon);
+					hkpKeyFrameUtility_applyHardKeyFrame(hkDesiredWeapon.m_translation, NiQuatToHkQuat(MatrixToQuaternion(HkMatrixToNiMatrix(hkDesiredWeapon.m_rotation))), 1.f / *g_deltaTime, rigidBody->hkBody);
+				}
+			}
+			*/
+		}
+	}
+
 	if (Config::options.disableConstraints) {
 		for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
 			hkpConstraintInstance_setEnabled(constraint, false);
@@ -4229,9 +4477,41 @@ void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager,
 	BSAnimationGraphManager_SetWorld(manager, a2);
 }
 
+bool IsPhysicallyBlocked(Actor *attacker)
+{
+	if (auto it = g_physicsListener.physicalBlockTimes.find(attacker); it != g_physicsListener.physicalBlockTimes.end()) {
+		_MESSAGE("%.2f", g_currentFrameTime - it->second);
+		if (g_currentFrameTime - it->second < Config::options.physicalBlockWindow) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr, Actor *targetRefr, InventoryEntryData *weapon, bool isOffhand)
 {
-	HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+	if (targetRefr == *g_thePlayer) {
+		// TODO: This works, but the game still does the cone check so I think it's possible it does't work if we aren't looking at the enemy?
+
+		if (IsPhysicallyBlocked(srcRefr)) {
+			bool wasBlocking = Actor_IsBlocking(targetRefr);
+
+			static BSFixedString sIsBlocking("IsBlocking");
+			IAnimationGraphManagerHolder_SetAnimationVariableBool(&targetRefr->animGraphHolder, sIsBlocking, true);
+
+			HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+
+			IAnimationGraphManagerHolder_SetAnimationVariableBool(&targetRefr->animGraphHolder, sIsBlocking, wasBlocking);
+		}
+		else {
+			HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+		}
+	}
+	else {
+		HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+	}
+
 	if (g_isInPlanckHit) {
 		// Set an unused bit to signify this hit will have additional info from planck
 		hitData->flags |= (1 << 30);

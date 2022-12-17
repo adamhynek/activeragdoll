@@ -31,6 +31,8 @@ struct ActiveRagdoll
 	float deltaTime = 0.f;
 	RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;
 	std::unordered_map<hkpConstraintInstance *, std::pair<hkVector4, hkVector4>> originalConstraintPivots{};
+	NiPointer<NiAVObject> weaponRoot = nullptr;
+	bhkShape *clonedFromShape = nullptr;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
 	KnockState knockState = KnockState::Normal;

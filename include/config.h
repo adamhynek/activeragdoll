@@ -13,6 +13,8 @@ namespace Config {
 		float activeRagdollStartDistance = 50.f;
 		float activeRagdollEndDistance = 60.f;
 
+		double physicalBlockWindow = 0.2;
+
 		bool skipRootCalculations = false;
 
 		double blendInTime = 0.2;

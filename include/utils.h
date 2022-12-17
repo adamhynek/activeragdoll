@@ -73,6 +73,8 @@ void PrintVector(const NiPoint3 &p);
 void PrintSceneGraph(NiAVObject *node);
 void PrintToFile(std::string entry, std::string filename);
 
+bool VisitNodes(NiAVObject *parent, std::function<bool(NiAVObject *, int)> functor, int depth = 0);
+
 inline void ltrim(std::string &s) { s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) { return !::isspace(ch); })); }
 inline void rtrim(std::string &s) { s.erase(std::find_if(s.rbegin(), s.rend(), [](unsigned char ch) { return !::isspace(ch); }).base(), s.end()); }
 inline void trim(std::string &s) { ltrim(s); rtrim(s); }
@@ -98,6 +100,7 @@ bhkCollisionObject * GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
 bool FindRigidBody(NiAVObject *root, hkpRigidBody *query);
+NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignoreSelf = false);
 void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f);
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
 void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f);
@@ -147,6 +150,21 @@ inline void SetAttackState(Actor* actor, UInt32 attackState) {
 	actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
 	actor->actorState.flags04 |= attackState << 28;
 }
+
+inline UInt8 GetPartNumber(UInt32 collisionFilterInfo) { return (collisionFilterInfo >> 8) & 0x1f; }
+inline void SetPartNumber(hkUint32 &collisionFilterInfo, UInt8 partNumber) {
+	collisionFilterInfo &= ~(0x1f << 8);
+	collisionFilterInfo |= ((partNumber & 0x1f) << 8);
+}
+inline UInt8 GetPartNumber(hkpRigidBody *rigidBody) { return GetPartNumber(rigidBody->getCollisionFilterInfo()); }
+
+inline UInt32 GetCollisionLayer(UInt32 collisionFilterInfo) { return collisionFilterInfo & 0x7f; }
+inline void SetCollisionLayer(hkUint32 &collisionFilterInfo, UInt32 layer) {
+	collisionFilterInfo &= ~(0x7f); // zero out layer
+	collisionFilterInfo |= (layer & 0x7f); // set layer to the same as a dead ragdoll
+}
+inline UInt32 GetCollisionLayer(hkpRigidBody *rigidBody) { return GetCollisionLayer(rigidBody->getCollisionFilterInfo()); }
+inline void SetCollisionLayer(hkpRigidBody *rigidBody, UInt32 layer) { return SetCollisionLayer(rigidBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo, layer); }
 
 inline UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
 inline UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack

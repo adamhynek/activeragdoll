@@ -85,6 +85,9 @@ NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, f
 NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal);
 void NiMatrixToHkMatrix(const NiMatrix33 &niMat, hkMatrix3 &hkMat);
 void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
+NiMatrix33 HkMatrixToNiMatrix(const hkMatrix3 &hkMat);
+NiTransform hkTransformToNiTransform(const hkTransform &t, float scale);
+hkTransform NiTransformTohkTransform(NiTransform &t);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);
 inline NiQuaternion MatrixToQuaternion(const NiMatrix33 &m) { NiQuaternion q; NiMatrixToNiQuaternion(q, m); return q; }
 inline NiQuaternion HkQuatToNiQuat(const hkQuaternion &quat) { return { quat.m_vec(3), quat.m_vec(0), quat.m_vec(1), quat.m_vec(2) }; }

@@ -2,6 +2,7 @@
 #include <Physics/Collide/Shape/Compound/Collection/List/hkpListShape.h>
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
+#include <Physics/Collide/Shape/Misc/Transform/hkpTransformShape.h>
 #include <Physics/Dynamics/Action/hkpUnaryAction.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
@@ -258,6 +259,12 @@ extern RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedIn
 typedef void(*_hkaPoseMatchingUtility_computeReferenceFrame)(hkaPoseMatchingUtility *_this, const hkQsTransform *animPoseModelSpace, const hkQsTransform *ragdollPoseWorldSpace, hkQsTransform &animWorldFromModel, hkQsTransform &ragdollWorldFromModel);
 extern RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_computeReferenceFrame;
 
+typedef hkpTransformShape *(*_hkpTransformShape_ctor)(hkpTransformShape *_this, hkpShape *childShape, const hkTransform &transform);
+extern RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor;
+
+typedef bhkTransformShape * (*_CreatebhkTransformShape)();
+extern RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape;
+
 
 // More havok-related
 typedef bhkWorld * (*_GetHavokWorldFromCell)(TESObjectCELL *cell);
@@ -390,6 +397,9 @@ extern RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl;
 typedef NiMatrix33 & (*_EulerToNiMatrix)(NiMatrix33 &matOut, float x, float y, float z);
 extern RelocAddr<_EulerToNiMatrix> EulerToNiMatrix;
 
+typedef NiTransform &(*_hkQsTransformToNiTransform)(NiTransform &out, const hkQsTransform &in);
+extern RelocAddr<_hkQsTransformToNiTransform> hkQsTransformToNiTransform;
+
 typedef void(*_UpdateClavicleToTransformHand)(NiAVObject *clavicle, NiAVObject *hand, NiTransform *desiredHandWorldTransform, NiTransform *additionalLocalTransform);
 extern RelocAddr<_UpdateClavicleToTransformHand> UpdateClavicleToTransformHand;
 
@@ -432,6 +442,9 @@ extern RelocAddr<_Actor_IsInRagdollState> Actor_IsInRagdollState;
 
 typedef bool(*_IAnimationGraphManagerHolder_SetAnimationVariableFloat)(IAnimationGraphManagerHolder *_this, const BSFixedString &variableName, float value);
 extern RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableFloat> IAnimationGraphManagerHolder_SetAnimationVariableFloat;
+
+typedef bool(*_IAnimationGraphManagerHolder_SetAnimationVariableBool)(IAnimationGraphManagerHolder *_this, const BSFixedString &variableName, bool value);
+extern RelocAddr<_IAnimationGraphManagerHolder_SetAnimationVariableBool> IAnimationGraphManagerHolder_SetAnimationVariableBool;
 
 typedef void(*_BSAnimationGraphManager_HasRagdoll)(BSAnimationGraphManager *_this, bool *out);
 extern RelocAddr<_BSAnimationGraphManager_HasRagdoll> BSAnimationGraphManager_HasRagdoll;

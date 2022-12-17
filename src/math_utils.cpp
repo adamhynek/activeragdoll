@@ -161,6 +161,30 @@ void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat)
 	niMat.data[2][2] = col2(2);
 }
 
+NiMatrix33 HkMatrixToNiMatrix(const hkMatrix3 &hkMat)
+{
+	NiMatrix33 niMat;
+	HkMatrixToNiMatrix(hkMat, niMat);
+	return niMat;
+}
+
+NiTransform hkTransformToNiTransform(const hkTransform &t, float scale)
+{
+	NiTransform out;
+	out.pos = HkVectorToNiPoint(t.m_translation) * *g_inverseHavokWorldScale;
+	HkMatrixToNiMatrix(t.m_rotation, out.rot);
+	out.scale = scale;
+	return out;
+}
+
+hkTransform NiTransformTohkTransform(NiTransform &t)
+{
+	hkTransform out;
+	out.m_translation = NiPointToHkVector(t.pos * *g_havokWorldScale);
+	NiMatrixToHkMatrix(t.rot, out.m_rotation);
+	return out;
+}
+
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q)
 {
 	double sqw = q.m_fW*q.m_fW;
