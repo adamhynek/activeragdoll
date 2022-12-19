@@ -3614,16 +3614,31 @@ void ProcessHavokHitJobsHook()
 											if (std::string_view(parent->m_name).find("Hand") != std::string::npos) {
 												if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
 													if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
-														if (weaponShapeWrapper != ragdoll->clonedFromShape) {
+														NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
+														PrintVector(NiMatrixToEuler(weaponLocalTransform.rot));
+
+														if (weaponShapeWrapper != ragdoll->clonedFromShape || VectorLength(NiMatrixToEuler(weaponLocalTransform.rot) - NiMatrixToEuler(ragdoll->clonedFromWeaponTransform.rot)) > Config::options.weaponRotationRecloneThreshold) {
 															NiCloningProcess cloningProcess = NiCloningProcess();
+
+															_MESSAGE("clone");
+
+															if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(weaponBody, bhkRigidBody, bhkRigidBodyT)) {
+																_MESSAGE("bhkRigidBodyT");
+															}
 
 															// TODO: We need to transform the cloned shape so that it matches the offset/rotation of the weapon in the space of the hand
 															// Probably need to create a hkpTransformShape / bhkTransformShape for this...
 
 															// TODO: Probably best to do a list shape including the original hand shape as well here.
 
+															// This seems to be correct transforms for two-handed axes/warhammers, but not correct for two handed swords, one handed swords or axes or maces
+
+															// Okay, the problem is that the weapon local transform actually changes during play, so we'd need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
+
 															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
 															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
+
+															// TODO: Does the cloned shape just end up with a 0 ref count ?? and never gets destroyed ??
 
 															if (bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess)) {
 
@@ -3631,19 +3646,22 @@ void ProcessHavokHitJobsHook()
 																	hkpTransformShape *transformShape = (hkpTransformShape *)hkHeapAlloc(sizeof(hkpTransformShape));
 																	hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
 																	transformShapeWrapper->shape = transformShape;
-																	hkReferencedObject_removeReference(transformShape); // TODO: Check that it's correct to do this here
+																	hkReferencedObject_removeReference(transformShape);
 																	transformShape->m_userData = (hkUlong)transformShapeWrapper;
+
+																	transformShapeWrapper->materialId = clonedShape->materialId;
 
 																	{
 																		BSWriteLocker lock(&world->worldLock);
 
 																		handBody->RemoveFromCurrentWorld();
 
-																		handBody->hkBody->setShape(transformShapeWrapper->shape);
+																		handBody->hkBody->setShape(transformShape);
 
 																		bhkWorld_AddEntity(world, handBody->hkBody);
 
 																		ragdoll->clonedFromShape = weaponShapeWrapper;
+																		ragdoll->clonedFromWeaponTransform = weaponLocalTransform;
 																	}
 																}
 															}

@@ -33,6 +33,7 @@ struct ActiveRagdoll
 	std::unordered_map<hkpConstraintInstance *, std::pair<hkVector4, hkVector4>> originalConstraintPivots{};
 	NiPointer<NiAVObject> weaponRoot = nullptr;
 	bhkShape *clonedFromShape = nullptr;
+	NiTransform clonedFromWeaponTransform;
 	double stateChangedTime = 0.0;
 	RagdollState state = RagdollState::Idle;
 	KnockState knockState = KnockState::Normal;

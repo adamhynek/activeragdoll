@@ -14,6 +14,7 @@ namespace Config {
 		float activeRagdollEndDistance = 60.f;
 
 		double physicalBlockWindow = 0.2;
+		float weaponRotationRecloneThreshold = 0.1f;
 
 		bool skipRootCalculations = false;
 
