@@ -262,6 +262,9 @@ extern RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingU
 typedef hkpTransformShape *(*_hkpTransformShape_ctor)(hkpTransformShape *_this, hkpShape *childShape, const hkTransform &transform);
 extern RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor;
 
+typedef void(*_hkpTransformShape_setTransform)(hkpTransformShape *_this, const hkTransform &transform);
+extern RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform;
+
 typedef bhkTransformShape * (*_CreatebhkTransformShape)();
 extern RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape;
 
@@ -907,6 +910,9 @@ extern RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphMan
 
 typedef bool(*_Actor_IsRagdollMovingSlowEnoughToGetUp)(Actor *_this);
 extern RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp;
+
+typedef void(*_Debug_MessageBox)(UInt64 a1, UInt64 a2, UInt64 a3, BSFixedString *messageBoxText);
+extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;
 
 
 struct UnkSwingData

@@ -143,6 +143,7 @@ RelocAddr<_hkVector4_setTransformedPos> hkVector4_setTransformedPos(0xA05D80);
 RelocAddr<_hkVector4_setTransformedInversePos> hkVector4_setTransformedInversePos(0xA05DC0);
 RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_computeReferenceFrame(0xB515E0);
 RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor(0xAA27B0);
+RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform(0xAA2820);
 RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape(0xE5F620);
 
 // More havok-related
@@ -371,3 +372,4 @@ RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect(
 RelocAddr<_DispatchTransformDeltaEvent> DispatchTransformDeltaEvent(0xB362D0);
 RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_GetWorldFromModel(0x61D4C0);
 RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp(0x600DF0);
+RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);

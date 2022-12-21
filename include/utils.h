@@ -157,6 +157,8 @@ inline void SetPartNumber(hkUint32 &collisionFilterInfo, UInt8 partNumber) {
 	collisionFilterInfo |= ((partNumber & 0x1f) << 8);
 }
 inline UInt8 GetPartNumber(hkpRigidBody *rigidBody) { return GetPartNumber(rigidBody->getCollisionFilterInfo()); }
+inline bool IsRagdollHandFilter(UInt32 collisionFilterInfo) { UInt8 partNumber = GetPartNumber(collisionFilterInfo); return partNumber == 13 || partNumber == 7; } // right hand || left hand
+inline bool IsRagdollHandRigidBody(hkpRigidBody *rigidBody) { return IsRagdollHandFilter(rigidBody->getCollisionFilterInfo()); }
 
 inline UInt32 GetCollisionLayer(UInt32 collisionFilterInfo) { return collisionFilterInfo & 0x7f; }
 inline void SetCollisionLayer(hkUint32 &collisionFilterInfo, UInt32 layer) {

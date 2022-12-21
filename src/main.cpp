@@ -464,14 +464,14 @@ inline bool IsLeftRigidBody(hkpRigidBody *rigidBody)
 	return wrapper == g_leftHand || wrapper == g_leftWeapon || wrapper == g_leftHeldObject;
 }
 
-inline bool IsWeaponRigidBody(hkpRigidBody *rigidBody)
+inline bool IsPlayerWeaponRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
 	if (!wrapper) return false;
 	return wrapper == g_leftWeapon || wrapper == g_rightWeapon;
 }
 
-inline bool IsHandRigidBody(hkpRigidBody *rigidBody)
+inline bool IsPlayerHandRigidBody(hkpRigidBody *rigidBody)
 {
 	bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
 	if (!wrapper) return false;
@@ -490,7 +490,7 @@ inline bool IsHiggsRigidBody(hkpRigidBody *rigidBody)
 	if ((rigidBody->getCollidable()->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f) != g_higgsCollisionLayer) {
 		return false;
 	}
-	return IsHandRigidBody(rigidBody) || IsWeaponRigidBody(rigidBody) || IsHeldRigidBody(rigidBody);
+	return IsPlayerHandRigidBody(rigidBody) || IsPlayerWeaponRigidBody(rigidBody) || IsHeldRigidBody(rigidBody);
 }
 
 inline bool IsHittableCharController(TESObjectREFR *refr)
@@ -1525,7 +1525,7 @@ struct PhysicsListener :
 		if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && layerB != g_higgsCollisionLayer) ||
 			(layerB == BGSCollisionLayer::kCollisionLayer_Biped && layerA != g_higgsCollisionLayer))
 		{
-			if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(rigidBodyA) == 20) || (layerB == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(rigidBodyB) == 20)) {
+			if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(rigidBodyA)) || (layerB == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(rigidBodyB))) {
 				// One of the collidees is a weapon rigidbody on the biped layer, and it didn't collide with a higgs rigidbody
 				evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 				return;
@@ -1668,13 +1668,9 @@ struct PhysicsListener :
 
 		UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
 
-		if (hitLayer == BGSCollisionLayer::kCollisionLayer_Biped && GetPartNumber(hitRigidBody) == 20) {
+		if (hitLayer == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(hitRigidBody) && IsPlayerWeaponRigidBody(hittingRigidBody)) {
 			// Physical block
-			_MESSAGE("%d: Physical block", *g_currentFrameCounter);
-
 			physicalBlockTimes[hitRefr] = g_currentFrameTime;
-
-			evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 			return;
 		}
 
@@ -1863,13 +1859,17 @@ struct PhysicsListener :
 				bool isLeft = IsLeftRigidBody(collidingBody);
 
 				collidedRefs[isLeft].insert(collidedRef);
-				if (IsHandRigidBody(collidingBody)) {
+				if (IsPlayerHandRigidBody(collidingBody)) {
 					handCollidedRefs[isLeft].insert(collidedRef);
 				}
 
 				if (hitCooldownTargets[isLeft].count(collidedRef)) {
 					// refr is still collided with, so refresh its hit cooldown
 					hitCooldownTargets[isLeft][collidedRef].stoppedCollidingTime = g_currentFrameTime;
+				}
+
+				if (GetCollisionLayer(collidedBody) == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(collidedBody) && IsPlayerWeaponRigidBody(collidingBody)) {
+					physicalBlockTimes[collidedRef] = g_currentFrameTime;
 				}
 			}
 		}
@@ -2083,6 +2083,11 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 
 			if (!g_activeBipedGroups.count(otherGroup)) {
 				// Disable collision with biped objects that are not actors
+				return CollisionFilterComparisonResult::Ignore;
+			}
+
+			if (IsRagdollHandFilter(otherFilter)) {
+				// Disable collision between the player capsule and ragdoll hands (weapons)
 				return CollisionFilterComparisonResult::Ignore;
 			}
 
@@ -3606,18 +3611,16 @@ void ProcessHavokHitJobsHook()
 							}
 						}
 
-						ForEachRagdollDriver(actor, [world](hkbRagdollDriver *driver) {
+						ForEachRagdollDriver(actor, [world, isHeld](hkbRagdollDriver *driver) {
 							if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
 								if (NiPointer<NiAVObject> weaponRoot = ragdoll->weaponRoot) {
 									if (NiPointer<bhkRigidBody> weaponBody = GetRigidBody(weaponRoot)) {
 										if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
-											if (std::string_view(parent->m_name).find("Hand") != std::string::npos) {
-												if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
+											if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
+												if (IsRagdollHandRigidBody(handBody->hkBody)) {
 													if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
-														NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
-														PrintVector(NiMatrixToEuler(weaponLocalTransform.rot));
 
-														if (weaponShapeWrapper != ragdoll->clonedFromShape || VectorLength(NiMatrixToEuler(weaponLocalTransform.rot) - NiMatrixToEuler(ragdoll->clonedFromWeaponTransform.rot)) > Config::options.weaponRotationRecloneThreshold) {
+														if (weaponShapeWrapper != ragdoll->clonedFromShape) {
 															NiCloningProcess cloningProcess = NiCloningProcess();
 
 															_MESSAGE("clone");
@@ -3626,45 +3629,55 @@ void ProcessHavokHitJobsHook()
 																_MESSAGE("bhkRigidBodyT");
 															}
 
-															// TODO: We need to transform the cloned shape so that it matches the offset/rotation of the weapon in the space of the hand
-															// Probably need to create a hkpTransformShape / bhkTransformShape for this...
-
 															// TODO: Probably best to do a list shape including the original hand shape as well here.
 
-															// This seems to be correct transforms for two-handed axes/warhammers, but not correct for two handed swords, one handed swords or axes or maces
-
-															// Okay, the problem is that the weapon local transform actually changes during play, so we'd need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
-
-															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
-															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
+															// The weapon local transform actually changes during play, so we need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
 
 															// TODO: Does the cloned shape just end up with a 0 ref count ?? and never gets destroyed ??
+															
+															// TODO: We need to restore just the original hand node when the actor is killed or drops the weapon.
+															// - the easiest way to do this is probably to create a list shape with both the original hand shape as well as the weapon shape, and then just disable the weapon shape when the weapon is gone
 
 															if (bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess)) {
-
 																if (bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape()) {
-																	hkpTransformShape *transformShape = (hkpTransformShape *)hkHeapAlloc(sizeof(hkpTransformShape));
-																	hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
-																	transformShapeWrapper->shape = transformShape;
-																	hkReferencedObject_removeReference(transformShape);
-																	transformShape->m_userData = (hkUlong)transformShapeWrapper;
+																	if (hkpTransformShape *transformShape = (hkpTransformShape *)hkHeapAlloc(sizeof(hkpTransformShape))) {
+																		NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
+																		hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
 
-																	transformShapeWrapper->materialId = clonedShape->materialId;
+																		hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
+																		transformShapeWrapper->shape = transformShape;
+																		hkReferencedObject_removeReference(transformShape);
+																		transformShape->m_userData = (hkUlong)transformShapeWrapper;
 
-																	{
-																		BSWriteLocker lock(&world->worldLock);
+																		transformShapeWrapper->materialId = clonedShape->materialId;
 
-																		handBody->RemoveFromCurrentWorld();
+																		{
+																			BSWriteLocker lock(&world->worldLock);
 
-																		handBody->hkBody->setShape(transformShape);
+																			handBody->RemoveFromCurrentWorld();
 
-																		bhkWorld_AddEntity(world, handBody->hkBody);
+																			handBody->hkBody->setShape(transformShape);
+
+																			bhkWorld_AddEntity(world, handBody->hkBody);
+																		}
 
 																		ragdoll->clonedFromShape = weaponShapeWrapper;
 																		ragdoll->clonedFromWeaponTransform = weaponLocalTransform;
 																	}
 																}
 															}
+														}
+
+														if (hkpTransformShape *shape = DYNAMIC_CAST(handBody->hkBody->m_collidable.m_shape, hkpShape, hkpTransformShape)) {
+															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
+															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
+
+															// This is not recommended as collision agents may have cached data for this shape assuming the previous transform
+
+															// Only do this while they are not grabbed. When we have their weapon grabbed and then setTransform, the sword moves but our hand doesn't and they become disconnected
+															// - It actually doesn't even really work... the weapon visually moves, but since higgs has the "hand" grabbed and stores the relative transform at the time of grabbing, it doesn't end up lined up correctly.
+															// TODO: Probably only do this if specifically the _weapon_ (hand) is grabbed, doesn't need to be in general if the actor is grabbed.
+															hkpTransformShape_setTransform(shape, transform);
 														}
 													}
 												}
@@ -4498,7 +4511,7 @@ void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager,
 bool IsPhysicallyBlocked(Actor *attacker)
 {
 	if (auto it = g_physicsListener.physicalBlockTimes.find(attacker); it != g_physicsListener.physicalBlockTimes.end()) {
-		_MESSAGE("%.2f", g_currentFrameTime - it->second);
+		_MESSAGE("%d: %.2f", *g_currentFrameCounter, g_currentFrameTime - it->second);
 		if (g_currentFrameTime - it->second < Config::options.physicalBlockWindow) {
 			return true;
 		}
