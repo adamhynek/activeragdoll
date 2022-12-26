@@ -242,6 +242,7 @@ namespace Config {
 		if (!RegisterBool("summonsSkipAggression", options.summonsSkipAggression)) success = false;
 
 		if (!RegisterBool("stopUsingFurnitureOnHighAggression", options.stopUsingFurnitureOnHighAggression)) success = false;
+		if (!RegisterBool("dontDoAggressionWhileMenusAreOpen", options.dontDoAggressionWhileMenusAreOpen)) success = false;
 		if (!RegisterBool("calmedActorsDontAccumulateAggression", options.calmedActorsDontAccumulateAggression)) success = false;
 		if (!RegisterDouble("aggressionBumpCooldownTime", options.aggressionBumpCooldownTime)) success = false;
 		if (!RegisterDouble("aggressionStopDelay", options.aggressionStopDelay)) success = false;

@@ -71,6 +71,7 @@ namespace Config {
 		bool summonsSkipAggression = true;
 		bool calmedActorsDontAccumulateAggression = true;
 		bool stopUsingFurnitureOnHighAggression = true;
+		bool dontDoAggressionWhileMenusAreOpen = true;
 		double aggressionBumpCooldownTime = 2.0;
 		double aggressionStopDelay = 2.0;
 		double aggressionDialogueInitMaxTime = 0.2f;

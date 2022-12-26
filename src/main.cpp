@@ -455,6 +455,9 @@ UInt16 g_rightHeldActorCollisionGroup = 0;
 UInt16 g_leftHeldActorCollisionGroup = 0;
 UInt32 g_higgsCollisionLayer = 56;
 
+bhkRigidBody *g_prevRightHeldObject = nullptr;
+bhkRigidBody *g_prevLeftHeldObject = nullptr;
+
 UInt16 g_playerCollisionGroup = 0;
 
 inline bool IsLeftRigidBody(hkpRigidBody *rigidBody)
@@ -1512,7 +1515,8 @@ struct PhysicsListener :
 
 	virtual void contactPointCallback(const hkpContactPointEvent& evnt) override {
 		if (evnt.m_contactPointProperties->m_flags & hkContactPointMaterial::FlagEnum::CONTACT_IS_DISABLED ||
-			!evnt.m_contactPointProperties->isPotential()) {
+			!evnt.m_contactPointProperties->isPotential())
+		{
 			return;
 		}
 
@@ -2262,7 +2266,7 @@ struct NPCData
 		bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
 		bool isSpecial = sharesPlayerPosition || isInVehicle;
 
-		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && !g_isMenuOpen;
+		bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && (!Config::options.dontDoAggressionWhileMenusAreOpen || !g_isMenuOpen);
 		bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
 
 		bool isAggressivelyInteractedWith = isInteractedWith && canPlayerAggress && !isSpecial && !isCalmed;
@@ -3025,6 +3029,14 @@ void PreVrikPreHiggsCallback()
 	}
 }
 
+NiTransform g_initialGrabTransforms[2]{};
+NiTransform g_initialHeldWeaponLocalTransforms[2]{};
+
+void ObjectGrabbedCallback(bool isLeft, TESObjectREFR *grabbedRefr)
+{
+	g_initialGrabTransforms[isLeft] = g_higgsInterface->GetGrabTransform(isLeft);
+}
+
 void ProcessHavokHitJobsHook()
 {
 	PlayerCharacter *player = *g_thePlayer;
@@ -3284,6 +3296,9 @@ void ProcessHavokHitJobsHook()
 		if (rightHand) {
 			g_higgsCollisionLayer = rightHand->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
 		}
+
+		g_prevLeftHeldObject = g_leftHeldObject;
+		g_prevRightHeldObject = g_rightHeldObject;
 
 		g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
 		g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
@@ -3672,12 +3687,35 @@ void ProcessHavokHitJobsHook()
 															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
 															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
 
-															// This is not recommended as collision agents may have cached data for this shape assuming the previous transform
-
-															// Only do this while they are not grabbed. When we have their weapon grabbed and then setTransform, the sword moves but our hand doesn't and they become disconnected
-															// - It actually doesn't even really work... the weapon visually moves, but since higgs has the "hand" grabbed and stores the relative transform at the time of grabbing, it doesn't end up lined up correctly.
-															// TODO: Probably only do this if specifically the _weapon_ (hand) is grabbed, doesn't need to be in general if the actor is grabbed.
+															// This is not recommended as collision agents may have cached data for this shape assuming the previous transform. But, it's kind of the best we can do.
 															hkpTransformShape_setTransform(shape, transform);
+
+															if (g_rightHeldObject == handBody) {
+																if (g_rightHeldObject != g_prevRightHeldObject) {
+																	g_initialHeldWeaponLocalTransforms[false] = weaponLocalTransform;
+																}
+
+																// Keep Constant: hand in the space of the weapon
+																// hand in space of body = weapon in space of body * hand in space of weapon
+																// initial hand in space of weapon = inverse(initial weapon in space of body) * initial hand in space of body
+																// final hand in space of weapon = inverse(final weapon in space of body) * (final hand in space of body)
+																// => inverse(initial weapon in space of body) * initial hand in space of body = inverse(final weapon in space of body) * final hand in space of body
+																// => final hand in space of body = final weapon in space of body * inverse(initial weapon in space of body) * initial hand in space of body
+
+																NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[false]);
+																NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[false]) * initialBodyToHand;
+																g_higgsInterface->SetGrabTransform(false, InverseTransform(newBodyToHand));
+															}
+
+															if (g_leftHeldObject == handBody) {
+																if (g_leftHeldObject != g_prevLeftHeldObject) {
+																	g_initialHeldWeaponLocalTransforms[true] = weaponLocalTransform;
+																}
+
+																NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[true]);
+																NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[true]) * initialBodyToHand;
+																g_higgsInterface->SetGrabTransform(true, InverseTransform(newBodyToHand));
+															}
 														}
 													}
 												}
@@ -5519,6 +5557,7 @@ extern "C" {
 					g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
 					g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
 					g_higgsInterface->AddPreVrikPreHiggsCallback(PreVrikPreHiggsCallback);
+					g_higgsInterface->AddGrabbedCallback(ObjectGrabbedCallback);
 
 					UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
 					bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters
