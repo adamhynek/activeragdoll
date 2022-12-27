@@ -22,6 +22,33 @@
 #include "havok_ref_ptr.h"
 
 
+namespace RE
+{
+	template <typename T>
+	struct hkArray
+	{
+		enum
+		{
+			CAPACITY_MASK = int(0x3FFFFFFF),
+			FLAG_MASK = int(0xC0000000),
+			DONT_DEALLOCATE_FLAG = int(0x80000000), // Indicates that the storage is not the array's to delete
+			FORCE_SIGNED = -1
+		};
+
+		T *m_data; // 00
+		int m_size; // 08
+		int m_capacityAndFlags; // 0C
+
+		inline int getCapacity() const
+		{
+			return (m_capacityAndFlags & static_cast<int>(CAPACITY_MASK));
+		}
+
+		void pushBack(const T &t);
+	};
+
+}
+
 enum class HavokProperty : hkUint32
 {
 	Node = 1, // NiAVObject
@@ -58,22 +85,22 @@ static_assert(offsetof(ahkpWorld, m_userData) == 0x430);
 struct bhkRefObject : NiObject
 {
 	virtual void SetHavokObject(hkReferencedObject *object); // 25
-	virtual void AddOrRemoveReference(bool add); // 26
+	virtual void AddOrRemoveReferenceOnHavokObject(bool add); // 26
 };
 
 struct bhkSerializable : bhkRefObject
 {
-	virtual ahkpWorld* GetHavokWorld_1(); // 27
-	virtual ahkpWorld* GetHavokWorld_2(); // 28
+	virtual ahkpWorld * GetHavokWorld_1(); // 27
+	virtual ahkpWorld * GetHavokWorld_2(); // 28
 	virtual void	  MoveToWorld(struct bhkWorld *world); // 29
 	virtual void	  RemoveFromCurrentWorld(); // 2A
-	virtual void	  Unk_2B(void); // 2B
+	virtual void	  DestroyCinfo(bool destroy); // 2B
 	virtual void	  Unk_2C(void); // 2C
 	virtual void	  Unk_2D(void); // 2D
 	virtual void	  InitHavokFromCinfo(void *cInfo); // 2E
-	virtual void	  GetSerializable(void); // 2F
-	virtual void	  Unk_30(void); // 30
-	virtual void	  Unk_31(void); // 31
+	virtual void *    GetOrCreateCinfo(bool &didCreateCinfo); // 2F
+	virtual void	  Destroy(); // 30
+	virtual void	  Unk_31(void *cInfo); // 31
 };
 
 struct bhkWorld : bhkSerializable
@@ -120,7 +147,7 @@ struct bhkShape : bhkSerializable
 	virtual void Unk_35(void); // 35
 
 	RE::hkRefPtr<hkpShape> shape; // 10
-	UInt64 unk18; // == 0?
+	UInt64 cinfo; // 18
 	UInt32 materialId; // 20
 	UInt32 filterInfo; // 24
 };
@@ -140,9 +167,26 @@ struct bhkConvexShape : bhkSphereRepShape {};
 struct bhkBoxShape : bhkConvexShape {};
 static_assert(sizeof(bhkBoxShape) == 0x28);
 
+struct bhkListShapeCinfo
+{
+	~bhkListShapeCinfo();
+
+	UInt32 unk00;
+	UInt32 pad04;
+	RE::hkArray<const hkpShape *> shapes; // 08
+	RE::hkArray<hkUint32> filterInfos; // 18
+};
+
+struct bhkListShape : bhkShape
+{
+	bool hasNonTransformContainerChildShape;
+	UInt8 pad29[7];
+};
+static_assert(sizeof(bhkListShape) == 0x30);
+
 struct bhkConstraint : bhkSerializable
 {
-	RE::hkRefPtr <hkpConstraintInstance> constraint; // 10
+	RE::hkRefPtr<hkpConstraintInstance> constraint; // 10
 };
 
 struct bhkWorldObject : bhkSerializable
@@ -169,7 +213,7 @@ struct bhkRigidBody : bhkEntity
 	virtual void Unk_3C(void); // 3C
 
 	RE::hkRefPtr<hkpRigidBody> hkBody; // 10
-	UInt64 unk18;
+	struct bhkRigidBodyCinfo * cinfo; // 18
 	UInt8 flags; // at least first byte are some flags? bit 2 is set -> has constraints?
 	tArray<NiPointer<bhkConstraint>> constraints; // 28
 };

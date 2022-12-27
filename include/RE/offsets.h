@@ -113,6 +113,10 @@ extern RelocPtr<hkThreadMemory> g_hkThreadMemory;
 
 
 // Havok / Bethesda havok wrappers
+
+typedef void(*_hkArrayUtil__reserveMore)(hkThreadMemory *allocator, void *arr, int elemSize);
+extern RelocAddr<_hkArrayUtil__reserveMore> hkArrayUtil__reserveMore;
+
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
 extern RelocAddr<_hkpWorld_getCurrentTime> hkpWorld_getCurrentTime;
 
@@ -267,6 +271,12 @@ extern RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform
 
 typedef bhkTransformShape * (*_CreatebhkTransformShape)();
 extern RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape;
+
+typedef void (*_bhkListShapeCinfo_dtor)(bhkListShapeCinfo *);
+extern RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor;
+
+typedef bhkListShape * (*_bhkListShape_ctor)(bhkListShape *, bhkListShapeCinfo *);
+extern RelocAddr<_bhkListShape_ctor> bhkListShape_ctor;
 
 
 // More havok-related

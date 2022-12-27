@@ -11,6 +11,25 @@ hkMemoryRouter &hkGetMemoryRouter()
 	return *(hkMemoryRouter *)(hkUlong)TlsGetValue(*g_dwTlsIndex);
 }
 
+namespace RE
+{
+	template <typename T>
+	void hkArray<T>::pushBack(const T &t)
+	{
+		if (m_size == getCapacity()) {
+			hkArrayUtil__reserveMore(g_hkThreadMemory, this, sizeof(T));
+		}
+		m_data[m_size] = t;
+		++m_size;
+	}
+	template void hkArray<const hkpShape *>::pushBack(const hkpShape *const &t);
+}
+
+bhkListShapeCinfo::~bhkListShapeCinfo()
+{
+	bhkListShapeCinfo_dtor(this);
+}
+
 hkConstraintCinfo::~hkConstraintCinfo()
 {
 	hkConstraintCinfo_setConstraintData(this, nullptr);

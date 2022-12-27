@@ -93,6 +93,7 @@ RelocPtr<UInt64> unk_141E703B8(0x1E703B8);
 
 
 // Havok / Bethesda havok wrappers
+RelocAddr<_hkArrayUtil__reserveMore> hkArrayUtil__reserveMore(0xA02350);
 RelocAddr<_hkpWorld_getCurrentTime> hkpWorld_getCurrentTime(0xAB74F0);
 RelocAddr<_hkpWorld_CastRay> hkpWorld_CastRay(0x00AB5B20);
 RelocAddr<_hkpWorld_LinearCast> hkpWorld_LinearCast(0x00AB5EC0);
@@ -145,6 +146,8 @@ RelocAddr<_hkaPoseMatchingUtility_computeReferenceFrame> hkaPoseMatchingUtility_
 RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor(0xAA27B0);
 RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform(0xAA2820);
 RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape(0xE5F620);
+RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor(0xE18CF0);
+RelocAddr<_bhkListShape_ctor> bhkListShape_ctor(0xE18840);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
