@@ -3037,7 +3037,7 @@ void ProcessHavokHitJobsHook()
 				}
 				hkpWorld_removeContactListener(oldWorld->world, &g_physicsListener);
 				hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_physicsListener);
-				hkpWorld_removeEntityListener(world->world, &g_physicsListener);
+				hkpWorld_removeEntityListener(oldWorld->world, &g_physicsListener);
 			}
 
 			ResetObjects();
