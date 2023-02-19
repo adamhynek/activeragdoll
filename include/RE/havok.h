@@ -186,7 +186,14 @@ static_assert(sizeof(bhkListShape) == 0x30);
 
 struct bhkConstraint : bhkSerializable
 {
+	virtual void SetRigidBodyA(hkpRigidBody *rigidBody); // 32
+	virtual void SetRigidBodyB(hkpRigidBody *rigidBody); // 33
+	virtual hkpRigidBody * GetRigidBodyA(); // 34
+	virtual hkpRigidBody * GetRigidBodyB(); // 35
+	virtual bool EnableOrDisableConstraint(char enable); // 36
+
 	RE::hkRefPtr<hkpConstraintInstance> constraint; // 10
+	struct hkConstraintCinfo *cinfo; // 18
 };
 
 struct bhkWorldObject : bhkSerializable
@@ -311,11 +318,13 @@ struct hkConstraintCinfo
 
 	void *vtbl = 0; // 00
 	RE::hkRefPtr<hkpConstraintData> constraintData = nullptr; // 08
-	UInt32 unk10 = 0;
-	UInt32 unk14 = 0;
+	hkpConstraintInstance::ConstraintPriority priority = hkpConstraintInstance::ConstraintPriority::PRIORITY_INVALID; // 10
+	UInt32 pad14 = 0;
 	hkpRigidBody *rigidBodyA = nullptr; // 18
 	hkpRigidBody *rigidBodyB = nullptr; // 20
 };
+
+typedef void(*_hkConstraintCinfo_CreateConstraintData)(hkConstraintCinfo *); // vfunc 4
 
 struct hkMalleableConstraintCinfo : hkConstraintCinfo
 {
@@ -333,16 +342,24 @@ struct hkFixedConstraintCinfo : hkConstraintCinfo
 	UInt8 unk30 = 0; // type or something
 };
 
-struct bhkMalleableConstraint : bhkConstraint
+struct hkBallAndSocketConstraintCinfo : hkConstraintCinfo
 {
-	UInt64 unk18 = 0;
+	// These are not necessarily 16 byte aligned
+	float pivotB[4]; // 28
+	float pivotA[4]; // 38
 };
+
+struct bhkGroupConstraint : bhkConstraint
+{
+	UInt32 collisionGroup; // 20
+	UInt32 pad24;
+};
+static_assert(sizeof(bhkGroupConstraint) == 0x28);
+
+struct bhkMalleableConstraint : bhkConstraint {};
 static_assert(sizeof(bhkMalleableConstraint) == 0x20);
 
-struct bhkRagdollConstraint : bhkConstraint
-{
-	UInt64 unk18 = 0;
-};
+struct bhkRagdollConstraint : bhkConstraint {};
 static_assert(sizeof(bhkRagdollConstraint) == 0x20);
 
 inline bool IsMotionTypeMoveable(UInt8 motionType) {
@@ -356,7 +373,59 @@ inline bool IsMotionTypeMoveable(UInt8 motionType) {
 inline bool IsMoveableEntity(hkpEntity *entity) { return IsMotionTypeMoveable(entity->m_motion.m_type); }
 
 hkMemoryRouter &hkGetMemoryRouter();
-inline void * hkHeapAlloc(int numBytes) { return hkGetMemoryRouter().heap().blockAlloc(numBytes); }
+inline void * hkHeapAlloc(int numBytes) {
+	return hkGetMemoryRouter().heap().blockAlloc(numBytes);
+}
+inline void * hkStackAlloc(int numBytes) {
+	return hkGetMemoryRouter().stack().blockAlloc(numBytes);
+}
+
+template <typename T>
+inline T * hkStackAllocObjects(int numObjects) {
+	int numBytes = numObjects * sizeof(T);
+	return (T *)hkGetMemoryRouter().stack().blockAlloc(numBytes);
+}
+template <typename T>
+inline void hkStackFreeObjects(T * objects, int numObjects) {
+	int numBytes = numObjects * sizeof(T);
+	hkGetMemoryRouter().stack().blockFree(objects, numBytes);
+}
+
+// Array of temporary objects allocated with the thread-local havok stack allocator
+template <typename T>
+struct hkStackArray
+{
+	hkStackArray(int numObjects)
+	{
+		m_data = hkStackAllocObjects<T>(numObjects);
+		m_size = numObjects;
+	}
+
+	~hkStackArray()
+	{
+		hkStackFreeObjects<T>(m_data, m_size);
+	}
+
+	inline T &operator[] (int i)
+	{
+		return m_data[i];
+	}
+
+	inline const T &operator[] (int i) const
+	{
+		return m_data[i];
+	}
+
+	T *m_data;
+	int m_size;
+};
+
+template <typename T>
+T * hkAllocReferencedObject() {
+	T *allocated = (T *)hkHeapAlloc(sizeof(T));
+	allocated->m_memSizeAndFlags = sizeof(T);
+	return allocated;
+}
 
 void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener* worldListener);
 int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener* proxyListener);

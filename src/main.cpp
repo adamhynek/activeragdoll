@@ -3062,15 +3062,6 @@ void ProcessHavokHitJobsHook()
 
 	g_currentFrameTime = GetTime();
 
-	/*
-	hkMemoryRouter &router = hkGetMemoryRouter();
-	hkMemoryAllocator::MemoryStatistics stats;
-	router.heap().getMemoryStatistics(stats);
-	hkThreadMemory &threadMemory = (hkThreadMemory &)router.heap();
-	bhkThreadMemorySource *memorySource = (bhkThreadMemorySource *)threadMemory.m_memory;
-	PrintToFile(std::to_string(memorySource->totalAllocated), "mem.txt");
-	*/
-
 	{
 		UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
 		g_playerCollisionGroup = filterInfo >> 16;
@@ -3214,7 +3205,7 @@ void ProcessHavokHitJobsHook()
 					//hkpConvexVerticesShape::BuildConfig buildConfig{ true, false, true, 0.05f, 0, 0, 0, -0.1f }; // some havok func uses these values
 					hkpConvexVerticesShape::BuildConfig buildConfig{ false, false, true, 0.05f, 0, 0.f, 0.f, -0.1f };
 
-					hkpConvexVerticesShape *newShape = (hkpConvexVerticesShape *)hkHeapAlloc(sizeof(hkpConvexVerticesShape));
+					hkpConvexVerticesShape *newShape = hkAllocReferencedObject<hkpConvexVerticesShape>();
 					hkpConvexVerticesShape_ctor(newShape, newVerts, buildConfig); // sets refcount to 1
 
 					// it's actually a hkCharControllerShape not just a hkpConvexVerticesShape
@@ -3614,6 +3605,7 @@ void ProcessHavokHitJobsHook()
 														_MESSAGE("clone");
 
 														if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(weaponBody, bhkRigidBody, bhkRigidBodyT)) {
+															// TODO: Handle this - probably the best thing to do is just apply the bhkRigidBodyT transform to the transform shape directly
 															_MESSAGE("bhkRigidBodyT");
 														}
 
@@ -3621,7 +3613,7 @@ void ProcessHavokHitJobsHook()
 
 														bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess);
 														bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape();
-														hkpTransformShape *transformShape = (hkpTransformShape *)hkHeapAlloc(sizeof(hkpTransformShape));
+														hkpTransformShape *transformShape = hkAllocReferencedObject<hkpTransformShape>();
 
 														NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
 														hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
@@ -4039,15 +4031,15 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 			hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 			hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-			static std::vector<hkQsTransform> poseWorld{};
-			MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, poseWorld);
+			hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
+			MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
 
 			// Set rigidbody transforms to the anim pose ones and save the old values
 			static std::vector<hkTransform> savedTransforms{};
 			savedTransforms.clear();
 			for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
 				hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-				hkQsTransform &transform = poseWorld[i];
+				hkQsTransform &transform = lowResPoseWorld[i];
 
 				savedTransforms.push_back(rb->getTransform());
 				rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
@@ -4056,7 +4048,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 			if (!ragdoll->easeConstraintsAction) {
 				// Loosen ragdoll constraints to allow the anim pose
-				hkpEaseConstraintsAction* easeConstraintsAction = (hkpEaseConstraintsAction *)hkHeapAlloc(sizeof(hkpEaseConstraintsAction));
+				hkpEaseConstraintsAction* easeConstraintsAction = hkAllocReferencedObject<hkpEaseConstraintsAction>();
 				hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity*>&)(driver->ragdoll->getRigidBodyArray()), 0);
 				ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
 				hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
@@ -4118,10 +4110,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 							const hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
 							hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
 
-							static std::vector<hkQsTransform> poseWorld{};
-							MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, poseWorld);
+							hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
+							MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
 
-							hkQsTransform poseT = poseWorld[0];
+							hkQsTransform poseT = lowResPoseWorld[0];
 
 							if (ragdoll->rootBoneTransform) { // We compare against last frame's pose transform since the rigidbody transforms aren't updated yet for this frame until after the physics step.
 								hkTransform actualT = rootRigidBody->getTransform();
@@ -4148,11 +4140,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 #endif // _DEBUG
 
 									// Set rigidbody transforms to the anim pose ones
-									for (int i = 0; i < std::size(poseWorld); i++) {
+									for (int i = 0; i < lowResPoseWorld.m_size; i++) {
 										hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
 										if (!rb) continue;
 
-										hkQsTransform &transform = poseWorld[i];
+										hkQsTransform &transform = lowResPoseWorld[i];
 
 										hkTransform newTransform;
 										newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));

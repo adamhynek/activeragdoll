@@ -612,7 +612,7 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
 	return ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, out);
 }
 
-void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, std::vector<hkQsTransform> &poseWorld);
+void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
 NiPointer<bhkCharacterController> GetCharacterController(Actor *actor);
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);

@@ -4,6 +4,7 @@
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Misc/Transform/hkpTransformShape.h>
 #include <Physics/Dynamics/Action/hkpUnaryAction.h>
+#include <Physics/Dynamics/Constraint/Bilateral/BallAndSocket/hkpBallAndSocketConstraintData.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
 #include <Physics/Utilities/Collide/TriggerVolume/hkpTriggerVolume.h>
 #include <Physics/Utilities/Actions/EaseConstraints/hkpEaseConstraintsAction.h>
@@ -89,7 +90,7 @@ extern RelocPtr<float> g_fExplosionKnockStateExplodeDownTime;
 
 extern RelocPtr<float> g_fQuadrupedPitchMult;
 
-extern RelocPtr<DWORD> g_dwTlsIndex;
+extern RelocPtr<DWORD> g_havokMemoryRouterTlsIndex;
 
 extern RelocAddr<void *> PlayerCharacter_vtbl;
 extern RelocAddr<void *> hkCharControllerShape_vtbl;
@@ -109,12 +110,12 @@ extern RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler;
 extern RelocPtr<TES *> g_tes;
 extern RelocPtr<BGSImpactManager *> g_impactManager;
 
-extern RelocPtr<hkThreadMemory> g_hkThreadMemory;
+extern RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator;
 
 
 // Havok / Bethesda havok wrappers
 
-typedef void(*_hkArrayUtil__reserveMore)(hkThreadMemory *allocator, void *arr, int elemSize);
+typedef void(*_hkArrayUtil__reserveMore)(hkMemoryAllocator *allocator, void *arr, int elemSize);
 extern RelocAddr<_hkArrayUtil__reserveMore> hkArrayUtil__reserveMore;
 
 typedef float(*_hkpWorld_getCurrentTime)(hkpWorld *world);
@@ -489,6 +490,9 @@ extern RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll;
 typedef void(*_hkbRagdollDriver_reset)(hkbRagdollDriver *_this);
 extern RelocAddr<_hkbRagdollDriver_reset> hkbRagdollDriver_reset;
 
+typedef bhkGroupConstraint *(*_bhkGroupConstraint_ctor)(bhkGroupConstraint *_this, hkConstraintCinfo *cinfo);
+extern RelocAddr<_bhkGroupConstraint_ctor> bhkGroupConstraint_ctor;
+
 typedef bhkConstraint * (*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
 extern RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint;
 
@@ -533,6 +537,9 @@ typedef float(*_hkpRagdollConstraintData_setInBodySpace)(hkpRagdollConstraintDat
 	const hkVector4& planeAxisA, const hkVector4& planeAxisB,
 	const hkVector4& twistAxisA, const hkVector4& twistAxisB);
 extern RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace;
+
+typedef bool(*_hkpBallAndSocketConstraintData_setInBodySpace)(hkpBallAndSocketConstraintData *_this, const hkVector4 &pivotA, const hkVector4 &pivotB);
+extern RelocAddr<_hkpBallAndSocketConstraintData_setInBodySpace> hkpBallAndSocketConstraintData_setInBodySpace;
 
 typedef bool(*_bhkRagdollConstraint_ctor)(bhkRagdollConstraint *_this, hkRagdollConstraintCinfo *cInfo);
 extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;

@@ -4,11 +4,18 @@
 
 #include "RE/havok.h"
 #include "RE/offsets.h"
+#include "utils.h"
 #include "math_utils.h"
 
 hkMemoryRouter &hkGetMemoryRouter()
 {
-	return *(hkMemoryRouter *)(hkUlong)TlsGetValue(*g_dwTlsIndex);
+	return *(hkMemoryRouter *)(hkUlong)TlsGetValue(*g_havokMemoryRouterTlsIndex);
+}
+
+hkUFloat8 &hkUFloat8::operator=(const float &fv)
+{
+	hkRealTohkUFloat8(*this, fv);
+	return *this;
 }
 
 namespace RE
@@ -17,7 +24,7 @@ namespace RE
 	void hkArray<T>::pushBack(const T &t)
 	{
 		if (m_size == getCapacity()) {
-			hkArrayUtil__reserveMore(g_hkThreadMemory, this, sizeof(T));
+			hkArrayUtil__reserveMore(g_hkContainerHeapAllocator, this, sizeof(T));
 		}
 		m_data[m_size] = t;
 		++m_size;
@@ -38,13 +45,13 @@ hkConstraintCinfo::~hkConstraintCinfo()
 auto hkMalleableConstraintCinfo_vtbl = RelocAddr<void *>(0x182C5F8);
 hkMalleableConstraintCinfo::hkMalleableConstraintCinfo()
 {
-	this->vtbl = hkMalleableConstraintCinfo_vtbl;
+	set_vtbl(this, hkMalleableConstraintCinfo_vtbl);
 }
 
 auto hkRagdollConstraintCinfo_vtbl = RelocAddr<void *>(0x1830F38);
 hkRagdollConstraintCinfo::hkRagdollConstraintCinfo()
 {
-	this->vtbl = hkRagdollConstraintCinfo_vtbl;
+	set_vtbl(this, hkRagdollConstraintCinfo_vtbl);
 }
 
 auto bhkMalleableConstraint_vtbl = RelocAddr<void *>(0x182C628);
@@ -52,7 +59,7 @@ void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConst
 {
 	// Construct bhkMalleableConstraint
 	bhkRefObject_ctor(_this);
-	_this->unk18 = 0;
+	_this->cinfo = 0;
 	*((void **)_this) = ((void *)(bhkMalleableConstraint_vtbl)); // set vtbl
 	_this->InitHavokFromCinfo((void *)((UInt64)cInfo + 8)); // need to pass in cInfo + 8 for whatever reason. Within the function it subtracts 8 again...
 }
@@ -62,7 +69,7 @@ bhkMalleableConstraint * CreateMalleableConstraint(bhkConstraint *constraint, fl
 	if (DYNAMIC_CAST(constraint, bhkConstraint, bhkMalleableConstraint)) return nullptr; // already a malleable constraint
 
 	hkMalleableConstraintCinfo cInfo;
-	hkMalleableConstraintCinfo_Func4(&cInfo); // Creates constraintData
+	get_vfunc<_hkConstraintCinfo_CreateConstraintData>(&cInfo, 4)(&cInfo); // Creates constraintData
 	hkMalleableConstraintCinfo_setWrappedConstraintData(&cInfo, constraint->constraint->m_data);
 	cInfo.rigidBodyA = constraint->constraint->getRigidBodyA();
 	cInfo.rigidBodyB = constraint->constraint->getRigidBodyB();
@@ -153,7 +160,7 @@ bhkRagdollConstraint * ConvertToRagdollConstraint(bhkConstraint *constraint)
 	if (DYNAMIC_CAST(constraint, bhkConstraint, bhkRagdollConstraint)) return nullptr; // already a bhkRagdollConstraint
 
 	hkRagdollConstraintCinfo cInfo;
-	hkRagdollConstraintCinfo_Func4(&cInfo); // Creates constraintData and calls hkpRagdollConstraintData_ctor()
+	get_vfunc<_hkConstraintCinfo_CreateConstraintData>(&cInfo, 4)(&cInfo); // Creates constraintData and calls hkpRagdollConstraintData_ctor()
 	cInfo.rigidBodyA = constraint->constraint->getRigidBodyA();
 	cInfo.rigidBodyB = constraint->constraint->getRigidBodyB();
 	ConvertLimitedHingeDataToRagdollConstraintData((hkpRagdollConstraintData *)cInfo.constraintData.val(), (hkpLimitedHingeConstraintData *)constraint->constraint->getData());
@@ -276,29 +283,26 @@ void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *con
 	hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformB.m_translation, bodyBTransform, pivot);
 }
 
-void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, std::vector<hkQsTransform> &poseWorld)
+void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut)
 {
 	// We need this because hkbRagdollDriver::mapHighResPoseLocalToLowResPoseWorld() does not actually give correct results.
 	// This is essentially what hkbRagdollDriver::driveToPose() does when computing what transforms to drive the rigidbodies to.
 
 	int numPosesLow = driver->ragdoll->getNumBones();
 
-	static std::vector<hkQsTransform> lowResPoseLocal{};
-	lowResPoseLocal.resize(numPosesLow);
+	hkStackArray<hkQsTransform> lowResPoseLocal(numPosesLow);
 
-	hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.data());
+	hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.m_data);
 
-	static std::vector<hkQsTransform> scaledLowResPoseLocal{};
-	scaledLowResPoseLocal.resize(numPosesLow);
+	hkStackArray<hkQsTransform> scaledLowResPoseLocal(numPosesLow);
 
-	CopyAndApplyScaleToPose(true, numPosesLow, lowResPoseLocal.data(), scaledLowResPoseLocal.data(), worldFromModel.m_scale(0));
+	CopyAndApplyScaleToPose(true, numPosesLow, lowResPoseLocal.m_data, scaledLowResPoseLocal.m_data, worldFromModel.m_scale(0));
 
 	hkQsTransform worldFromModelWithScaledPositionButScaleIs1;
 	CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
 	worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
 
-	poseWorld.resize(numPosesLow);
-	hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.data(), poseWorld.data());
+	hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
 }
 
 // This is essentially the default game logic for determining whether 2 filter infos should collide or not

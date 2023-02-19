@@ -66,7 +66,7 @@ RelocPtr<float> g_fExplosionKnockStateExplodeDownTime(0x1EA0778);
 
 RelocPtr<float> g_fQuadrupedPitchMult(0x1EACF10);
 
-RelocPtr<DWORD> g_dwTlsIndex(0x30A8C04);
+RelocPtr<DWORD> g_havokMemoryRouterTlsIndex(0x30A8C04);
 
 RelocAddr<void *> PlayerCharacter_vtbl(0x16E2230);
 RelocAddr<void *> hkCharControllerShape_vtbl(0x1838E78);
@@ -85,7 +85,7 @@ RelocPtr<CharacterCollisionHandler *> g_characterCollisionHandler(0x300A6A0);
 RelocPtr<TES *> g_tes(0x2FEB6F8);
 RelocPtr<BGSImpactManager *> g_impactManager(0x2FC52E0);
 
-RelocPtr<hkThreadMemory> g_hkThreadMemory(0x1EB59C8);
+RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator(0x1EB59C8);
 
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
@@ -231,6 +231,7 @@ RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMalleableCo
 RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(0x61A4E0);
 RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll(0xA25860);
 RelocAddr<_hkbRagdollDriver_reset> hkbRagdollDriver_reset(0xA279C0);
+RelocAddr<_bhkGroupConstraint_ctor> bhkGroupConstraint_ctor(0xE62630);
 RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint(0xE63A20);
 RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled(0xAC06A0);
 RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled(0xAC06D0);
@@ -245,6 +246,7 @@ RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getL
 RelocAddr<_hkbBlendPoses> hkbBlendPoses(0xB4DD80);
 RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData(0xE3E6F0);
 RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace(0xAC16E0);
+RelocAddr<_hkpBallAndSocketConstraintData_setInBodySpace> hkpBallAndSocketConstraintData_setInBodySpace(0xAC1FF0);
 RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor(0xE4A6C0);
 RelocAddr<_hkbBehaviorGraph_generate> hkbBehaviorGraph_generate(0xA2BD80);
 RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_UpdateAnimation(0xB2A190);
