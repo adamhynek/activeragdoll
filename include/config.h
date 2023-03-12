@@ -109,6 +109,7 @@ namespace Config {
 		float maxSpeedReduction = 85.f;
 		float speedReductionHealthInfluence = 0.5f;
 		float followerSpeedReductionMultiplier = 0.4f;
+		double slowMovementFadeOutTime = 5.0;
 
 		bool followersSkipStaminaCost = true;
 		bool playSoundOnGrabStaminaDepletion = true;

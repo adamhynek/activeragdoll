@@ -2813,6 +2813,8 @@ void UpdateHiggsDrop()
 	}
 }
 
+double g_lastHeldTime = 0.0;
+
 void UpdateSpeedReduction()
 {
 	bool rightHasHeld = g_rightHeldRefr;
@@ -2862,6 +2864,10 @@ void UpdateSpeedReduction()
 		}
 
 		speedReduction = std::clamp(speedReduction, 0.f, Config::options.maxSpeedReduction);
+		g_lastHeldTime = g_currentFrameTime;
+	}
+	else if (g_currentFrameTime - g_lastHeldTime < Config::options.slowMovementFadeOutTime) {
+		speedReduction = g_savedSpeedReduction * (1.f - (g_currentFrameTime - g_lastHeldTime) / Config::options.slowMovementFadeOutTime);
 	}
 
 	if (speedReduction != g_savedSpeedReduction) {
@@ -3059,6 +3065,10 @@ void ProcessHavokHitJobsHook()
 
 	AIProcessManager *processManager = *g_aiProcessManager;
 	if (!processManager) return;
+
+#ifdef _DEBUG
+	Config::ReloadIfModified();
+#endif // _DEBUG
 
 	g_currentFrameTime = GetTime();
 

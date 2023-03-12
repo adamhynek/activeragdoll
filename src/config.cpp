@@ -267,6 +267,7 @@ namespace Config {
 		if (!RegisterFloat("maxSpeedReduction", options.maxSpeedReduction)) success = false;
 		if (!RegisterFloat("speedReductionHealthInfluence", options.speedReductionHealthInfluence)) success = false;
 		if (!RegisterFloat("followerSpeedReductionMultiplier", options.followerSpeedReductionMultiplier)) success = false;
+		if (!RegisterDouble("slowMovementFadeOutTime", options.slowMovementFadeOutTime)) success = false;
 
 		if (!RegisterBool("followersSkipStaminaCost", options.followersSkipStaminaCost)) success = false;
 		if (!RegisterBool("playSoundOnGrabStaminaDepletion", options.playSoundOnGrabStaminaDepletion)) success = false;
