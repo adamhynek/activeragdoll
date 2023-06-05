@@ -302,7 +302,32 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
 	CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
 	worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
 
+	ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
+
 	hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
+}
+
+void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hkQsTransform &worldFromModel, const hkQsTransform *poseLocalIn, hkQsTransform *poseLocalOut)
+{
+	// First, compute the worldspace transforms of all bones
+	hkStackArray<hkQsTransform> boneTransformsWS(ragdoll->getNumBones());
+
+	hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
+
+	// Now apply the rigid body T transforms to all the world transforms
+	for (int i = 0; i < ragdoll->getNumBones(); i++) {
+		if (hkpRigidBody *rigidBody = ragdoll->getRigidBodyOfBone(i)) {
+			if (bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData) {
+				NiTransform rigidBodyTLocalTransform = GetRigidBodyTLocalTransform(wrapper, false);
+
+				hkQsTransform &transform = boneTransformsWS[i];
+				transform = NiTransformTohkQsTransform(hkQsTransformToNiTransform(transform, false) * rigidBodyTLocalTransform, false);
+			}
+		}
+	}
+
+	// Finally, convert the worldspace transforms back to local space
+	MapPoseWorldSpaceToPoseLocalSpace(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, boneTransformsWS.m_data, poseLocalOut);
 }
 
 // This is essentially the default game logic for determining whether 2 filter infos should collide or not

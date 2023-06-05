@@ -213,8 +213,10 @@ bool IsUnarmed(TESForm *equippedObject)
 	return false;
 }
 
-bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool allowWeaponBash)
+bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool isLeft, bool allowWeaponBash, const NiPoint3 *hitPosition)
 {
+	PlayerCharacter *player = *g_thePlayer;
+
 	TESForm *equippedObj = actor->GetEquippedObject(isOffhand);
 	TESObjectWEAP *weapon = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);
 	bool isBowOrCrossbow = weapon && (weapon->type() == TESObjectWEAP::GameData::kType_Bow || weapon->type() == TESObjectWEAP::GameData::kType_CrossBow);
@@ -227,28 +229,29 @@ bool ShouldBashBasedOnWeapon(Actor* actor, bool isOffhand, bool allowWeaponBash)
 	bool isTorch = isOffhand && equippedLight;
 
 	if (isBowOrCrossbow || isShield || isTorch) {
-		// We hit with a bow, crossbow, shield, or torch
+		// We hit with a bow, crossbow, shield, or torch - always bash
 		return true;
 	}
-	else {
-		if (!allowWeaponBash) {
-			return false;
-		}
-		bool isBlocking = Actor_IsBlocking(actor);
-		if (IsHoldingTwoHandedWeapon(actor)) {
-			if (isBlocking) {
-				// Both hands are occupied with a two-handed weapon and we're blocking, so it's a bash
-				return true;
-			}
-		}
-		else {
-			if (weapon && IsOneHandedWeapon(weapon)) {
-				TESForm *otherHand = actor->GetEquippedObject(!isOffhand);
-				if (isBlocking && (IsUnarmed(otherHand) || (otherHand && otherHand->formType == kFormType_Spell))) {
-					// We hit with a bashable one-handed weapon and we're blocking, and the blocking can't be due to the other hand
-					return true;
-				}
-			}
+	else if (allowWeaponBash && !IsUnarmed(weapon)) {
+		if (!hitPosition) return false;
+
+		NiPointer<NiAVObject> hmdNode = player->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
+		if (!hmdNode) return false;
+
+		NiPointer<NiAVObject> weaponOffsetNode = GetWeaponCollisionOffsetNode(weapon, isLeft);
+		if (!weaponOffsetNode) return false;
+
+		// Use last frame's offset node transform because this frame is not over yet and it can still be modified by e.g. higgs two-handing
+		NiPoint3 weaponForward = ForwardVector(weaponOffsetNode->m_oldWorldTransform.rot);
+		NiPoint3 hmdForward = ForwardVector(hmdNode->m_worldTransform.rot);
+		float weaponPointingForwardAmount = DotProduct(weaponForward, hmdForward);
+
+		NiPoint3 weaponPos = weaponOffsetNode->m_worldTransform.pos;
+		float handToHitDistance = VectorLength(weaponPos - *hitPosition);
+
+		if (weaponPointingForwardAmount <= Config::options.weaponBashWeaponInHmdDirectionThreshold && handToHitDistance <= Config::options.weaponBashMaxHandToHitDistance) {
+			// We hit with a weapon that is not pointing forward too much and the hit position is close enough to the hand (more of a blade hit)
+			return true;
 		}
 	}
 
@@ -690,6 +693,16 @@ void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::func
 	}
 };
 
+NiTransform GetRigidBodyTLocalTransform(bhkRigidBody* rigidBody, bool useHavokScale)
+{
+	NiTransform rigidBodyLocalTransform{}; // identity
+	if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(rigidBody, bhkRigidBody, bhkRigidBodyT)) {
+		rigidBodyLocalTransform.pos = HkVectorToNiPoint(rigidBodyT->translation) * (useHavokScale ? *g_inverseHavokWorldScale : 1.f);
+		rigidBodyLocalTransform.rot = QuaternionToMatrix(HkQuatToNiQuat(rigidBodyT->rotation));
+	}
+	return rigidBodyLocalTransform;
+}
+
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location)
 {
 	UInt32 formId = sound->formID;
@@ -1082,6 +1095,26 @@ NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft)
 	if (!player->GetNiRootNode(1)) return nullptr;
 
 	return isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+}
+
+NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
+{
+	PlayerCharacter *player = *g_thePlayer;
+
+	if (!weapon || weapon->gameData.type == TESObjectWEAP::GameData::kType_HandToHandMelee) {
+		return isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
+	}
+	else if (weapon->gameData.type == TESObjectWEAP::GameData::kType_Bow) {
+		return player->unk538[PlayerCharacter::BowNode::kBowNode_BowRotationNode];
+	}
+	else if (weapon->gameData.type == TESObjectWEAP::GameData::kType_CrossBow) {
+		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftWeaponOffsetNode : PlayerCharacter::Node::kNode_RightWeaponOffsetNode];
+	}
+	else if (weapon->gameData.type == TESObjectWEAP::GameData::kType_Staff) {
+		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftStaffWeaponOffsetNode : PlayerCharacter::Node::kNode_RightStaffWeaponOffsetNode];
+	}
+
+	return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
 }
 
 bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle)

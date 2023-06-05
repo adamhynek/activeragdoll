@@ -185,6 +185,24 @@ hkTransform NiTransformTohkTransform(NiTransform &t)
 	return out;
 }
 
+NiTransform hkQsTransformToNiTransform(const hkQsTransform& in, bool useHavokScale)
+{
+	NiTransform out;
+	out.rot = QuaternionToMatrix(HkQuatToNiQuat(in.m_rotation));
+	out.pos = HkVectorToNiPoint(in.m_translation) * (useHavokScale ? *g_inverseHavokWorldScale : 1.f);
+	out.scale = in.m_scale(0);
+	return out;
+}
+
+hkQsTransform NiTransformTohkQsTransform(const NiTransform& in, bool useHavokScale)
+{
+	hkQsTransform out;
+	out.m_rotation = NiQuatToHkQuat(MatrixToQuaternion(in.rot));
+	out.m_translation = NiPointToHkVector(in.pos * (useHavokScale ? *g_havokWorldScale : 1.f));
+	out.m_scale.setAll(in.scale);
+	return out;
+}
+
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q)
 {
 	double sqw = q.m_fW*q.m_fW;

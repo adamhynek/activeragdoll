@@ -66,26 +66,6 @@ BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 vr_src::VRControllerAxis_t g_rightStick;
 vr_src::VRControllerAxis_t g_leftStick;
 
-NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft)
-{
-	PlayerCharacter *player = *g_thePlayer;
-	UInt8 weaponType = weapon->gameData.type;
-
-	if (!weapon || weaponType == TESObjectWEAP::GameData::kType_HandToHandMelee) {
-		return isLeft ? player->unk3F0[PlayerCharacter::Node::kNode_LeftHandBone] : player->unk3F0[PlayerCharacter::Node::kNode_RightHandBone];
-	}
-	else if (weaponType == TESObjectWEAP::GameData::kType_Bow) {
-		return player->unk538[PlayerCharacter::BowNode::kBowNode_BowRotationNode];
-	}
-	else if (weaponType == TESObjectWEAP::GameData::kType_CrossBow) {
-		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftWeaponOffsetNode : PlayerCharacter::Node::kNode_RightWeaponOffsetNode];
-	}
-	else if (weaponType == TESObjectWEAP::GameData::kType_Staff) {
-		return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftStaffWeaponOffsetNode : PlayerCharacter::Node::kNode_RightStaffWeaponOffsetNode];
-	}
-
-	return player->unk3F0[isLeft ? PlayerCharacter::Node::kNode_LeftMeleeWeaponOffsetNode : PlayerCharacter::Node::kNode_RightMeleeWeaponOffsetNode];
-}
 
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
 struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
@@ -813,7 +793,7 @@ struct SwingHandler
 		}
 	}
 
-	void Swing(bool isHit = false, bool isStab = false)
+	void Swing(bool isHit = false, bool isStab = false, const NiPoint3 *hitPosition = nullptr)
 	{
 		bool isOffhand = isLeft != *g_leftHandedMode;
 
@@ -853,8 +833,9 @@ struct SwingHandler
 		bool canPowerAttack = !isTorch && !isStaffOrBowOrCrossbow; // unarmed, melee weapon, or shield
 
 		bool isTriggerHeld = isOffhand ? PlayerControls_IsTriggerHeldOffHand(PlayerControls::GetSingleton()) : PlayerControls_IsTriggerHeldMainHand(PlayerControls::GetSingleton());
-		bool allowWeaponBash = Config::options.enableWeaponBash && (isHit || !Config::options.weaponBashOnlyOnHits) && !isTriggerHeld;
-		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, allowWeaponBash);
+
+		bool allowWeaponBash = Config::options.enableWeaponBash && isHit && !isTriggerHeld && hitPosition && !isStab;
+		bool isBash = ShouldBashBasedOnWeapon(player, isOffhand, isLeft, allowWeaponBash, hitPosition);
 
 		bool isWeaponSwingWhileBlockingWithShield = Actor_IsBlocking(player) && !isBash && !isOffhand && equippedShield;
 
@@ -1203,7 +1184,7 @@ struct DoActorHitTask : TaskDelegate
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(true, isStab);
+			swingHandler.Swing(true, isStab, &hitPosition);
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -1288,7 +1269,7 @@ struct DoRefrHitTask : TaskDelegate
 		SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
 		if (!swingHandler.IsSwingCoolingDown()) {
 			// There was no recent swing, so perform one now
-			swingHandler.Swing(true, isStab);
+			swingHandler.Swing(true, isStab, &hitPosition);
 		}
 
 		if (swingHandler.didLastSwingFail) {
@@ -2503,6 +2484,102 @@ void ModifyConstraints(Actor *actor)
 	});
 }
 
+struct hkInt16PairHash {
+	std::size_t operator()(const std::pair<hkInt16, hkInt16> &pair) const {
+		return std::hash<hkInt16>()(pair.first) ^ std::hash<hkInt16>()(pair.second);
+	}
+};
+
+void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
+{
+	hkbCharacter *character = driver->character;
+	if (!character) return;
+
+	hkbCharacterSetup *setup = character->setup;
+	if (!setup) return;
+
+	hkaSkeletonMapper *animToRagdollMapper = setup->m_animationToRagdollSkeletonMapper;
+	if (!animToRagdollMapper) return;
+
+	hkaSkeletonMapper *ragdollToAnimMapper = setup->m_ragdollToAnimationSkeletonMapper;
+	if (!ragdollToAnimMapper) return;
+
+	if (animToRagdollMapper->m_mapping.m_simpleMappings.m_size != ragdollToAnimMapper->m_mapping.m_simpleMappings.m_size) {
+		const char *nameStr = "";
+		if (Actor *actor = GetActorFromCharacter(character)) {
+			if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+				nameStr = name->name.data;
+			}
+		}
+		_WARNING("Warning: '%s' mapping size mismatch between animToRagdoll and ragdollToAnim mappers (%d != %d)", nameStr, animToRagdollMapper->m_mapping.m_simpleMappings.m_size, ragdollToAnimMapper->m_mapping.m_simpleMappings.m_size);
+	}
+
+	// Create a set of pairs of bones that are mapped to each other for both the animation and ragdoll skeleton mappers
+
+	std::unordered_map<std::pair<hkInt16, hkInt16>, hkQsTransform, hkInt16PairHash> mappedBonesAnimToRagdoll; // anim, ragdoll
+
+	for (hkaSkeletonMapperData::SimpleMapping &mapping : animToRagdollMapper->m_mapping.m_simpleMappings) {
+		std::pair<hkInt16, hkInt16> pair(mapping.m_boneA, mapping.m_boneB);
+		auto it = mappedBonesAnimToRagdoll.find(pair);
+		if (it != mappedBonesAnimToRagdoll.end()) {
+			_WARNING("animtoragdoll: duplicate mapping for bones %d and %d", mapping.m_boneA, mapping.m_boneB);
+		}
+		else {
+			mappedBonesAnimToRagdoll[pair] = mapping.m_aFromBTransform;
+		}
+	}
+
+	std::unordered_map<std::pair<hkInt16, hkInt16>, hkQsTransform, hkInt16PairHash> mappedBonesRagdollToAnim; // anim, ragdoll
+
+	for (hkaSkeletonMapperData::SimpleMapping &mapping : ragdollToAnimMapper->m_mapping.m_simpleMappings) {
+		std::pair<hkInt16, hkInt16> pair(mapping.m_boneB, mapping.m_boneA);
+		auto it = mappedBonesRagdollToAnim.find(pair);
+		if (it != mappedBonesRagdollToAnim.end()) {
+			_WARNING("ragdolltoanim: duplicate mapping for bones %d and %d", mapping.m_boneA, mapping.m_boneB);
+		}
+		else {
+			mappedBonesRagdollToAnim[pair] = mapping.m_aFromBTransform;
+		}
+	}
+
+	// Now compute the intersection of the two sets of mapped bones
+
+	std::unordered_set<std::pair<hkInt16, hkInt16>, hkInt16PairHash> mappedBones;
+
+	for (auto it = mappedBonesAnimToRagdoll.begin(); it != mappedBonesAnimToRagdoll.end(); it++) {
+		if (mappedBonesRagdollToAnim.find((*it).first) != mappedBonesRagdollToAnim.end()) {
+			mappedBones.insert((*it).first);
+		}
+	}
+
+	// Now replace the mappings in the skeleton mappers with the intersection
+
+	int i = 0;
+	for (auto it = mappedBones.begin(); it != mappedBones.end(); it++) {
+		std::pair<hkInt16, hkInt16> pair = *it;
+
+		{
+			hkaSkeletonMapperData::SimpleMapping &mapping = animToRagdollMapper->m_mapping.m_simpleMappings[i];
+			mapping.m_boneA = pair.first;
+			mapping.m_boneB = pair.second;
+			mapping.m_aFromBTransform = mappedBonesAnimToRagdoll[pair];
+		}
+
+		{
+			hkaSkeletonMapperData::SimpleMapping &mapping = ragdollToAnimMapper->m_mapping.m_simpleMappings[i];
+			mapping.m_boneA = pair.second;
+			mapping.m_boneB = pair.first;
+			mapping.m_aFromBTransform = mappedBonesRagdollToAnim[pair];
+		}
+
+		i++;
+	}
+
+	// The new size will be <= the old size, so we know the capacity is sufficient
+	animToRagdollMapper->m_mapping.m_simpleMappings.m_size = mappedBones.size();
+	ragdollToAnimMapper->m_mapping.m_simpleMappings.m_size = mappedBones.size();
+}
+
 bool AddRagdollToWorld(Actor *actor)
 {
 	if (Actor_IsInRagdollState(actor)) return false;
@@ -2543,6 +2620,10 @@ bool AddRagdollToWorld(Actor *actor)
 							// World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
 							graph.ptr->world = GetHavokWorldFromCell(parentCell);
 							activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
+						}
+
+						if (Config::options.fixupSkeletonMappings) {
+							SynchronizeAndFixupRagdollAndAnimSkeletonMappers(driver);
 						}
 					}
 				}
@@ -3576,134 +3657,137 @@ void ProcessHavokHitJobsHook()
 						}
 					}
 
-					bool isDead = actor->IsDead(1);
-
+/*
 					{
-						if (BipedModel *biped = actor->GetBipedSmall()) {
-							if (Biped *bipedData = biped->bipedData) {
-								// TODO: This doesn't handle weapons equipped in the offhand. We want to include those, but likely ignore shields.
-								// Shield / offhand is index 9.
+						bool isDead = actor->IsDead(1);
 
-								UInt8 drawState = actor->actorState.flags08 >> 5 & 0x7;
-								bool isWeaponDrawn = drawState == 3;
-								bool shouldAddToWorld = isWeaponDrawn || isDead;
+						{
+							if (BipedModel *biped = actor->GetBipedSmall()) {
+								if (Biped *bipedData = biped->bipedData) {
+									// TODO: This doesn't handle weapons equipped in the offhand. We want to include those, but likely ignore shields.
+									// Shield / offhand is index 9.
 
-								for (int i = 32; i < 42; i++) {
-									if (NiPointer<NiAVObject> geomNode = bipedData->unk10[i].object) {
-										if (shouldAddToWorld) {
-											actorData->weaponRoot = geomNode;
+									UInt8 drawState = actor->actorState.flags08 >> 5 & 0x7;
+									bool isWeaponDrawn = drawState == 3;
+									bool shouldAddToWorld = isWeaponDrawn || isDead;
+
+									for (int i = 32; i < 42; i++) {
+										if (NiPointer<NiAVObject> geomNode = bipedData->unk10[i].object) {
+											if (shouldAddToWorld) {
+												actorData->weaponRoot = geomNode;
+											}
 										}
 									}
 								}
 							}
-						}
 
-						if (NiPointer<NiAVObject> weaponRoot = actorData->weaponRoot) {
-							if (NiPointer<bhkRigidBody> weaponBody = GetRigidBody(weaponRoot)) {
-								bool isWeaponValid = false;
+							if (NiPointer<NiAVObject> weaponRoot = actorData->weaponRoot) {
+								if (NiPointer<bhkRigidBody> weaponBody = GetRigidBody(weaponRoot)) {
+									bool isWeaponValid = false;
 
-								if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
-									if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
-										if (IsRagdollHandRigidBody(handBody->hkBody)) {
-											if (bhkShape *handShapeWrapper = (bhkShape *)handBody->hkBody->m_collidable.m_shape->m_userData) {
-												if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
-													isWeaponValid = true;
+									if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
+										if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
+											if (IsRagdollHandRigidBody(handBody->hkBody)) {
+												if (bhkShape *handShapeWrapper = (bhkShape *)handBody->hkBody->m_collidable.m_shape->m_userData) {
+													if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
+														isWeaponValid = true;
 
-													if (weaponShapeWrapper != actorData->clonedFromShape) {
-														NiCloningProcess cloningProcess = NiCloningProcess();
+														if (weaponShapeWrapper != actorData->clonedFromShape) {
+															NiCloningProcess cloningProcess = NiCloningProcess();
 
-														_MESSAGE("clone");
+															_MESSAGE("clone");
 
-														if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(weaponBody, bhkRigidBody, bhkRigidBodyT)) {
-															// TODO: Handle this - probably the best thing to do is just apply the bhkRigidBodyT transform to the transform shape directly
-															_MESSAGE("bhkRigidBodyT");
-														}
+															if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(weaponBody, bhkRigidBody, bhkRigidBodyT)) {
+																// TODO: Handle this - probably the best thing to do is just apply the bhkRigidBodyT transform to the transform shape directly
+																_MESSAGE("bhkRigidBodyT");
+															}
 
-														// The weapon local transform actually changes during play, so we need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
+															// The weapon local transform actually changes during play, so we need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
 
-														bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess);
-														bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape();
-														hkpTransformShape *transformShape = hkAllocReferencedObject<hkpTransformShape>();
+															bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess);
+															bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape();
+															hkpTransformShape *transformShape = hkAllocReferencedObject<hkpTransformShape>();
 
-														NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
-														hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
-
-														hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
-														transformShapeWrapper->shape = transformShape;
-														hkReferencedObject_removeReference(transformShape);
-														transformShape->m_userData = (hkUlong)transformShapeWrapper;
-
-														transformShapeWrapper->materialId = clonedShape->materialId;
-
-														// Create a list shape with both the original hand shape and the cloned weapon shape - this way we can easily toggle off the weapon shape when they die/sheathe.
-														// TODO: We need to restore just the original hand node when the actor is killed or drops the weapon.
-
-														if (!actorData->handShape) {
-															actorData->handShape = handShapeWrapper;
-														}
-
-														bhkListShape *listShape = (bhkListShape *)Heap_Allocate(sizeof(bhkListShape));
-
-														{
-															bhkListShapeCinfo cinfo{};
-
-															cinfo.shapes.pushBack(actorData->handShape->shape); // add the original hand shape
-															cinfo.shapes.pushBack(transformShape); // add the new weapon shape
-
-															bhkListShape_ctor(listShape, &cinfo);
-														}
-
-														{
-															BSWriteLocker lock(&world->worldLock);
-
-															handBody->RemoveFromCurrentWorld();
-
-															handShapeWrapper->DecRef();
-															handBody->hkBody->setShape(listShape->shape);
-															listShape->IncRef();
-
-															bhkWorld_AddEntity(world, handBody->hkBody);
-														}
-
-														actorData->combinedShape = listShape;
-
-														actorData->clonedFromShape = weaponShapeWrapper;
-													}
-
-													if (actorData->combinedShape) {
-														hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-														if (hkpTransformShape *shape = DYNAMIC_CAST(listShape->getChildShapeInl(1), hkpShape, hkpTransformShape)) {
 															NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
 															hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
 
-															// This is not recommended as collision agents may have cached data for this shape assuming the previous transform. But, it's kind of the best we can do.
-															hkpTransformShape_setTransform(shape, transform);
+															hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
+															transformShapeWrapper->shape = transformShape;
+															hkReferencedObject_removeReference(transformShape);
+															transformShape->m_userData = (hkUlong)transformShapeWrapper;
 
-															if (g_rightHeldObject == handBody) {
-																if (g_rightHeldObject != g_prevRightHeldObject) {
-																	g_initialHeldWeaponLocalTransforms[false] = weaponLocalTransform;
-																}
+															transformShapeWrapper->materialId = clonedShape->materialId;
 
-																// Keep Constant: hand in the space of the weapon
-																// hand in space of body = weapon in space of body * hand in space of weapon
-																// initial hand in space of weapon = inverse(initial weapon in space of body) * initial hand in space of body
-																// final hand in space of weapon = inverse(final weapon in space of body) * (final hand in space of body)
-																// => inverse(initial weapon in space of body) * initial hand in space of body = inverse(final weapon in space of body) * final hand in space of body
-																// => final hand in space of body = final weapon in space of body * inverse(initial weapon in space of body) * initial hand in space of body
+															// Create a list shape with both the original hand shape and the cloned weapon shape - this way we can easily toggle off the weapon shape when they die/sheathe.
+															// TODO: We need to restore just the original hand node when the actor is killed or drops the weapon.
 
-																NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[false]);
-																NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[false]) * initialBodyToHand;
-																g_higgsInterface->SetGrabTransform(false, InverseTransform(newBodyToHand));
+															if (!actorData->handShape) {
+																actorData->handShape = handShapeWrapper;
 															}
 
-															if (g_leftHeldObject == handBody) {
-																if (g_leftHeldObject != g_prevLeftHeldObject) {
-																	g_initialHeldWeaponLocalTransforms[true] = weaponLocalTransform;
+															bhkListShape *listShape = (bhkListShape *)Heap_Allocate(sizeof(bhkListShape));
+
+															{
+																bhkListShapeCinfo cinfo{};
+
+																cinfo.shapes.pushBack(actorData->handShape->shape); // add the original hand shape
+																cinfo.shapes.pushBack(transformShape); // add the new weapon shape
+
+																bhkListShape_ctor(listShape, &cinfo);
+															}
+
+															{
+																BSWriteLocker lock(&world->worldLock);
+
+																handBody->RemoveFromCurrentWorld();
+
+																handShapeWrapper->DecRef();
+																handBody->hkBody->setShape(listShape->shape); // Could this be causing crashes? We do lock the world here, but perhaps that's getting queued for later and not done on the spot?
+																listShape->IncRef();
+
+																bhkWorld_AddEntity(world, handBody->hkBody);
+															}
+
+															actorData->combinedShape = listShape;
+
+															actorData->clonedFromShape = weaponShapeWrapper;
+														}
+
+														if (actorData->combinedShape) {
+															hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
+															if (hkpTransformShape *shape = DYNAMIC_CAST(listShape->getChildShapeInl(1), hkpShape, hkpTransformShape)) {
+																NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
+																hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
+
+																// This is not recommended as collision agents may have cached data for this shape assuming the previous transform. But, it's kind of the best we can do.
+																hkpTransformShape_setTransform(shape, transform);
+
+																if (g_rightHeldObject == handBody) {
+																	if (g_rightHeldObject != g_prevRightHeldObject) {
+																		g_initialHeldWeaponLocalTransforms[false] = weaponLocalTransform;
+																	}
+
+																	// Keep Constant: hand in the space of the weapon
+																	// hand in space of body = weapon in space of body * hand in space of weapon
+																	// initial hand in space of weapon = inverse(initial weapon in space of body) * initial hand in space of body
+																	// final hand in space of weapon = inverse(final weapon in space of body) * (final hand in space of body)
+																	// => inverse(initial weapon in space of body) * initial hand in space of body = inverse(final weapon in space of body) * final hand in space of body
+																	// => final hand in space of body = final weapon in space of body * inverse(initial weapon in space of body) * initial hand in space of body
+
+																	NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[false]);
+																	NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[false]) * initialBodyToHand;
+																	g_higgsInterface->SetGrabTransform(false, InverseTransform(newBodyToHand));
 																}
 
-																NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[true]);
-																NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[true]) * initialBodyToHand;
-																g_higgsInterface->SetGrabTransform(true, InverseTransform(newBodyToHand));
+																if (g_leftHeldObject == handBody) {
+																	if (g_leftHeldObject != g_prevLeftHeldObject) {
+																		g_initialHeldWeaponLocalTransforms[true] = weaponLocalTransform;
+																	}
+
+																	NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[true]);
+																	NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[true]) * initialBodyToHand;
+																	g_higgsInterface->SetGrabTransform(true, InverseTransform(newBodyToHand));
+																}
 															}
 														}
 													}
@@ -3711,31 +3795,34 @@ void ProcessHavokHitJobsHook()
 											}
 										}
 									}
-								}
 
-								if (!isWeaponValid || isDead) {
-									// The weapon is not in the hand (not drawn, etc.), or the actor is dead
+									if (!isWeaponValid || isDead) {
+										// The weapon is not in the hand (not drawn, etc.), or the actor is dead
 
-									if (actorData->combinedShape) {
-										hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-										// Disable the child shape which is the weapon shape (keep the hand shape active)
-										if (listShape->isChildEnabled(1)) {
-											hkpListShape_disableChild(listShape, 1);
+										if (actorData->combinedShape) {
+											hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
+											// Disable the child shape which is the weapon shape (keep the hand shape active)
+											if (listShape->isChildEnabled(1)) {
+												hkpListShape_disableChild(listShape, 1);
+											}
 										}
 									}
-								}
-								else {
-									if (actorData->combinedShape) {
-										hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-										// Disable the child shape which is the weapon shape (keep the hand shape active)
-										if (!listShape->isChildEnabled(1)) {
-											hkpListShape_enableChild(listShape, 1);
+									else {
+										if (actorData->combinedShape) {
+											hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
+											// Enable the child shape which is the weapon shape
+											if (!listShape->isChildEnabled(1)) {
+												hkpListShape_enableChild(listShape, 1);
+											}
 										}
 									}
 								}
 							}
 						}
 					}
+*/
+
+
 				}
 			}
 			else if (shouldRemoveFromWorld) {
@@ -4845,6 +4932,44 @@ void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaP
 	}
 }
 
+void hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook(hkpMotion *_this, hkTime time, hkTransform &out)
+{
+	hkpMotion_approxTransformAt(_this, time, out);
+
+	if (!Config::options.applyRigidBodyTWhenReadingRigidBodies) return;
+
+	hkpRigidBody *rigidBody = (hkpRigidBody *)(((UInt64)_this) - 0x150);
+	if (bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData) {
+		NiTransform rigidBodyTLocalTransform = GetRigidBodyTLocalTransform(wrapper);
+
+		NiTransform transform = hkTransformToNiTransform(out, 1.f);
+		transform = transform * InverseTransform(rigidBodyTLocalTransform);
+		out = NiTransformTohkTransform(transform);
+	}
+}
+
+void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
+{
+	UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
+	hkaSkeletonMapper_mapPose(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+}
+
+void hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
+{
+	UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
+	hkaSkeletonMapper_mapPose(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+}
+
+void hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook(hkaRagdollRigidBodyController *_this, hkReal deltaTime, hkQsTransform* poseLocalSpace, const hkQsTransform& worldFromModel, hkaKeyFrameHierarchyUtility::Output* stressOut)
+{
+	if (Config::options.applyRigidBodyTWhenWritingRigidBodies) {
+		ApplyRigidBodyTTransformsToPose(_this->m_ragdollInstance, worldFromModel, poseLocalSpace, poseLocalSpace);
+	}
+
+	// The 4th arg to hkaRagdollRigidBodyController::driveToPose is a ptr which it sets to the output stress on the ragdoll.
+	// The game passes 0 in this arg normally, which means the stress is not extracted, so we extract it ourselves.
+	hkaRagdollRigidBodyController_driveToPose(_this, deltaTime, poseLocalSpace, worldFromModel, g_stressOut);
+}
 
 uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
@@ -4856,7 +4981,6 @@ auto postPhysicsHookLoc = RelocAddr<uintptr_t>(0xB268DC);
 
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 
-uintptr_t controllerDriveToPoseHookedFuncAddr = 0;
 auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
 
 auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
@@ -4891,12 +5015,18 @@ auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D
 
 auto hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc = RelocAddr<uintptr_t>(0xA2921E);
 
+auto hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc = RelocAddr<uintptr_t>(0xB51008);
+
+auto MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_1 = RelocAddr<uintptr_t>(0xA374B6);
+auto MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2 = RelocAddr<uintptr_t>(0xA37533);
+
+auto hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc = RelocAddr<uintptr_t>(0xA28005);
+
 
 void PerformHooks(void)
 {
 	// First, set our addresses
 	processHavokHitJobsHookedFuncAddr = processHavokHitJobsHookedFunc.GetUIntPtr();
-	controllerDriveToPoseHookedFuncAddr = hkaRagdollRigidBodyController_driveToPose.GetUIntPtr();
 
 	{
 		struct Code : Xbyak::CodeGenerator {
@@ -4998,6 +5128,25 @@ void PerformHooks(void)
 	{
 		g_branchTrampoline.Write5Call(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook));
 		_MESSAGE("hkbRagdollDriver::extractRagdollPoseInternal hkaPoseMatchingUtility::computeReferenceFrame hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc.GetUIntPtr(), uintptr_t(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook));
+		_MESSAGE("hkaRagdollInstance::getApproxWorldFromBoneTransformAt hkpMotion::approxTransformAt hook complete");
+	}
+
+	{
+		g_branchTrampoline.Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_1.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook));
+		g_branchTrampoline.Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook));
+	}
+
+	{
+		g_branchTrampoline.Write5Call(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook));
+	}
+
+	{
+		g_branchTrampoline.Write5Call(controllerDriveToPoseHookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook));
+		_MESSAGE("hkbRagdollDriver::driveToPose hkaRagdollRigidBodyController::driveToPose hook complete");
 	}
 
 	{
@@ -5215,38 +5364,6 @@ void PerformHooks(void)
 		g_branchTrampoline.Write5Branch(Character_MovementControllerUpdate_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
 
 		_MESSAGE("MovementControllerNPC::Update hook complete");
-	}
-
-	{
-		struct Code : Xbyak::CodeGenerator {
-			Code(void * buf) : Xbyak::CodeGenerator(256, buf)
-			{
-				Xbyak::Label jumpBack;
-
-				// The 4th arg to hkaRagdollRigidBodyController::driveToPose is a ptr which it sets to the output stress on the ragdoll.
-				// The game passes 0 in this arg normally, which means the stress is not extracted. I want to know the stress though.
-				mov(rax, (uintptr_t)&g_stressOut);
-				mov(ptr[rsp + 0x20], rax);
-
-				// Original code
-				mov(rax, controllerDriveToPoseHookedFuncAddr);
-				call(rax);
-
-				// Jump back to whence we came (+ the size of the initial branch instruction)
-				jmp(ptr[rip + jumpBack]);
-
-				L(jumpBack);
-				dq(controllerDriveToPoseHookLoc.GetUIntPtr() + 5);
-			}
-		};
-
-		void * codeBuf = g_localTrampoline.StartAlloc();
-		Code code(codeBuf);
-		g_localTrampoline.EndAlloc(code.getCurr());
-
-		g_branchTrampoline.Write5Branch(controllerDriveToPoseHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-		_MESSAGE("hkaRagdollRigidBodyController::driveToPose hook complete");
 	}
 
 	if (Config::options.disableCullingForActiveRagdolls) {

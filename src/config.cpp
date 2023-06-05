@@ -361,6 +361,14 @@ namespace Config {
 		if (!RegisterBool("disableHitIfSheathed", options.disableHitIfSheathed)) success = false;
 		if (!RegisterBool("seamlessFurnitureTransition", options.seamlessFurnitureTransition)) success = false;
 		if (!RegisterBool("disableConstraintMotorsOnFurnitureExit", options.disableConstraintMotorsOnFurnitureExit)) success = false;
+		if (!RegisterBool("disableConstraints", options.disableConstraints)) success = false;
+
+		if (!RegisterBool("applyRigidBodyTWhenReadingRigidBodies", options.applyRigidBodyTWhenReadingRigidBodies)) success = false;
+		if (!RegisterBool("applyRigidBodyTWhenWritingRigidBodies", options.applyRigidBodyTWhenWritingRigidBodies)) success = false;
+		if (!RegisterBool("dontRestrictBoneLengthsWhenMappingFromRagdollToAnim", options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim)) success = false;
+		if (!RegisterBool("dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll", options.dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll)) success = false;
+
+		if (!RegisterBool("fixupSkeletonMappings", options.fixupSkeletonMappings)) success = false;
 
 		if (!RegisterBool("dontResetPitchRollWhenGettingUp", options.dontResetPitchRollWhenGettingUp)) success = false;
 		if (!RegisterBool("preventGetUpWhenRagdollIsGrabbed", options.preventGetUpWhenRagdollIsGrabbed)) success = false;
@@ -404,8 +412,9 @@ namespace Config {
 		if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;
 
 		if (!RegisterBool("enableWeaponBash", options.enableWeaponBash)) success = false;
-		if (!RegisterBool("weaponBashOnlyOnHits", options.weaponBashOnlyOnHits)) success = false;
 		if (!RegisterBool("failBashWhenOutOfStamina", options.failBashWhenOutOfStamina)) success = false;
+		if (!RegisterFloat("weaponBashMaxHandToHitDistance", options.weaponBashMaxHandToHitDistance)) success = false;
+		if (!RegisterFloat("weaponBashWeaponInHmdDirectionThreshold", options.weaponBashWeaponInHmdDirectionThreshold)) success = false;
 
 		if (!RegisterFloat("swingFailedRumbleIntensity", options.swingFailedRumbleIntensity)) success = false;
 		if (!RegisterFloat("swingFailedRumbleDuration", options.swingFailedRumbleDuration)) success = false;

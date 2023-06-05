@@ -65,7 +65,7 @@ TESObjectWEAP * GetEquippedWeapon(Actor *actor, bool isOffhand);
 bool IsHoldingTwoHandedWeapon(Actor *actor);
 bool IsOneHandedWeapon(TESObjectWEAP *weapon);
 bool IsUnarmed(TESForm *equippedObject);
-bool ShouldBashBasedOnWeapon(Actor *actor, bool isOffhand, bool allowWeaponBash);
+bool ShouldBashBasedOnWeapon(Actor *actor, bool isOffhand, bool isLeft, bool allowWeaponBash, const NiPoint3 *hitPosition);
 
 double GetTime();
 
@@ -105,6 +105,7 @@ void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<v
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
 void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f);
 void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f);
+NiTransform GetRigidBodyTLocalTransform(bhkRigidBody* rigidBody, bool useHavokScale = true);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
 bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);
 bool DoesRefrHaveNode(TESObjectREFR *ref, NiAVObject *node);
@@ -142,6 +143,7 @@ inline UInt32 GetCommandingActor(Actor *actor) { return actor->processManager ? 
 bool IsInFaction(Actor *actor, TESFaction *faction);
 bool IsCalmed(Actor *actor);
 NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);
+NiPointer<NiAVObject> GetWeaponCollisionOffsetNode(TESObjectWEAP *weapon, bool isLeft);
 bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle);
 inline UInt32 GetEnabledInputs() { return UInt32(InputManager::GetSingleton()->unk138); }
 inline bool AreCombatControlsEnabled() { return GetEnabledInputs() & UInt32(EnabledInputs::fighting); }

@@ -88,6 +88,8 @@ void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
 NiMatrix33 HkMatrixToNiMatrix(const hkMatrix3 &hkMat);
 NiTransform hkTransformToNiTransform(const hkTransform &t, float scale);
 hkTransform NiTransformTohkTransform(NiTransform &t);
+NiTransform hkQsTransformToNiTransform(const hkQsTransform& in, bool useHavokScale = true);
+hkQsTransform NiTransformTohkQsTransform(const NiTransform& in, bool useHavokScale = true);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);
 inline NiQuaternion MatrixToQuaternion(const NiMatrix33 &m) { NiQuaternion q; NiMatrixToNiQuaternion(q, m); return q; }
 inline NiQuaternion HkQuatToNiQuat(const hkQuaternion &quat) { return { quat.m_vec(3), quat.m_vec(0), quat.m_vec(1), quat.m_vec(2) }; }

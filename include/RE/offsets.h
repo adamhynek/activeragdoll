@@ -411,8 +411,8 @@ extern RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl;
 typedef NiMatrix33 & (*_EulerToNiMatrix)(NiMatrix33 &matOut, float x, float y, float z);
 extern RelocAddr<_EulerToNiMatrix> EulerToNiMatrix;
 
-typedef NiTransform &(*_hkQsTransformToNiTransform)(NiTransform &out, const hkQsTransform &in);
-extern RelocAddr<_hkQsTransformToNiTransform> hkQsTransformToNiTransform;
+typedef NiTransform &(*_SetNiMatrixFromNiQuaternion)(const NiQuaternion &in, NiMatrix33 &out);
+extern RelocAddr<_SetNiMatrixFromNiQuaternion> SetNiMatrixFromNiQuaternion;
 
 typedef void(*_UpdateClavicleToTransformHand)(NiAVObject *clavicle, NiAVObject *hand, NiTransform *desiredHandWorldTransform, NiTransform *additionalLocalTransform);
 extern RelocAddr<_UpdateClavicleToTransformHand> UpdateClavicleToTransformHand;
@@ -553,6 +553,9 @@ extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_Updat
 typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform* poseLocalSpace, const hkQsTransform& worldFromModel, hkaKeyFrameHierarchyUtility::Output* stressOut);
 extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBodyController_driveToPose;
 
+typedef bool(*_hkaSkeletonMapper_mapPose)(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source);
+extern RelocAddr<_hkaSkeletonMapper_mapPose> hkaSkeletonMapper_mapPose;
+
 typedef bool(*_hkaRagdollRigidBodyController_ctor)(hkaRagdollRigidBodyController *_this);
 extern RelocAddr<_hkaRagdollRigidBodyController_ctor> hkaRagdollRigidBodyController_ctor;
 
@@ -573,6 +576,15 @@ extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagd
 
 typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, hkQsTransform* lowResPoseLocal);
 extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal;
+
+typedef void(*_MapPoseWorldSpaceToPoseModelSpace)(int a_numBones, const hkQsTransform *a_worldFromModel, const hkQsTransform *a_ragdollPoseWS, hkQsTransform *a_bonesModelSpaceOut);
+extern RelocAddr<_MapPoseWorldSpaceToPoseModelSpace> MapPoseWorldSpaceToPoseModelSpace;
+
+typedef void(*_MapPoseModelSpaceToPoseLocalSpace)(int a_numPoses, const SInt16 *a_parentIndices, const hkQsTransform *a_poseModelSpace, hkQsTransform *a_poseLocalSpaceOut);
+extern RelocAddr<_MapPoseModelSpaceToPoseLocalSpace> MapPoseModelSpaceToPoseLocalSpace;
+
+typedef void(*_MapPoseWorldSpaceToPoseLocalSpace)(int a_numPoses, const SInt16 *a_parentIndices, const hkQsTransform *a_worldFromModel, const hkQsTransform *a_ragdollPoseWS, hkQsTransform *a_poseModelSpaceOut);
+extern RelocAddr<_MapPoseWorldSpaceToPoseLocalSpace> MapPoseWorldSpaceToPoseLocalSpace;
 
 typedef hkQsTransform * (*_hkbCharacter_getPoseLocal)(hkbCharacter *_this);
 extern RelocAddr<_hkbCharacter_getPoseLocal> hkbCharacter_getPoseLocal;
@@ -832,7 +844,7 @@ extern RelocAddr<_hkpWorld_addAction> hkpWorld_addAction;
 typedef void(*_hkpWorld_removeAction)(hkpWorld *world, hkpAction* action);
 extern RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction;
 
-typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, const hkQsTransform &worldFromModel, hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
+typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
 extern RelocAddr<_hkbPoseLocalToPoseWorld> hkbPoseLocalToPoseWorld;
 
 typedef void(*_CopyAndApplyScaleToPose)(bool scaleByHavokWorldScale, UInt32 numBones, hkQsTransform *poseLowResLocal, hkQsTransform *poseOut, float worldFromModelScale);

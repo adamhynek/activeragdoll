@@ -204,6 +204,13 @@ namespace Config {
 		bool disableConstraintMotorsOnFurnitureExit = true;
 		bool disableConstraints = false;
 
+		bool applyRigidBodyTWhenReadingRigidBodies = true;
+		bool applyRigidBodyTWhenWritingRigidBodies = true;
+		bool dontRestrictBoneLengthsWhenMappingFromRagdollToAnim = true;
+		bool dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll = true;
+
+		bool fixupSkeletonMappings = true;
+
 		bool dontResetPitchRollWhenGettingUp = true;
 		bool preventGetUpWhenRagdollIsGrabbed = true;
 		bool resetKnockedDownTimerWhenRagdollIsGrabbed = true;
@@ -246,8 +253,9 @@ namespace Config {
 		int numControllerAngularVelocityTrackingFrames = 10;
 
 		bool enableWeaponBash = true;
-		bool weaponBashOnlyOnHits = true;
 		bool failBashWhenOutOfStamina = true;
+		float weaponBashMaxHandToHitDistance = 10.f;
+		float weaponBashWeaponInHmdDirectionThreshold = 0.2f;
 
 		float swingFailedRumbleIntensity = 0.5f;
 		float swingFailedRumbleDuration = 0.5f;
