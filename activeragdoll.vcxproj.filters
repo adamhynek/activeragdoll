@@ -69,9 +69,6 @@
     <ClInclude Include="include\math_utils.h">
       <Filter>include</Filter>
     </ClInclude>
-    <ClInclude Include="resource.h">
-      <Filter>include</Filter>
-    </ClInclude>
     <ClInclude Include="include\utils.h">
       <Filter>include</Filter>
     </ClInclude>

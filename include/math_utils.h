@@ -15,61 +15,61 @@ static const float g_minAllowedFingerAngle = 0;// 5 * 0.0174533; // 5 degrees
 
 struct Triangle
 {
-	UInt16 vertexIndices[3];
+    UInt16 vertexIndices[3];
 };
 static_assert(sizeof(Triangle) == 0x06);
 
 struct Intersection
 {
-	BSTriShape *node; // the trishape where the intersected triangle resides
-	Triangle tri; // triangle that was intersected
-	float angle; // angle of the fingertip at intersection pt
+    BSTriShape *node; // the trishape where the intersected triangle resides
+    Triangle tri; // triangle that was intersected
+    float angle; // angle of the fingertip at intersection pt
 };
 
 struct Point2
 {
-	float x;
-	float y;
+    float x;
+    float y;
 
-	Point2();
-	Point2(float X, float Y) : x(X), y(Y) { };
+    Point2();
+    Point2(float X, float Y) : x(X), y(Y) { };
 
-	Point2 Point2::operator- () const;
-	Point2 Point2::operator+ (const Point2& pt) const;
+    Point2 Point2::operator- () const;
+    Point2 Point2::operator+ (const Point2 &pt) const;
 
-	Point2 Point2::operator- (const Point2& pt) const;
+    Point2 Point2::operator- (const Point2 &pt) const;
 
-	Point2& Point2::operator+= (const Point2& pt);
-	Point2& Point2::operator-= (const Point2& pt);
+    Point2 &Point2::operator+= (const Point2 &pt);
+    Point2 &Point2::operator-= (const Point2 &pt);
 
-	// Scalar operations
-	Point2 Point2::operator* (float scalar) const;
-	Point2 Point2::operator/ (float scalar) const;
+    // Scalar operations
+    Point2 Point2::operator* (float scalar) const;
+    Point2 Point2::operator/ (float scalar) const;
 
-	Point2& Point2::operator*= (float scalar);
-	Point2& Point2::operator/= (float scalar);
+    Point2 &Point2::operator*= (float scalar);
+    Point2 &Point2::operator/= (float scalar);
 };
 
 namespace MathUtils
 {
-	struct Result
-	{
-		float sqrDistance;
-		// barycentric coordinates for triangle.v[3]
-		float parameter[3];
-		NiPoint3 closest;
-	};
+    struct Result
+    {
+        float sqrDistance;
+        // barycentric coordinates for triangle.v[3]
+        float parameter[3];
+        NiPoint3 closest;
+    };
 
-	Result GetClosestPointOnTriangle(const NiPoint3 &point, const Triangle &triangle, uintptr_t vertices, UInt8 vertexStride, UInt32 vertexPosOffset);
+    Result GetClosestPointOnTriangle(const NiPoint3 &point, const Triangle &triangle, uintptr_t vertices, UInt8 vertexStride, UInt32 vertexPosOffset);
 }
 
-inline float VectorLengthSquared(const NiPoint3 &vec) { return vec.x*vec.x + vec.y*vec.y + vec.z*vec.z; }
-inline float VectorLengthSquared(const Point2 &vec) { return vec.x*vec.x + vec.y*vec.y; }
+inline float VectorLengthSquared(const NiPoint3 &vec) { return vec.x * vec.x + vec.y * vec.y + vec.z * vec.z; }
+inline float VectorLengthSquared(const Point2 &vec) { return vec.x * vec.x + vec.y * vec.y; }
 inline float VectorLength(const NiPoint3 &vec) { return sqrtf(VectorLengthSquared(vec)); }
 inline float VectorLength(const Point2 &vec) { return sqrtf(VectorLengthSquared(vec)); }
-inline float DotProduct(const NiPoint3 &vec1, const NiPoint3 &vec2) { return vec1.x*vec2.x + vec1.y*vec2.y + vec1.z*vec2.z; }
-inline float DotProduct(const Point2 &vec1, const Point2 &vec2) { return vec1.x*vec2.x + vec1.y*vec2.y; }
-inline float DotProduct(const NiQuaternion &q1, const NiQuaternion &q2) { return q1.m_fW*q2.m_fW + q1.m_fX*q2.m_fX + q1.m_fY*q2.m_fY + q1.m_fZ*q2.m_fZ; }
+inline float DotProduct(const NiPoint3 &vec1, const NiPoint3 &vec2) { return vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z; }
+inline float DotProduct(const Point2 &vec1, const Point2 &vec2) { return vec1.x * vec2.x + vec1.y * vec2.y; }
+inline float DotProduct(const NiQuaternion &q1, const NiQuaternion &q2) { return q1.m_fW * q2.m_fW + q1.m_fX * q2.m_fX + q1.m_fY * q2.m_fY + q1.m_fZ * q2.m_fZ; }
 inline float DotProductSafe(const NiPoint3 &vec1, const NiPoint3 &vec2) { return std::clamp(DotProduct(vec1, vec2), -1.f, 1.f); }
 inline float DotProductSafe(const NiQuaternion &q1, const NiQuaternion &q2) { return std::clamp(DotProduct(q1, q2), -1.f, 1.f); }
 inline float QuaternionLength(const NiQuaternion &q) { return sqrtf(DotProduct(q, q)); }
@@ -88,8 +88,8 @@ void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
 NiMatrix33 HkMatrixToNiMatrix(const hkMatrix3 &hkMat);
 NiTransform hkTransformToNiTransform(const hkTransform &t, float scale);
 hkTransform NiTransformTohkTransform(NiTransform &t);
-NiTransform hkQsTransformToNiTransform(const hkQsTransform& in, bool useHavokScale = true);
-hkQsTransform NiTransformTohkQsTransform(const NiTransform& in, bool useHavokScale = true);
+NiTransform hkQsTransformToNiTransform(const hkQsTransform &in, bool useHavokScale = true);
+hkQsTransform NiTransformTohkQsTransform(const NiTransform &in, bool useHavokScale = true);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);
 inline NiQuaternion MatrixToQuaternion(const NiMatrix33 &m) { NiQuaternion q; NiMatrixToNiQuaternion(q, m); return q; }
 inline NiQuaternion HkQuatToNiQuat(const hkQuaternion &quat) { return { quat.m_vec(3), quat.m_vec(0), quat.m_vec(1), quat.m_vec(2) }; }
@@ -118,8 +118,8 @@ inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x +=
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }
 inline float AngleDifference(float angle1, float angle2)
 {
-	float diff = fmodf(angle2 - angle1 + 180.f, 360.f) - 180.f;
-	return diff < -180.f ? diff + 360.f : diff;
+    float diff = fmodf(angle2 - angle1 + 180.f, 360.f) - 180.f;
+    return diff < -180.f ? diff + 360.f : diff;
 }
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);

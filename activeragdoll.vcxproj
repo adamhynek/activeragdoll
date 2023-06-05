@@ -190,7 +190,6 @@
     <ClInclude Include="include\RE\offsets.h" />
     <ClInclude Include="include\utils.h" />
     <ClInclude Include="include\version.h" />
-    <ClInclude Include="resource.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

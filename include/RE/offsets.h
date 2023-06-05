@@ -124,19 +124,19 @@ extern RelocAddr<_hkpWorld_getCurrentTime> hkpWorld_getCurrentTime;
 typedef void(*_hkpWorld_CastRay)(hkpWorld *world, hkpWorldRayCastInput *input, hkpRayHitCollector *collector);
 extern RelocAddr<_hkpWorld_CastRay> hkpWorld_CastRay;
 
-typedef void(*_hkpWorld_LinearCast)(hkpWorld *world, const hkpCollidable* collA, const hkpLinearCastInput* input, hkpCdPointCollector* castCollector, hkpCdPointCollector* startCollector);
+typedef void(*_hkpWorld_LinearCast)(hkpWorld *world, const hkpCollidable *collA, const hkpLinearCastInput *input, hkpCdPointCollector *castCollector, hkpCdPointCollector *startCollector);
 extern RelocAddr<_hkpWorld_LinearCast> hkpWorld_LinearCast;
 
-typedef void(*_hkpWorld_GetPenetrations)(hkpWorld *world, const hkpCollidable* collA, const hkpCollisionInput* input, hkpCdBodyPairCollector* collector);
+typedef void(*_hkpWorld_GetPenetrations)(hkpWorld *world, const hkpCollidable *collA, const hkpCollisionInput *input, hkpCdBodyPairCollector *collector);
 extern RelocAddr<_hkpWorld_GetPenetrations> hkpWorld_GetPenetrations;
 
-typedef void(*_hkpWorld_GetClosestPoints)(hkpWorld *world, const hkpCollidable* collA, const hkpCollisionInput* input, hkpCdPointCollector* collector);
+typedef void(*_hkpWorld_GetClosestPoints)(hkpWorld *world, const hkpCollidable *collA, const hkpCollisionInput *input, hkpCdPointCollector *collector);
 extern RelocAddr<_hkpWorld_GetClosestPoints> hkpWorld_GetClosestPoints;
 
-typedef hkpEntity* (*_hkpWorld_AddEntity)(hkpWorld *world, hkpEntity* entity, hkpEntityActivation initialActivationState);
+typedef hkpEntity *(*_hkpWorld_AddEntity)(hkpWorld *world, hkpEntity *entity, hkpEntityActivation initialActivationState);
 extern RelocAddr<_hkpWorld_AddEntity> hkpWorld_AddEntity;
 
-typedef hkBool (*_hkpWorld_RemoveEntity)(hkpWorld *world, hkBool *ret, hkpEntity* entity);
+typedef hkBool(*_hkpWorld_RemoveEntity)(hkpWorld *world, hkBool *ret, hkpEntity *entity);
 extern RelocAddr<_hkpWorld_RemoveEntity> hkpWorld_RemoveEntity;
 
 typedef void(*_bhkWorld_AddEntity)(bhkWorld *world, hkpEntity *entity);
@@ -145,19 +145,19 @@ extern RelocAddr<_bhkWorld_AddEntity> bhkWorld_AddEntity;
 typedef bool(*_bhkWorld_RemoveEntity)(bhkWorld *world, hkpEntity *entity);
 extern RelocAddr<_bhkWorld_RemoveEntity> bhkWorld_RemoveEntity;
 
-typedef void* (*_hkpWorld_addContactListener)(hkpWorld *world, hkpContactListener* worldListener);
+typedef void *(*_hkpWorld_addContactListener)(hkpWorld *world, hkpContactListener *worldListener);
 extern RelocAddr<_hkpWorld_addContactListener> hkpWorld_addContactListener;
 
-typedef void* (*_hkpWorld_addIslandActivationListener)(hkpWorld *world, hkpIslandActivationListener* worldListener);
+typedef void *(*_hkpWorld_addIslandActivationListener)(hkpWorld *world, hkpIslandActivationListener *worldListener);
 extern RelocAddr<_hkpWorld_addIslandActivationListener> hkpWorld_addIslandActivationListener;
 
-typedef void* (*_hkpWorld_removeIslandActivationListener)(hkpWorld *world, hkpIslandActivationListener* worldListener);
+typedef void *(*_hkpWorld_removeIslandActivationListener)(hkpWorld *world, hkpIslandActivationListener *worldListener);
 extern RelocAddr<_hkpWorld_removeIslandActivationListener> hkpWorld_removeIslandActivationListener;
 
-typedef void* (*_bhkWorld_addContactListener)(bhkWorld *world, hkpContactListener* worldListener);
+typedef void *(*_bhkWorld_addContactListener)(bhkWorld *world, hkpContactListener *worldListener);
 extern RelocAddr<_bhkWorld_addContactListener> bhkWorld_addContactListener;
 
-typedef void(*_hkpWorld_UpdateCollisionFilterOnEntity)(hkpWorld *world, hkpEntity* entity, hkpUpdateCollisionFilterOnEntityMode updateMode, hkpUpdateCollectionFilterMode updateShapeCollectionFilter);
+typedef void(*_hkpWorld_UpdateCollisionFilterOnEntity)(hkpWorld *world, hkpEntity *entity, hkpUpdateCollisionFilterOnEntityMode updateMode, hkpUpdateCollectionFilterMode updateShapeCollectionFilter);
 extern RelocAddr<_hkpWorld_UpdateCollisionFilterOnEntity> hkpWorld_UpdateCollisionFilterOnEntity;
 
 typedef void(*_bhkWorld_UpdateCollisionFilterOnWorldObject)(bhkWorld *world, bhkWorldObject *worldObject);
@@ -166,7 +166,7 @@ extern RelocAddr<_bhkWorld_UpdateCollisionFilterOnWorldObject> bhkWorld_UpdateCo
 typedef void(*_ContactListener_PreprocessContactPointEvent)(hkpContactListener *listener, const hkpContactPointEvent &evnt);
 extern RelocAddr<_ContactListener_PreprocessContactPointEvent> ContactListener_PreprocessContactPointEvent;
 
-typedef float(*_hkpSimpleContactConstraintUtil_calculateSeparatingVelocity)(const hkpRigidBody* bodyA, const hkpRigidBody* bodyB, const hkVector4& centerOfMassInWorldA, const hkVector4& centerOfMassInWorldB, const hkContactPoint* cp);
+typedef float(*_hkpSimpleContactConstraintUtil_calculateSeparatingVelocity)(const hkpRigidBody *bodyA, const hkpRigidBody *bodyB, const hkVector4 &centerOfMassInWorldA, const hkVector4 &centerOfMassInWorldB, const hkContactPoint *cp);
 extern RelocAddr<_hkpSimpleContactConstraintUtil_calculateSeparatingVelocity> hkpSimpleContactConstraintUtil_calculateSeparatingVelocity;
 
 typedef void(*_hkpEntity_activate)(hkpEntity *entity);
@@ -175,19 +175,19 @@ extern RelocAddr<_hkpEntity_activate> hkpEntity_activate;
 typedef void(*_bhkRigidBody_setActivated)(bhkRigidBody *rigidBody, bool activate);
 extern RelocAddr<_bhkRigidBody_setActivated> bhkRigidBody_setActivated;
 
-typedef void(*_hkpEntity_setPositionAndRotation)(hkpEntity *_this, const hkVector4& position, const hkQuaternion& rotation);
+typedef void(*_hkpEntity_setPositionAndRotation)(hkpEntity *_this, const hkVector4 &position, const hkQuaternion &rotation);
 extern RelocAddr<_hkpEntity_setPositionAndRotation> hkpEntity_setPositionAndRotation;
 
-typedef void(*_hkpEntity_setTransform)(hkpEntity *_this, const hkTransform& transform);
+typedef void(*_hkpEntity_setTransform)(hkpEntity *_this, const hkTransform &transform);
 extern RelocAddr<_hkpEntity_setTransform> hkpEntity_setTransform;
 
 typedef int(*_hkpEntity_getNumConstraints)(hkpEntity *_this);
 extern RelocAddr<_hkpEntity_getNumConstraints> hkpEntity_getNumConstraints;
 
-typedef void* (*_hkpEntity_addContactListener)(hkpEntity *_this, hkpContactListener* cl);
+typedef void *(*_hkpEntity_addContactListener)(hkpEntity *_this, hkpContactListener *cl);
 extern RelocAddr<_hkpEntity_addContactListener> hkpEntity_addContactListener;
 
-typedef void* (*_hkpEntity_removeContactListener)(hkpEntity *_this, hkpContactListener* cl);
+typedef void *(*_hkpEntity_removeContactListener)(hkpEntity *_this, hkpContactListener *cl);
 extern RelocAddr<_hkpEntity_removeContactListener> hkpEntity_removeContactListener;
 
 typedef void(*_hkpRigidBody_ctor)(hkpRigidBody *_this, hkpRigidBodyCinfo *info);
@@ -196,23 +196,23 @@ extern RelocAddr<_hkpRigidBody_ctor> hkpRigidBody_ctor;
 typedef void(*_hkpRigidBodyCinfo_ctor)(hkpRigidBodyCinfo *_this);
 extern RelocAddr<_hkpRigidBodyCinfo_ctor> hkpRigidBodyCinfo_ctor;
 
-typedef hkpBoxShape* (*_hkpBoxShape_ctor)(hkpBoxShape *_this, const hkVector4& halfExtents, float radius);
+typedef hkpBoxShape *(*_hkpBoxShape_ctor)(hkpBoxShape *_this, const hkVector4 &halfExtents, float radius);
 extern RelocAddr<_hkpBoxShape_ctor> hkpBoxShape_ctor;
 
-typedef hkpTriggerVolume* (*_hkpTriggerVolume_ctor)(hkpTriggerVolume *_this, hkpRigidBody* triggerBody);
+typedef hkpTriggerVolume *(*_hkpTriggerVolume_ctor)(hkpTriggerVolume *_this, hkpRigidBody *triggerBody);
 extern RelocAddr<_hkpTriggerVolume_ctor> hkpTriggerVolume_ctor;
 
-typedef void(*_hkpKeyFrameUtility_applyHardKeyFrame)(const hkVector4& nextPosition, const hkQuaternion& nextOrientation, hkReal invDeltaTime, hkpRigidBody* body);
+typedef void(*_hkpKeyFrameUtility_applyHardKeyFrame)(const hkVector4 &nextPosition, const hkQuaternion &nextOrientation, hkReal invDeltaTime, hkpRigidBody *body);
 extern RelocAddr<_hkpKeyFrameUtility_applyHardKeyFrame> hkpKeyFrameUtility_applyHardKeyFrame;
 extern RelocAddr<_hkpKeyFrameUtility_applyHardKeyFrame> hkpKeyFrameUtility_applyHardKeyFrameAsynchronously;
 
-typedef void(*_hkpKeyFrameUtility_applySoftKeyFrame)(const hkpKeyFrameUtility::KeyFrameInfo& keyFrameInfo, hkpKeyFrameUtility::AccelerationInfo& accelInfo, hkReal deltaTime, hkReal invDeltaTime, hkpRigidBody* body);
+typedef void(*_hkpKeyFrameUtility_applySoftKeyFrame)(const hkpKeyFrameUtility::KeyFrameInfo &keyFrameInfo, hkpKeyFrameUtility::AccelerationInfo &accelInfo, hkReal deltaTime, hkReal invDeltaTime, hkpRigidBody *body);
 extern RelocAddr<_hkpKeyFrameUtility_applySoftKeyFrame> hkpKeyFrameUtility_applySoftKeyFrame;
 
 typedef void(*_hkpConstraintInstance_setPriority)(hkpConstraintInstance *_this, hkpConstraintInstance::ConstraintPriority priority);
 extern RelocAddr<_hkpConstraintInstance_setPriority> hkpConstraintInstance_setPriority;
 
-typedef void(*_hkpMotion_approxTransformAt)(hkpMotion *motion, float time, hkTransform& transformOut);
+typedef void(*_hkpMotion_approxTransformAt)(hkpMotion *motion, float time, hkTransform &transformOut);
 extern RelocAddr<_hkpMotion_approxTransformAt> hkpMotion_approxTransformAt;
 
 typedef bool(*_bhkCollisionFilter_CompareFilterInfos)(bhkCollisionFilter *filter, UInt32 filterInfoA, UInt32 filterInfoB);
@@ -231,7 +231,7 @@ extern RelocAddr<_bhkRigidBody_MoveToPositionAndRotation> bhkRigidBody_MoveToPos
 typedef void(*_bhkCollisionObject_SetNodeTransformsFromWorldTransform)(bhkCollisionObject *_this, NiTransform &worldTransform);
 extern RelocAddr<_bhkCollisionObject_SetNodeTransformsFromWorldTransform> bhkCollisionObject_SetNodeTransformsFromWorldTransform;
 
-typedef void(*_bhkEntity_setPositionAndRotation)(bhkEntity *_this, const hkVector4& position, const hkQuaternion& rotation);
+typedef void(*_bhkEntity_setPositionAndRotation)(bhkEntity *_this, const hkVector4 &position, const hkQuaternion &rotation);
 extern RelocAddr<_bhkEntity_setPositionAndRotation> bhkEntity_setPositionAndRotation;
 
 typedef void(*_bhkWorldObject_UpdateCollisionFilter)(bhkWorldObject *_this);
@@ -270,31 +270,31 @@ extern RelocAddr<_hkpTransformShape_ctor> hkpTransformShape_ctor;
 typedef void(*_hkpTransformShape_setTransform)(hkpTransformShape *_this, const hkTransform &transform);
 extern RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform;
 
-typedef bhkTransformShape * (*_CreatebhkTransformShape)();
+typedef bhkTransformShape *(*_CreatebhkTransformShape)();
 extern RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape;
 
 typedef void (*_bhkListShapeCinfo_dtor)(bhkListShapeCinfo *);
 extern RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor;
 
-typedef bhkListShape * (*_bhkListShape_ctor)(bhkListShape *, bhkListShapeCinfo *);
+typedef bhkListShape *(*_bhkListShape_ctor)(bhkListShape *, bhkListShapeCinfo *);
 extern RelocAddr<_bhkListShape_ctor> bhkListShape_ctor;
 
 
 // More havok-related
-typedef bhkWorld * (*_GetHavokWorldFromCell)(TESObjectCELL *cell);
+typedef bhkWorld *(*_GetHavokWorldFromCell)(TESObjectCELL *cell);
 extern RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell;
 
-typedef NiAVObject * (*_GetNodeFromCollidable)(const hkpCollidable * a_collidable);
+typedef NiAVObject *(*_GetNodeFromCollidable)(const hkpCollidable *a_collidable);
 extern RelocAddr<_GetNodeFromCollidable> GetNodeFromCollidable;
 
-typedef TESObjectREFR * (*_GetRefFromCollidable)(const hkpCollidable * a_collidable);
+typedef TESObjectREFR *(*_GetRefFromCollidable)(const hkpCollidable *a_collidable);
 extern RelocAddr<_GetRefFromCollidable> GetRefFromCollidable;
 
 typedef void(*_NiNode_SetMotionTypeDownwards)(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5);
 extern RelocAddr<_NiNode_SetMotionTypeDownwards> NiNode_SetMotionTypeDownwards;
 
 
-typedef NiTransform * (*_BSVRInterface_GetHandTransform)(BSOpenVR *_this, NiTransform *transformOut, BSVRInterface::BSControllerHand handForOpenVRDeviceIndex, BSVRInterface::BSControllerHand handForBSOpenVRTransform);
+typedef NiTransform *(*_BSVRInterface_GetHandTransform)(BSOpenVR *_this, NiTransform *transformOut, BSVRInterface::BSControllerHand handForOpenVRDeviceIndex, BSVRInterface::BSControllerHand handForBSOpenVRTransform);
 extern RelocAddr<_BSVRInterface_GetHandTransform> BSOpenVR_GetHandTransform;
 
 typedef void(*_CreateDetectionEvent)(ActorProcessManager *ownerProcess, Actor *owner, NiPoint3 *position, int soundLevel, TESObjectREFR *source);
@@ -303,37 +303,37 @@ extern RelocAddr<_CreateDetectionEvent> CreateDetectionEvent;
 typedef void(*_ShadowSceneNode_UpdateNodeList)(ShadowSceneNode *sceneNode, NiAVObject *node, bool useOtherList);
 extern RelocAddr<_ShadowSceneNode_UpdateNodeList> ShadowSceneNode_UpdateNodeList;
 
-typedef bool(*_IsInMenuMode)(VMClassRegistry* registry, UInt32 stackId);
+typedef bool(*_IsInMenuMode)(VMClassRegistry *registry, UInt32 stackId);
 extern RelocAddr<_IsInMenuMode> IsInMenuMode;
 
-typedef bool(*_ObjectReference_SetActorCause)(VMClassRegistry* registry, UInt32 stackId, TESObjectREFR* objectRefr, Actor *actor);
+typedef bool(*_ObjectReference_SetActorCause)(VMClassRegistry *registry, UInt32 stackId, TESObjectREFR *objectRefr, Actor *actor);
 extern RelocAddr<_ObjectReference_SetActorCause> ObjectReference_SetActorCause;
 
-typedef bool(*_ObjectReference_Activate)(VMClassRegistry* registry, UInt32 stackId, TESObjectREFR* objectRefr, TESObjectREFR* activator, bool defaultProcessingOnly);
+typedef bool(*_ObjectReference_Activate)(VMClassRegistry *registry, UInt32 stackId, TESObjectREFR *objectRefr, TESObjectREFR *activator, bool defaultProcessingOnly);
 extern RelocAddr<_ObjectReference_Activate> ObjectReference_Activate;
 
-typedef bool(*_TESObjectREFR_Activate)(TESObjectREFR* activatee, TESObjectREFR* activator, UInt32 unk01, UInt32 unk02, UInt32 count, bool defaultProcessingOnly); // unks are 0, 0
+typedef bool(*_TESObjectREFR_Activate)(TESObjectREFR *activatee, TESObjectREFR *activator, UInt32 unk01, UInt32 unk02, UInt32 count, bool defaultProcessingOnly); // unks are 0, 0
 extern RelocAddr<_TESObjectREFR_Activate> TESObjectREFR_Activate;
 
-typedef bool(*_TESObjectREFR_SetScale)(TESObjectREFR* refr, float scale);
+typedef bool(*_TESObjectREFR_SetScale)(TESObjectREFR *refr, float scale);
 extern RelocAddr<_TESObjectREFR_SetScale> TESObjectREFR_SetScale;
 
-typedef void(*_TESObjectREFR_GetTransformIncorporatingScale)(TESObjectREFR* _this, NiTransform &out);
+typedef void(*_TESObjectREFR_GetTransformIncorporatingScale)(TESObjectREFR *_this, NiTransform &out);
 extern RelocAddr<_TESObjectREFR_GetTransformIncorporatingScale> TESObjectREFR_GetTransformIncorporatingScale;
 
-typedef void(*_EffectShader_Play)(VMClassRegistry* registry, UInt32 stackId, TESEffectShader *shader, TESObjectREFR *target, float duration);
+typedef void(*_EffectShader_Play)(VMClassRegistry *registry, UInt32 stackId, TESEffectShader *shader, TESObjectREFR *target, float duration);
 extern RelocAddr<_EffectShader_Play> EffectShader_Play;
 
-typedef void(*_EffectShader_Stop)(VMClassRegistry* registry, UInt32 stackId, TESEffectShader *shader, TESObjectREFR *target);
+typedef void(*_EffectShader_Stop)(VMClassRegistry *registry, UInt32 stackId, TESEffectShader *shader, TESObjectREFR *target);
 extern RelocAddr<_EffectShader_Stop> EffectShader_Stop;
 
-typedef void(*_VisualEffect_Play)(VMClassRegistry* registry, UInt32 stackId, BGSReferenceEffect *effect, TESObjectREFR *target, float duration, TESObjectREFR *objToFace);
+typedef void(*_VisualEffect_Play)(VMClassRegistry *registry, UInt32 stackId, BGSReferenceEffect *effect, TESObjectREFR *target, float duration, TESObjectREFR *objToFace);
 extern RelocAddr<_VisualEffect_Play> VisualEffect_Play;
 
-typedef void(*_VisualEffect_Stop)(VMClassRegistry* registry, UInt32 stackId, BGSReferenceEffect *effect, TESObjectREFR *target);
+typedef void(*_VisualEffect_Stop)(VMClassRegistry *registry, UInt32 stackId, BGSReferenceEffect *effect, TESObjectREFR *target);
 extern RelocAddr<_VisualEffect_Stop> VisualEffect_Stop;
 
-typedef UInt32(*_Sound_Play)(VMClassRegistry* registry, UInt32 stackId, BGSSoundDescriptorForm *sound, TESObjectREFR *source);
+typedef UInt32(*_Sound_Play)(VMClassRegistry *registry, UInt32 stackId, BGSSoundDescriptorForm *sound, TESObjectREFR *source);
 extern RelocAddr<_Sound_Play> Sound_Play;
 
 typedef void(*_BSExtraDataList_RemoveOwnership)(BaseExtraList *_this);
@@ -342,7 +342,7 @@ extern RelocAddr<_BSExtraDataList_RemoveOwnership> BSExtraDataList_RemoveOwnersh
 typedef void(*_BSExtraDataList_SetOwnerForm)(BaseExtraList *_this, TESForm *form);
 extern RelocAddr<_BSExtraDataList_SetOwnerForm> BSExtraDataList_SetOwnerForm;
 
-typedef void(*_TESObjectREFR_SetActorOwner)(VMClassRegistry* registry, UInt32 stackId, TESObjectREFR *_this, TESForm *owner);
+typedef void(*_TESObjectREFR_SetActorOwner)(VMClassRegistry *registry, UInt32 stackId, TESObjectREFR *_this, TESForm *owner);
 extern RelocAddr<_TESObjectREFR_SetActorOwner> TESObjectREFR_SetActorOwner;
 
 typedef void(*_NiAVObject_RecalculateWorldTransform)(NiAVObject *_this);
@@ -369,13 +369,13 @@ extern RelocAddr<_TESObjectREFR_SetRotation> TESObjectREFR_SetRotation;
 typedef void(*_NiAVObject_UpdateNode)(NiAVObject *_this, NiAVObject::ControllerUpdateContext *ctx);
 extern RelocAddr<_NiAVObject_UpdateNode> NiAVObject_UpdateNode;
 
-typedef TESObjectREFR * (*_NiAVObject_GetOwner)(NiAVObject *_this);
+typedef TESObjectREFR *(*_NiAVObject_GetOwner)(NiAVObject *_this);
 extern RelocAddr<_NiAVObject_GetOwner> NiAVObject_GetOwner;
 
-typedef BGSMaterialType * (*_GetMaterialType)(UInt32 materialId); // materialId is gotten from the bhkShape at offset 0x20
+typedef BGSMaterialType *(*_GetMaterialType)(UInt32 materialId); // materialId is gotten from the bhkShape at offset 0x20
 extern RelocAddr<_GetMaterialType> GetMaterialType;
 
-typedef BGSImpactData * (*_BGSImpactDataSet_GetImpactData)(BGSImpactDataSet *_this, BGSMaterialType *material);
+typedef BGSImpactData *(*_BGSImpactDataSet_GetImpactData)(BGSImpactDataSet *_this, BGSMaterialType *material);
 extern RelocAddr<_BGSImpactDataSet_GetImpactData> BGSImpactDataSet_GetImpactData;
 
 typedef void(*_BSAudioManager_InitSoundData)(BSAudioManager *audioManager, SoundData *soundData, UInt32 formId, int a4); // just pass 16 in a4
@@ -396,19 +396,19 @@ extern RelocAddr<_BSExtraList_GetCount> BSExtraList_GetCount;
 typedef bool(*_TESObjectBOOK_LearnSpell)(TESObjectBOOK *book, Actor *reader);
 extern RelocAddr<_TESObjectBOOK_LearnSpell> TESObjectBOOK_LearnSpell;
 
-typedef BGSSoundDescriptorForm * (*_Actor_GetPickupPutdownSound)(Actor *_this, TESBoundObject *object, bool pickup, bool use);
+typedef BGSSoundDescriptorForm *(*_Actor_GetPickupPutdownSound)(Actor *_this, TESBoundObject *object, bool pickup, bool use);
 extern RelocAddr<_Actor_GetPickupPutdownSound> Actor_GetPickupPutdownSound;
 
 typedef void(*_NiMatrixToNiQuaternion)(NiQuaternion &quatOut, const NiMatrix33 &matIn);
 extern RelocAddr<_NiMatrixToNiQuaternion> NiMatrixToNiQuaternion;
 
-typedef NiMatrix33 * (*_NiMatrixFromForwardVector)(NiMatrix33 *matOut, NiPoint3 *forward, NiPoint3 *world);
+typedef NiMatrix33 *(*_NiMatrixFromForwardVector)(NiMatrix33 *matOut, NiPoint3 *forward, NiPoint3 *world);
 extern RelocAddr<_NiMatrixFromForwardVector> NiMatrixFromForwardVector;
 
 typedef NiMatrix33 *(*_NiMatrixToYawPitchRollImpl)(NiMatrix33 *mat, float *yaw, float *pitch, float *roll);
 extern RelocAddr<_NiMatrixToYawPitchRollImpl> NiMatrixToYawPitchRollImpl;
 
-typedef NiMatrix33 & (*_EulerToNiMatrix)(NiMatrix33 &matOut, float x, float y, float z);
+typedef NiMatrix33 &(*_EulerToNiMatrix)(NiMatrix33 &matOut, float x, float y, float z);
 extern RelocAddr<_EulerToNiMatrix> EulerToNiMatrix;
 
 typedef NiTransform &(*_SetNiMatrixFromNiQuaternion)(const NiQuaternion &in, NiMatrix33 &out);
@@ -420,10 +420,10 @@ extern RelocAddr<_UpdateClavicleToTransformHand> UpdateClavicleToTransformHand;
 typedef void(*_NiSkinInstance_UpdateBoneMatrices)(NiSkinInstance *_this, NiTransform &rootTransform);
 extern RelocAddr<_NiSkinInstance_UpdateBoneMatrices> NiSkinInstance_UpdateBoneMatrices;
 
-typedef NiObject * (*_NiObject_Clone)(NiObject *_this, NiCloningProcess *cloningProcess);
+typedef NiObject *(*_NiObject_Clone)(NiObject *_this, NiCloningProcess *cloningProcess);
 extern RelocAddr<_NiObject_Clone> NiObject_Clone;
 
-typedef NiAVObject * (*_PlayerCharacter_GetOffsetNodeForWeaponIndex)(PlayerCharacter *_this, UInt32 isLeft, UInt32 weaponIndex);
+typedef NiAVObject *(*_PlayerCharacter_GetOffsetNodeForWeaponIndex)(PlayerCharacter *_this, UInt32 isLeft, UInt32 weaponIndex);
 extern RelocAddr<_PlayerCharacter_GetOffsetNodeForWeaponIndex> PlayerCharacter_GetOffsetNodeForWeaponIndex;
 
 typedef void(*_BSFixedString_Copy)(BSFixedString *dst, BSFixedString *src);
@@ -484,7 +484,7 @@ extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMall
 typedef void(*_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints;
 
-typedef hkaRagdollInstance * (*_hkbRagdollDriver_getRagdoll)(hkbRagdollDriver *_this);
+typedef hkaRagdollInstance *(*_hkbRagdollDriver_getRagdoll)(hkbRagdollDriver *_this);
 extern RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll;
 
 typedef void(*_hkbRagdollDriver_reset)(hkbRagdollDriver *_this);
@@ -493,19 +493,19 @@ extern RelocAddr<_hkbRagdollDriver_reset> hkbRagdollDriver_reset;
 typedef bhkGroupConstraint *(*_bhkGroupConstraint_ctor)(bhkGroupConstraint *_this, hkConstraintCinfo *cinfo);
 extern RelocAddr<_bhkGroupConstraint_ctor> bhkGroupConstraint_ctor;
 
-typedef bhkConstraint * (*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
+typedef bhkConstraint *(*_ConstraintToFixedConstraint)(bhkConstraint *constraint, float strength, bool a3);
 extern RelocAddr<_ConstraintToFixedConstraint> ConstraintToFixedConstraint;
 
 typedef void(*_hkpConstraintInstance_setEnabled)(hkpConstraintInstance *_this, bool enable);
 extern RelocAddr<_hkpConstraintInstance_setEnabled> hkpConstraintInstance_setEnabled;
 
-typedef bool * (*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
+typedef bool *(*_hkpConstraintInstance_isEnabled)(hkpConstraintInstance *_this, bool *enabled);
 extern RelocAddr<_hkpConstraintInstance_isEnabled> hkpConstraintInstance_isEnabled;
 
-typedef bool * (*_hkpConstraintInstance_ctor)(hkpConstraintInstance *_this, hkpEntity* entityA, hkpEntity* entityB, hkpConstraintData* data, hkpConstraintInstance::ConstraintPriority priority);
+typedef bool *(*_hkpConstraintInstance_ctor)(hkpConstraintInstance *_this, hkpEntity *entityA, hkpEntity *entityB, hkpConstraintData *data, hkpConstraintInstance::ConstraintPriority priority);
 extern RelocAddr<_hkpConstraintInstance_ctor> hkpConstraintInstance_ctor;
 
-typedef bool * (*_hkpRagdollConstraintData_ctor)(hkpRagdollConstraintData *_this);
+typedef bool *(*_hkpRagdollConstraintData_ctor)(hkpRagdollConstraintData *_this);
 extern RelocAddr<_hkpRagdollConstraintData_ctor> hkpRagdollConstraintData_ctor;
 
 typedef bool(*_hkpCollisionCallbackUtil_requireCollisionCallbackUtil)(hkpWorld *world);
@@ -514,28 +514,28 @@ extern RelocAddr<_hkpCollisionCallbackUtil_requireCollisionCallbackUtil> hkpColl
 typedef bool(*_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil)(hkpWorld *world);
 extern RelocAddr<_hkpCollisionCallbackUtil_releaseCollisionCallbackUtil> hkpCollisionCallbackUtil_releaseCollisionCallbackUtil;
 
-typedef hkpWorldExtension * (*_hkpWorld_findWorldExtension)(hkpWorld *world, int id);
+typedef hkpWorldExtension *(*_hkpWorld_findWorldExtension)(hkpWorld *world, int id);
 extern RelocAddr<_hkpWorld_findWorldExtension> hkpWorld_findWorldExtension;
 
-typedef void(*_ahkpCharacterProxy_setLinearVelocity)(hkpCharacterProxy *_this, const hkVector4& vel);
+typedef void(*_ahkpCharacterProxy_setLinearVelocity)(hkpCharacterProxy *_this, const hkVector4 &vel);
 extern RelocAddr<_ahkpCharacterProxy_setLinearVelocity> ahkpCharacterProxy_setLinearVelocity;
 
-typedef void(*_ahkpCharacterRigidBody_setLinearVelocity)(hkpCharacterRigidBody *_this, const hkVector4& newVel, hkReal timestep);
+typedef void(*_ahkpCharacterRigidBody_setLinearVelocity)(hkpCharacterRigidBody *_this, const hkVector4 &newVel, hkReal timestep);
 extern RelocAddr<_ahkpCharacterRigidBody_setLinearVelocity> ahkpCharacterRigidBody_setLinearVelocity;
 
-typedef hkVector4 & (*_ahkpCharacterRigidBody_getLinearVelocity)(hkpCharacterRigidBody *_this);
+typedef hkVector4 &(*_ahkpCharacterRigidBody_getLinearVelocity)(hkpCharacterRigidBody *_this);
 extern RelocAddr<_ahkpCharacterRigidBody_getLinearVelocity> ahkpCharacterRigidBody_getLinearVelocity;
 
-typedef hkVector4 & (*_hkbBlendPoses)(UInt32 numData, const hkQsTransform *src, const hkQsTransform *dst, float amount, hkQsTransform *out);
+typedef hkVector4 &(*_hkbBlendPoses)(UInt32 numData, const hkQsTransform *src, const hkQsTransform *dst, float amount, hkQsTransform *out);
 extern RelocAddr<_hkbBlendPoses> hkbBlendPoses;
 
 typedef bool(*_hkConstraintCinfo_setConstraintData)(struct hkConstraintCinfo *_this, hkpConstraintData *data);
 extern RelocAddr<_hkConstraintCinfo_setConstraintData> hkConstraintCinfo_setConstraintData;
 
 typedef float(*_hkpRagdollConstraintData_setInBodySpace)(hkpRagdollConstraintData *_this,
-	const hkVector4& pivotA, const hkVector4& pivotB,
-	const hkVector4& planeAxisA, const hkVector4& planeAxisB,
-	const hkVector4& twistAxisA, const hkVector4& twistAxisB);
+    const hkVector4 &pivotA, const hkVector4 &pivotB,
+    const hkVector4 &planeAxisA, const hkVector4 &planeAxisB,
+    const hkVector4 &twistAxisA, const hkVector4 &twistAxisB);
 extern RelocAddr<_hkpRagdollConstraintData_setInBodySpace> hkpRagdollConstraintData_setInBodySpace;
 
 typedef bool(*_hkpBallAndSocketConstraintData_setInBodySpace)(hkpBallAndSocketConstraintData *_this, const hkVector4 &pivotA, const hkVector4 &pivotB);
@@ -544,13 +544,13 @@ extern RelocAddr<_hkpBallAndSocketConstraintData_setInBodySpace> hkpBallAndSocke
 typedef bool(*_bhkRagdollConstraint_ctor)(bhkRagdollConstraint *_this, hkRagdollConstraintCinfo *cInfo);
 extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;
 
-typedef bool(*_hkbBehaviorGraph_generate)(hkbBehaviorGraph *_this, const hkbContext& context, hkbGeneratorOutput& output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst);
+typedef bool(*_hkbBehaviorGraph_generate)(hkbBehaviorGraph *_this, const hkbContext &context, hkbGeneratorOutput &output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst);
 extern RelocAddr<_hkbBehaviorGraph_generate> hkbBehaviorGraph_generate;
 
 typedef bool(*_BShkbAnimationGraph_UpdateAnimation)(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3);
 extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_UpdateAnimation;
 
-typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform* poseLocalSpace, const hkQsTransform& worldFromModel, hkaKeyFrameHierarchyUtility::Output* stressOut);
+typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform *poseLocalSpace, const hkQsTransform &worldFromModel, hkaKeyFrameHierarchyUtility::Output *stressOut);
 extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBodyController_driveToPose;
 
 typedef bool(*_hkaSkeletonMapper_mapPose)(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source);
@@ -565,16 +565,16 @@ extern RelocAddr<_hkaRagdollRigidBodyController_dtor> hkaRagdollRigidBodyControl
 typedef bool(*_hkaRagdollRigidBodyController_reinitialize)(hkaRagdollRigidBodyController *_this);
 extern RelocAddr<_hkaRagdollRigidBodyController_reinitialize> hkaRagdollRigidBodyController_reinitialize;
 
-typedef bool(*_hkbRagdollDriver_driveToPose)(hkbRagdollDriver *_this, hkReal deltaTime, const hkbContext& context, hkbGeneratorOutput& generatorOutput);
+typedef bool(*_hkbRagdollDriver_driveToPose)(hkbRagdollDriver *_this, hkReal deltaTime, const hkbContext &context, hkbGeneratorOutput &generatorOutput);
 extern RelocAddr<_hkbRagdollDriver_driveToPose> hkbRagdollDriver_driveToPose;
 
-typedef bool(*_hkbRagdollDriver_postPhysics)(hkbRagdollDriver *_this, const hkbContext& context, hkbGeneratorOutput& inOut);
+typedef bool(*_hkbRagdollDriver_postPhysics)(hkbRagdollDriver *_this, const hkbContext &context, hkbGeneratorOutput &inOut);
 extern RelocAddr<_hkbRagdollDriver_postPhysics> hkbRagdollDriver_postPhysics;
 
-typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, const hkQsTransform& worldFromModel, hkQsTransform* lowResPoseWorld);
+typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld)(hkbRagdollDriver *_this, const hkQsTransform *highResPoseLocal, const hkQsTransform &worldFromModel, hkQsTransform *lowResPoseWorld);
 extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseWorld;
 
-typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal)(hkbRagdollDriver *_this, const hkQsTransform* highResPoseLocal, hkQsTransform* lowResPoseLocal);
+typedef void(*_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal)(hkbRagdollDriver *_this, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseLocal);
 extern RelocAddr<_hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal> hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal;
 
 typedef void(*_MapPoseWorldSpaceToPoseModelSpace)(int a_numBones, const hkQsTransform *a_worldFromModel, const hkQsTransform *a_ragdollPoseWS, hkQsTransform *a_bonesModelSpaceOut);
@@ -586,16 +586,16 @@ extern RelocAddr<_MapPoseModelSpaceToPoseLocalSpace> MapPoseModelSpaceToPoseLoca
 typedef void(*_MapPoseWorldSpaceToPoseLocalSpace)(int a_numPoses, const SInt16 *a_parentIndices, const hkQsTransform *a_worldFromModel, const hkQsTransform *a_ragdollPoseWS, hkQsTransform *a_poseModelSpaceOut);
 extern RelocAddr<_MapPoseWorldSpaceToPoseLocalSpace> MapPoseWorldSpaceToPoseLocalSpace;
 
-typedef hkQsTransform * (*_hkbCharacter_getPoseLocal)(hkbCharacter *_this);
+typedef hkQsTransform *(*_hkbCharacter_getPoseLocal)(hkbCharacter *_this);
 extern RelocAddr<_hkbCharacter_getPoseLocal> hkbCharacter_getPoseLocal;
 
 typedef void(*_hkRotation_setFromQuat)(hkRotation *_this, hkQuaternionParameter q);
 extern RelocAddr<_hkRotation_setFromQuat> hkRotation_setFromQuat;
 
-typedef void(*_hkpConstraintUtils_loosenConstraintLimits)(hkpConstraintInstance* constraint);
+typedef void(*_hkpConstraintUtils_loosenConstraintLimits)(hkpConstraintInstance *constraint);
 extern RelocAddr<_hkpConstraintUtils_loosenConstraintLimits> hkpConstraintUtils_loosenConstraintLimits;
 
-typedef bool(*_hkpEaseConstraintsAction_ctor)(hkpEaseConstraintsAction *_this, const hkArray<hkpEntity*>& entities, hkUlong userData);
+typedef bool(*_hkpEaseConstraintsAction_ctor)(hkpEaseConstraintsAction *_this, const hkArray<hkpEntity *> &entities, hkUlong userData);
 extern RelocAddr<_hkpEaseConstraintsAction_ctor> hkpEaseConstraintsAction_ctor;
 
 typedef bool(*_hkpEaseConstraintsAction_loosenConstraints)(hkpEaseConstraintsAction *_this);
@@ -604,13 +604,13 @@ extern RelocAddr<_hkpEaseConstraintsAction_loosenConstraints> hkpEaseConstraints
 typedef bool(*_hkpEaseConstraintsAction_restoreConstraints)(hkpEaseConstraintsAction *_this, hkReal duration);
 extern RelocAddr<_hkpEaseConstraintsAction_restoreConstraints> hkpEaseConstraintsAction_restoreConstraints;
 
-typedef hkpConstraintInstance * (*_hkpConstraintUtils_convertToPowered)(const hkpConstraintInstance* originalConstraint, hkpConstraintMotor* constraintMotor, hkBool enableMotors);
+typedef hkpConstraintInstance *(*_hkpConstraintUtils_convertToPowered)(const hkpConstraintInstance *originalConstraint, hkpConstraintMotor *constraintMotor, hkBool enableMotors);
 extern RelocAddr<_hkpConstraintUtils_convertToPowered> hkpConstraintUtils_convertToPowered;
 
-typedef void(*_hkpWorld_addWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
+typedef void(*_hkpWorld_addWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener *worldListener);
 extern RelocAddr<_hkpWorld_addWorldPostSimulationListener> hkpWorld_addWorldPostSimulationListener;
 
-typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener* worldListener);
+typedef void(*_hkpWorld_removeWorldPostSimulationListener)(hkpWorld *_this, hkpWorldPostSimulationListener *worldListener);
 extern RelocAddr<_hkpWorld_removeWorldPostSimulationListener> hkpWorld_removeWorldPostSimulationListener;
 
 typedef void(*_hkpWorld_addEntityListener)(hkpWorld *_this, hkpEntityListener *entityListener);
@@ -619,13 +619,13 @@ extern RelocAddr<_hkpWorld_addEntityListener> hkpWorld_addEntityListener;
 typedef void(*_hkpWorld_removeEntityListener)(hkpWorld *_this, hkpEntityListener *entityListener);
 extern RelocAddr<_hkpWorld_removeEntityListener> hkpWorld_removeEntityListener;
 
-typedef void(*_hkpShapeShrinker_shrinkConvexVerticesShape)(hkpConvexVerticesShape* convexShape, hkReal maximumConvexRadius, hkReal relShrinkRadius, hkReal allowedDisplacement, const char* shapeName, hkBool optimize); // shapeName default null, optimize default true
+typedef void(*_hkpShapeShrinker_shrinkConvexVerticesShape)(hkpConvexVerticesShape *convexShape, hkReal maximumConvexRadius, hkReal relShrinkRadius, hkReal allowedDisplacement, const char *shapeName, hkBool optimize); // shapeName default null, optimize default true
 extern RelocAddr<_hkpShapeShrinker_shrinkConvexVerticesShape> hkpShapeShrinker_shrinkConvexVerticesShape;
 
-typedef void(*_hkpConvexVerticesShape_getOriginalVertices)(hkpConvexVerticesShape* _this, hkArray<hkVector4>& vertices);
+typedef void(*_hkpConvexVerticesShape_getOriginalVertices)(hkpConvexVerticesShape *_this, hkArray<hkVector4> &vertices);
 extern RelocAddr<_hkpConvexVerticesShape_getOriginalVertices> hkpConvexVerticesShape_getOriginalVertices;
 
-typedef void(*_hkpConvexVerticesShape_ctor)(hkpConvexVerticesShape* _this, const hkStridedVertices& vertices, const hkpConvexVerticesShape::BuildConfig& config);
+typedef void(*_hkpConvexVerticesShape_ctor)(hkpConvexVerticesShape *_this, const hkStridedVertices &vertices, const hkpConvexVerticesShape::BuildConfig &config);
 extern RelocAddr<_hkpConvexVerticesShape_ctor> hkpConvexVerticesShape_ctor;
 
 typedef void(*_hkpListShape_disableChild)(hkpListShape *_this, hkpShapeKey index);
@@ -634,16 +634,16 @@ extern RelocAddr<_hkpListShape_disableChild> hkpListShape_disableChild;
 typedef void(*_hkpListShape_enableChild)(hkpListShape *_this, hkpShapeKey index);
 extern RelocAddr<_hkpListShape_enableChild> hkpListShape_enableChild;
 
-typedef void(*_hkpCharacterProxy_addCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener* listener);
+typedef void(*_hkpCharacterProxy_addCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener *listener);
 extern RelocAddr<_hkpCharacterProxy_addCharacterProxyListener> hkpCharacterProxy_addCharacterProxyListener;
 
-typedef void(*_hkpCharacterProxy_removeCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener* listener);
+typedef void(*_hkpCharacterProxy_removeCharacterProxyListener)(hkpCharacterProxy *_this, hkpCharacterProxyListener *listener);
 extern RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_removeCharacterProxyListener;
 
 typedef void(*_hkpEntity_updateMovedBodyInfo)(hkpEntity *_this);
 extern RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo;
 
-typedef UInt32 * (*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
+typedef UInt32 *(*_Actor_GetCollisionFilterInfo)(Actor *_this, UInt32 &filterInfoOut);
 extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 
 typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool exitFurniture);
@@ -652,10 +652,10 @@ extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
 typedef bool(*_Actor_HasLargeMovementDelta)(Actor *_this);
 extern RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta;
 
-typedef TESPackage * (*_Actor_GetCurrentPackage)(UInt64 a1, UInt64 a2, Actor *_this);
+typedef TESPackage *(*_Actor_GetCurrentPackage)(UInt64 a1, UInt64 a2, Actor *_this);
 extern RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage;
 
-typedef TESPackage* (*_Actor_DoCombatSpellApply)(Actor *_this, SpellItem *spell, TESObjectREFR *target);
+typedef TESPackage *(*_Actor_DoCombatSpellApply)(Actor *_this, SpellItem *spell, TESObjectREFR *target);
 extern RelocAddr<_Actor_DoCombatSpellApply> Actor_DoCombatSpellApply;
 
 typedef void(*_Actor_sub_140600400)(Actor *_this, float a2);
@@ -718,7 +718,7 @@ extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_Update
 typedef bool(*_ActorProcess_IncrementAttackCounter)(ActorProcessManager *_this, int incCount);
 extern RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter;
 
-typedef bool(*_ActorProcess_UnsetAttackData)(ActorProcessManager* _this);
+typedef bool(*_ActorProcess_UnsetAttackData)(ActorProcessManager *_this);
 extern RelocAddr<_ActorProcess_UnsetAttackData> ActorProcess_UnsetAttackData;
 
 typedef int(*_TESObjectWEAP_GetSoundAmount)(TESObjectWEAP *_this);
@@ -781,19 +781,19 @@ extern RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm;
 typedef bool(*_Actor_IsTalking)(Actor *_this);
 extern RelocAddr<_Actor_IsTalking> Actor_IsTalking;
 
-typedef bool(*_Actor_EvaluatePackage)(Actor* _this, bool a2, bool resetAI);
+typedef bool(*_Actor_EvaluatePackage)(Actor *_this, bool a2, bool resetAI);
 extern RelocAddr<_Actor_EvaluatePackage> Actor_EvaluatePackage;
 
 typedef void(*_BSTaskPool_QueueDestructibleDamageTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
 extern RelocAddr<_BSTaskPool_QueueDestructibleDamageTask> BSTaskPool_QueueDestructibleDamageTask;
 
-typedef BGSDestructibleObjectForm * (*_TESForm_GetDestructibleObjectForm)(TESForm *_this);
+typedef BGSDestructibleObjectForm *(*_TESForm_GetDestructibleObjectForm)(TESForm *_this);
 extern RelocAddr<_TESForm_GetDestructibleObjectForm> TESForm_GetDestructibleObjectForm;
 
 typedef void(*_PlayRumble)(UInt32 isRight, float rumbleIntensity, float rumbleDuration);
 extern RelocAddr<_PlayRumble> PlayRumble;
 
-typedef InventoryEntryData * (*_ActorProcess_GetCurrentlyEquippedWeapon)(ActorProcessManager *_this, bool isOffhand);
+typedef InventoryEntryData *(*_ActorProcess_GetCurrentlyEquippedWeapon)(ActorProcessManager *_this, bool isOffhand);
 extern RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon;
 
 typedef void(*_ActorProcess_TransitionFurnitureState)(ActorProcessManager *_this, Actor *actor, UInt64 newState, UInt32 &furnitureHandle, UInt32 furnitureMarkerID);
@@ -832,16 +832,16 @@ extern RelocAddr<_Actor_GetHit> Actor_GetHit;
 typedef void(*_Actor_EndHavokHit)(HavokHitJobs *jobs, Actor *_this);
 extern RelocAddr<_Actor_EndHavokHit> Actor_EndHavokHit;
 
-typedef void(*_hkpUnaryAction_ctor)(hkpUnaryAction *_this, hkpEntity* entity, hkUlong userData);
+typedef void(*_hkpUnaryAction_ctor)(hkpUnaryAction *_this, hkpEntity *entity, hkUlong userData);
 extern RelocAddr<_hkpUnaryAction_ctor> hkpUnaryAction_ctor;
 
-typedef void(*_hkpUnaryAction_setEntity)(hkpUnaryAction *_this, hkpEntity* entity);
+typedef void(*_hkpUnaryAction_setEntity)(hkpUnaryAction *_this, hkpEntity *entity);
 extern RelocAddr<_hkpUnaryAction_setEntity> hkpUnaryAction_setEntity;
 
-typedef void(*_hkpWorld_addAction)(hkpWorld *world, hkpAction* action);
+typedef void(*_hkpWorld_addAction)(hkpWorld *world, hkpAction *action);
 extern RelocAddr<_hkpWorld_addAction> hkpWorld_addAction;
 
-typedef void(*_hkpWorld_removeAction)(hkpWorld *world, hkpAction* action);
+typedef void(*_hkpWorld_removeAction)(hkpWorld *world, hkpAction *action);
 extern RelocAddr<_hkpWorld_removeAction> hkpWorld_removeAction;
 
 typedef void(*_hkbPoseLocalToPoseWorld)(int numBones, const hkInt16 *parentIndices, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
@@ -865,7 +865,7 @@ extern RelocAddr<_BSTaskPool_QueueAddHavok> BSTaskPool_QueueAddHavok;
 typedef float(*_GetRandomNumberInRange)(float min, float max);
 extern RelocAddr<_GetRandomNumberInRange> GetRandomNumberInRange;
 
-typedef TESPackage * (*_CreatePackageByType)(int type);
+typedef TESPackage *(*_CreatePackageByType)(int type);
 extern RelocAddr<_CreatePackageByType> CreatePackageByType;
 
 typedef void(*_PackageLocation_CTOR)(PackageLocation *_this);
@@ -898,10 +898,10 @@ extern RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFrom
 typedef void(*_VRMeleeData_ComputeAngularVelocities)(VRMeleeData *_this, const NiPoint3 &hmdPos, float &outVelocityX, float &outVelocityY);
 extern RelocAddr<_VRMeleeData_ComputeAngularVelocities> VRMeleeData_ComputeAngularVelocities;
 
-typedef bool(*_WeaponSwingHandler_Handle)(void* _this, Actor* actor);
+typedef bool(*_WeaponSwingHandler_Handle)(void *_this, Actor *actor);
 extern RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle;
 
-typedef bool(*_WeaponSwingHandler_Handle)(void* _this, Actor* actor);
+typedef bool(*_WeaponSwingHandler_Handle)(void *_this, Actor *actor);
 extern RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle;
 
 typedef void(*_sub_140654E10)(ActorProcessManager *_this, bool a2);
@@ -913,13 +913,13 @@ extern RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue;
 typedef void(*_sub_140664870)(ActorProcessManager *_this, int a2);
 extern RelocAddr<_sub_140664870> sub_140664870;
 
-typedef void * (*_sub_1406EE920)(void);
+typedef void *(*_sub_1406EE920)(void);
 extern RelocAddr<_sub_1406EE920> sub_1406EE920;
 
 typedef UInt32(*_TES_GetLandMaterialId)(TES *_this, const NiPoint3 &position);
 extern RelocAddr<_TES_GetLandMaterialId> TES_GetLandMaterialId;
 
-typedef BGSBlockBashData * (*_TESForm_GetBlockBashData)(TESForm *_this);
+typedef BGSBlockBashData *(*_TESForm_GetBlockBashData)(TESForm *_this);
 extern RelocAddr<_TESForm_GetBlockBashData> TESForm_GetBlockBashData;
 
 typedef bool(*_BGSImpactManager_PlayImpactSound)(BGSImpactManager *_this, ImpactSoundData &impactSoundData);
@@ -946,8 +946,8 @@ extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;
 
 struct UnkSwingData
 {
-	TESObjectWEAP *weapon; // 00
-	UInt64 unk08 = -2;
+    TESObjectWEAP *weapon; // 00
+    UInt64 unk08 = -2;
 };
 
 typedef void(*_sub_1406EC5C0)(void *a1, UnkSwingData *a2);
