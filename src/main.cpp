@@ -3133,8 +3133,11 @@ void ObjectGrabbedCallback(bool isLeft, TESObjectREFR *grabbedRefr)
     g_initialGrabTransforms[isLeft] = g_higgsInterface->GetGrabTransform(isLeft);
 }
 
-void ProcessHavokHitJobsHook()
+_ProcessHavokHitJobs ProcessHavokHitJobs_Original = 0;
+void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 {
+    ProcessHavokHitJobs(havokHitJobs);
+
     PlayerCharacter *player = *g_thePlayer;
     if (!player || !player->GetNiNode()) return;
 
@@ -4542,17 +4545,19 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
     ragdoll->state = state;
 }
 
+_hkbRagdollDriver_driveToPose hkbRagdollDriver_driveToPose_Original = 0;
 void DriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
     PreDriveToPoseHook(driver, deltaTime, context, generatorOutput);
-    hkbRagdollDriver_driveToPose(driver, deltaTime, context, generatorOutput);
+    hkbRagdollDriver_driveToPose_Original(driver, deltaTime, context, generatorOutput);
     PostDriveToPoseHook(driver, deltaTime, context, generatorOutput);
 }
 
+_hkbRagdollDriver_postPhysics hkbRagdollDriver_postPhysics_Original = 0;
 void PostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGeneratorOutput &inOut)
 {
     PrePostPhysicsHook(driver, context, inOut);
-    hkbRagdollDriver_postPhysics(driver, context, inOut);
+    hkbRagdollDriver_postPhysics_Original(driver, context, inOut);
     PostPostPhysicsHook(driver, context, inOut);
 }
 
@@ -4566,6 +4571,7 @@ void PreCullActorsHook(Actor *actor)
     actor->unk274 |= cullState & 0xF;
 }
 
+_BShkbAnimationGraph_UpdateAnimation BShkbAnimationGraph_UpdateAnimation_Original = 0;
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
 {
     Actor *actor = _this->holder;
@@ -4573,16 +4579,18 @@ void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbA
         updateData->unk2A = true; // forces animation update (hkbGenerator::generate()) without skipping frames
     }
 
-    BShkbAnimationGraph_UpdateAnimation(_this, updateData, a3);
+    BShkbAnimationGraph_UpdateAnimation_Original(_this, updateData, a3);
 }
 
+_Actor_GetHit Actor_TakePhysicsDamage_Original = 0;
 void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
 {
     // We do our own physics damage for active actors, so don't have the game do its as well
     if (g_activeActors.count(_this)) return;
-    Actor_GetHit(_this, hitData);
+    Actor_TakePhysicsDamage_Original(_this, hitData);
 }
 
+_Actor_EndHavokHit Actor_KillEndHavokHit_Original = 0;
 void Actor_KillEndHavokHit_Hook(HavokHitJobs *havokHitJobs, Actor *_this)
 {
     // The actor is dying so undo anything we've done to it
@@ -4592,7 +4600,7 @@ void Actor_KillEndHavokHit_Hook(HavokHitJobs *havokHitJobs, Actor *_this)
         }
     }
 
-    Actor_EndHavokHit(havokHitJobs, _this);
+    Actor_KillEndHavokHit_Original(havokHitJobs, _this);
 }
 
 void MovementControllerUpdateHook(MovementControllerNPC *movementController, Actor *actor)
@@ -4655,6 +4663,7 @@ bool IsPhysicallyBlocked(Actor *attacker)
     return false;
 }
 
+_HitData_populate Character_HitTarget_HitData_populate_Original = 0;
 void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr, Actor *targetRefr, InventoryEntryData *weapon, bool isOffhand)
 {
     if (targetRefr == *g_thePlayer) {
@@ -4666,16 +4675,16 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
             static BSFixedString sIsBlocking("IsBlocking");
             IAnimationGraphManagerHolder_SetAnimationVariableBool(&targetRefr->animGraphHolder, sIsBlocking, true);
 
-            HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+            Character_HitTarget_HitData_populate_Original(hitData, srcRefr, targetRefr, weapon, isOffhand);
 
             IAnimationGraphManagerHolder_SetAnimationVariableBool(&targetRefr->animGraphHolder, sIsBlocking, wasBlocking);
         }
         else {
-            HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+            Character_HitTarget_HitData_populate_Original(hitData, srcRefr, targetRefr, weapon, isOffhand);
         }
     }
     else {
-        HitData_populate(hitData, srcRefr, targetRefr, weapon, isOffhand);
+        Character_HitTarget_HitData_populate_Original(hitData, srcRefr, targetRefr, weapon, isOffhand);
     }
 
     if (g_isInPlanckHit) {
@@ -4851,6 +4860,7 @@ bool AttackStopHandler_Handle_Hook(void *_this, Actor *actor)
     return g_originalAttackStopHandlerHandle(_this, actor);
 }
 
+_Actor_IsRagdollMovingSlowEnoughToGetUp Actor_IsRagdollMovingSlowEnoughToGetUp_Original = 0;
 bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
 {
     if (g_rightHeldRefr == actor || g_leftHeldRefr == actor) {
@@ -4872,9 +4882,10 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
         }
     }
 
-    return Actor_IsRagdollMovingSlowEnoughToGetUp(actor);
+    return Actor_IsRagdollMovingSlowEnoughToGetUp_Original(actor);
 }
 
+_BSAnimationGraphManager_RemoveRagdollFromWorld GetUpEnd_BSAnimationGraphManager_RemoveRagdollFromWorld_Original = 0;
 void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager, bool *result)
 {
     {
@@ -4893,28 +4904,31 @@ void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager,
         }
     }
 
-    BSAnimationGraphManager_RemoveRagdollFromWorld(graphManager, result);
+    GetUpEnd_BSAnimationGraphManager_RemoveRagdollFromWorld_Original(graphManager, result);
 }
 
+_NiNode_SetMotionTypeDownwards GetUpEnd_NiNode_SetMotionTypeDownwards_Original = 0;
 void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(node);
     if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
 
-    NiNode_SetMotionTypeDownwards(node, motionType, a3, a4, a5);
+    GetUpEnd_NiNode_SetMotionTypeDownwards_Original(node, motionType, a3, a4, a5);
 }
 
+_BSTaskPool_QueueRemoveCollisionFromWorld GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original = 0;
 void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *node)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(node);
     if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
 
-    BSTaskPool_QueueRemoveCollisionFromWorld(taskPool, node);
+    GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original(taskPool, node);
 }
 
-void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaPoseMatchingUtility *_this, const hkQsTransform *animPoseModelSpace, const hkQsTransform *ragdollPoseWorldSpace, hkQsTransform &animWorldFromModel, hkQsTransform &ragdollWorldFromModel)
+_hkaPoseMatchingUtility_computeReferenceFrame hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Original = 0;
+void hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Hook(hkaPoseMatchingUtility *_this, const hkQsTransform *animPoseModelSpace, const hkQsTransform *ragdollPoseWorldSpace, hkQsTransform &animWorldFromModel, hkQsTransform &ragdollWorldFromModel)
 {
-    hkaPoseMatchingUtility_computeReferenceFrame(_this, animPoseModelSpace, ragdollPoseWorldSpace, animWorldFromModel, ragdollWorldFromModel);
+    hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Original(_this, animPoseModelSpace, ragdollPoseWorldSpace, animWorldFromModel, ragdollWorldFromModel);
 
     if (hkbRagdollDriver *driver = g_currentPostPhysicsDriver) {
         if (Actor *actor = GetActorFromRagdollDriver(driver)) {
@@ -4932,9 +4946,10 @@ void hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook(hkaP
     }
 }
 
+_hkpMotion_approxTransformAt hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Original = 0;
 void hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook(hkpMotion *_this, hkTime time, hkTransform &out)
 {
-    hkpMotion_approxTransformAt(_this, time, out);
+    hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Original(_this, time, out);
 
     if (!Config::options.applyRigidBodyTWhenReadingRigidBodies) return;
 
@@ -4948,18 +4963,28 @@ void hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransf
     }
 }
 
-void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
+_hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original = 0;
+void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_1(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    hkaSkeletonMapper_mapPose(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
 }
 
+_hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original = 0;
+void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_2(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
+{
+    UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
+    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+}
+
+_hkaSkeletonMapper_mapPose hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Original = 0;
 void hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    hkaSkeletonMapper_mapPose(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+    hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Original(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
 }
 
+_hkaRagdollRigidBodyController_driveToPose hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original = 0;
 void hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook(hkaRagdollRigidBodyController *_this, hkReal deltaTime, hkQsTransform *poseLocalSpace, const hkQsTransform &worldFromModel, hkaKeyFrameHierarchyUtility::Output *stressOut)
 {
     if (Config::options.applyRigidBodyTWhenWritingRigidBodies) {
@@ -4968,12 +4993,10 @@ void hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook
 
     // The 4th arg to hkaRagdollRigidBodyController::driveToPose is a ptr which it sets to the output stress on the ragdoll.
     // The game passes 0 in this arg normally, which means the stress is not extracted, so we extract it ourselves.
-    hkaRagdollRigidBodyController_driveToPose(_this, deltaTime, poseLocalSpace, worldFromModel, g_stressOut);
+    hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original(_this, deltaTime, poseLocalSpace, worldFromModel, g_stressOut);
 }
 
-uintptr_t processHavokHitJobsHookedFuncAddr = 0;
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
-auto processHavokHitJobsHookedFunc = RelocAddr<uintptr_t>(0x75AC20);
 
 auto PlayerCharacter_UpdateWeaponSwing_HookLoc = RelocAddr<uintptr_t>(0x6ABCA4);
 
@@ -4981,7 +5004,7 @@ auto postPhysicsHookLoc = RelocAddr<uintptr_t>(0xB268DC);
 
 auto driveToPoseHookLoc = RelocAddr<uintptr_t>(0xB266AB);
 
-auto controllerDriveToPoseHookLoc = RelocAddr<uintptr_t>(0xA26C05);
+auto hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_HookLoc = RelocAddr<uintptr_t>(0xA26C05);
 
 auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 
@@ -5013,57 +5036,33 @@ auto GetUpEnd_RemoveRagdollFromWorld_HookLoc = RelocAddr<uintptr_t>(0x68727D);
 auto GetUpEnd_SetMotionTypeKeyframed_HookLoc = RelocAddr<uintptr_t>(0x6872D0);
 auto GetUpEndHandler_Handle_RemoveCollision_HookLoc = RelocAddr<uintptr_t>(0x74D816);
 
-auto hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc = RelocAddr<uintptr_t>(0xA2921E);
+auto hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_HookLoc = RelocAddr<uintptr_t>(0xA2921E);
 
 auto hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc = RelocAddr<uintptr_t>(0xB51008);
 
 auto MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_1 = RelocAddr<uintptr_t>(0xA374B6);
+
 auto MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2 = RelocAddr<uintptr_t>(0xA37533);
 
 auto hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc = RelocAddr<uintptr_t>(0xA28005);
 
 
+std::uintptr_t Write5Call(std::uintptr_t a_src, std::uintptr_t a_dst)
+{
+    const auto disp = reinterpret_cast<std::int32_t *>(a_src + 1);
+    const auto nextOp = a_src + 5;
+    const auto func = nextOp + *disp;
+
+    g_branchTrampoline.Write5Call(a_src, a_dst);
+
+    return func;
+}
+
 void PerformHooks(void)
 {
-    // First, set our addresses
-    processHavokHitJobsHookedFuncAddr = processHavokHitJobsHookedFunc.GetUIntPtr();
-
     {
-        struct Code : Xbyak::CodeGenerator {
-            Code(void *buf) : Xbyak::CodeGenerator(256, buf)
-            {
-                Xbyak::Label jumpBack;
-
-                // Original code
-                mov(rax, processHavokHitJobsHookedFuncAddr);
-                call(rax);
-
-                push(rax);
-                sub(rsp, 0x38); // Need to keep the stack 16 byte aligned, and an additional 0x20 bytes for scratch space
-                movsd(ptr[rsp + 0x20], xmm0);
-
-                // Call our hook
-                mov(rax, (uintptr_t)ProcessHavokHitJobsHook);
-                call(rax);
-
-                movsd(xmm0, ptr[rsp + 0x20]);
-                add(rsp, 0x38);
-                pop(rax);
-
-                // Jump back to whence we came (+ the size of the initial branch instruction)
-                jmp(ptr[rip + jumpBack]);
-
-                L(jumpBack);
-                dq(processHavokHitJobsHookLoc.GetUIntPtr() + 5);
-            }
-        };
-
-        void *codeBuf = g_localTrampoline.StartAlloc();
-        Code code(codeBuf);
-        g_localTrampoline.EndAlloc(code.getCurr());
-
-        g_branchTrampoline.Write5Branch(processHavokHitJobsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
+        std::uintptr_t originalFunc = Write5Call(processHavokHitJobsHookLoc.GetUIntPtr(), uintptr_t(ProcessHavokHitJobsHook));
+        ProcessHavokHitJobs_Original = (_ProcessHavokHitJobs)originalFunc;
         _MESSAGE("ProcessHavokHitJobs hook complete");
     }
 
@@ -5073,32 +5072,38 @@ void PerformHooks(void)
     }
 
     if (Config::options.forceGenerateForActiveRagdolls) {
-        g_branchTrampoline.Write5Call(BShkbAnimationGraph_UpdateAnimation_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_UpdateAnimation_Hook));
+        std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_UpdateAnimation_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_UpdateAnimation_Hook));
+        BShkbAnimationGraph_UpdateAnimation_Original = (_BShkbAnimationGraph_UpdateAnimation)originalFunc;
         _MESSAGE("BShkbAnimationGraph::UpdateAnimation hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(DriveToPoseHook));
+        std::uintptr_t originalFunc = Write5Call(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(DriveToPoseHook));
+        hkbRagdollDriver_driveToPose_Original = (_hkbRagdollDriver_driveToPose)originalFunc;
         _MESSAGE("hkbRagdollDriver::driveToPose hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(PostPhysicsHook));
+        std::uintptr_t originalFunc = Write5Call(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(PostPhysicsHook));
+        hkbRagdollDriver_postPhysics_Original = (_hkbRagdollDriver_postPhysics)originalFunc;
         _MESSAGE("hkbRagdollDriver::postPhysics hook complete");
     }
 
     if (Config::options.doClutterVsBipedCollisionDamage) {
-        g_branchTrampoline.Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
+        std::uintptr_t originalFunc = Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
+        Actor_TakePhysicsDamage_Original = (_Actor_GetHit)originalFunc;
         _MESSAGE("Actor take physics damage hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
+        std::uintptr_t originalFunc = Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
+        Actor_KillEndHavokHit_Original = (_Actor_EndHavokHit)originalFunc;
         _MESSAGE("Actor kill end havok hit hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(Character_HitTarget_HitData_Populate_HookLoc.GetUIntPtr(), uintptr_t(Character_HitTarget_HitData_Populate_Hook));
+        std::uintptr_t originalFunc = Write5Call(Character_HitTarget_HitData_Populate_HookLoc.GetUIntPtr(), uintptr_t(Character_HitTarget_HitData_Populate_Hook));
+        Character_HitTarget_HitData_populate_Original = (_HitData_populate)originalFunc;
         _MESSAGE("Character_HitTarget_HitData_Populate hook complete");
     }
 
@@ -5108,7 +5113,8 @@ void PerformHooks(void)
     }
 
     {
-        g_branchTrampoline.Write5Call(Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc.GetUIntPtr(), uintptr_t(Actor_IsRagdollMovingSlowEnoughToGetUp_Hook));
+        std::uintptr_t originalFunc = Write5Call(Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc.GetUIntPtr(), uintptr_t(Actor_IsRagdollMovingSlowEnoughToGetUp_Hook));
+        Actor_IsRagdollMovingSlowEnoughToGetUp_Original = (_Actor_IsRagdollMovingSlowEnoughToGetUp)originalFunc;
         _MESSAGE("Actor_IsRagdollMovingSlowEnoughToGetUp hook complete");
     }
 
@@ -5119,33 +5125,49 @@ void PerformHooks(void)
     }
 
     if (Config::options.dontRemoveRagdollWhenDoneGettingUp) {
-        g_branchTrampoline.Write5Call(GetUpEnd_RemoveRagdollFromWorld_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_RemoveRagdollFromWorld_Hook));
-        g_branchTrampoline.Write5Call(GetUpEnd_SetMotionTypeKeyframed_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook));
-        g_branchTrampoline.Write5Call(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(GetUpEndHandler_Handle_RemoveCollision_Hook));
+        std::uintptr_t originalFunc = Write5Call(GetUpEnd_RemoveRagdollFromWorld_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_RemoveRagdollFromWorld_Hook));
+        GetUpEnd_BSAnimationGraphManager_RemoveRagdollFromWorld_Original = (_BSAnimationGraphManager_RemoveRagdollFromWorld)originalFunc;
+
+        originalFunc = Write5Call(GetUpEnd_SetMotionTypeKeyframed_HookLoc.GetUIntPtr(), uintptr_t(GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook));
+        GetUpEnd_NiNode_SetMotionTypeDownwards_Original = (_NiNode_SetMotionTypeDownwards)originalFunc;
+
+        originalFunc = Write5Call(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(GetUpEndHandler_Handle_RemoveCollision_Hook));
+        GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original = (_BSTaskPool_QueueRemoveCollisionFromWorld)originalFunc;
+
         _MESSAGE("Stopped the game from removing/resetting the ragdoll when a character has finished getting up");
     }
 
     {
-        g_branchTrampoline.Write5Call(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_extractRagdollPoseInternal_computeReferenceFrame_Hook));
+        std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Hook));
+        hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Original = (_hkaPoseMatchingUtility_computeReferenceFrame)originalFunc;
         _MESSAGE("hkbRagdollDriver::extractRagdollPoseInternal hkaPoseMatchingUtility::computeReferenceFrame hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc.GetUIntPtr(), uintptr_t(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook));
+        std::uintptr_t originalFunc = Write5Call(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc.GetUIntPtr(), uintptr_t(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook));
+        hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Original = (_hkpMotion_approxTransformAt)originalFunc;
         _MESSAGE("hkaRagdollInstance::getApproxWorldFromBoneTransformAt hkpMotion::approxTransformAt hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_1.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook));
-        g_branchTrampoline.Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook));
+        std::uintptr_t originalFunc = Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_1.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_1));
+        MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original = (_hkaSkeletonMapper_mapPose)originalFunc;
+
+        originalFunc = Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_2));
+        MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original = (_hkaSkeletonMapper_mapPose)originalFunc;
+
+        _MESSAGE("MapRagdollPoseToAnimPoseModelSpace hkaSkeletonMapper::mapPose hooks complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook));
+        std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook));
+        hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Original = (_hkaSkeletonMapper_mapPose)originalFunc;
+        _MESSAGE("hkbRagdollDriver::mapHighResPoseLocalToLowResPoseLocal hkaSkeletonMapper::mapPose hook complete");
     }
 
     {
-        g_branchTrampoline.Write5Call(controllerDriveToPoseHookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook));
+        std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook));
+        hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original = (_hkaRagdollRigidBodyController_driveToPose)originalFunc;
         _MESSAGE("hkbRagdollDriver::driveToPose hkaRagdollRigidBodyController::driveToPose hook complete");
     }
 

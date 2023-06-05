@@ -154,6 +154,7 @@ RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
 RelocAddr<_GetNodeFromCollidable> GetNodeFromCollidable(0xE01FE0);
 RelocAddr<_GetRefFromCollidable> GetRefFromCollidable(0x003B4940);
 RelocAddr<_NiNode_SetMotionTypeDownwards> NiNode_SetMotionTypeDownwards(0xDFD160);
+RelocAddr<_ProcessHavokHitJobs> ProcessHavokHitJobs(0x75AC20);
 
 RelocAddr<_CreateDetectionEvent> CreateDetectionEvent(0x656140);
 RelocAddr<_ShadowSceneNode_UpdateNodeList> ShadowSceneNode_UpdateNodeList(0x12F89E0);
