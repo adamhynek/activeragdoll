@@ -974,8 +974,9 @@ SwingHandler g_leftSwingHandler{ true };
 
 
 bool g_isInPlanckHit = false;
+bool g_isCurrentHitFatal = false;
 
-void HitActor(Character *source, Character *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
+bool HitActor(Character *source, Character *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
 {
     // Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
     TESForm *offhandObj = source->GetEquippedObject(true);
@@ -1020,9 +1021,13 @@ void HitActor(Character *source, Character *target, NiAVObject *hitNode, const N
     lastHitData.velocity = hitVelocity;
     lastHitData.isLeft = isLeft;
 
+    g_isCurrentHitFatal = false;
+
     g_isInPlanckHit = true;
     Character_HitTarget(source, target, nullptr, isOffhand); // Populates HitData and so relies on attackState/attackData
     g_isInPlanckHit = false;
+
+    bool isFatal = g_isCurrentHitFatal;
 
     Actor_RemoveMagicEffectsDueToAction(source, -1); // removes invis/ethereal due to attacking
 
@@ -1030,6 +1035,8 @@ void HitActor(Character *source, Character *target, NiAVObject *hitNode, const N
     if (!swingHandler.IsSwingActive()) {
         SetAttackState(source, 0);
     }
+
+    return isFatal;
 }
 
 void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffhand)
@@ -1207,7 +1214,7 @@ struct DoActorHitTask : TaskDelegate
         NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
         *playerLastHitVelocity = hitVelocity;
 
-        HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
+        bool isFatal = HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
 
         PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
@@ -1220,6 +1227,10 @@ struct DoActorHitTask : TaskDelegate
                 if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(player->parentCell)) {
                     if (DoesRefrHaveNode(hitChar, hitNode)) {
                         if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(hitNode)) {
+                            if (isFatal) {
+                                // If the hit was fatal, apply a smaller impulse so they don't go flying
+                                impulseMult *= Config::options.fatalHitImpulseMultiplier;
+                            }
                             ApplyHitImpulse(world, hitChar, rigidBody->hkBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
                         }
                     }
@@ -4658,6 +4669,8 @@ void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager,
 
 bool IsPhysicallyBlocked(Actor *attacker)
 {
+    if (!Config::options.enablePhysicalBlock) return false;
+
     if (auto it = g_physicsListener.physicalBlockTimes.find(attacker); it != g_physicsListener.physicalBlockTimes.end()) {
         _MESSAGE("%d: %.2f", *g_currentFrameCounter, g_currentFrameTime - it->second);
         if (g_currentFrameTime - it->second < Config::options.physicalBlockWindow) {
@@ -4695,6 +4708,8 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
     if (g_isInPlanckHit) {
         // Set an unused bit to signify this hit will have additional info from planck
         hitData->flags |= (1 << 30);
+
+        g_isCurrentHitFatal = hitData->flags & 0x20;
     }
 }
 

@@ -13,6 +13,7 @@ namespace Config {
         float activeRagdollStartDistance = 50.f;
         float activeRagdollEndDistance = 60.f;
 
+        bool enablePhysicalBlock = false;
         double physicalBlockWindow = 0.2;
         float weaponRotationRecloneThreshold = 0.1f;
 
@@ -221,6 +222,7 @@ namespace Config {
         float hitImpulseMassExponent = 0.5f;
 
         float powerAttackImpulseMultiplier = 2.f;
+        float fatalHitImpulseMultiplier = 0.5f;
 
         float hitImpulseMinStrength = 0.2f;
         float hitImpulseMaxStrength = 1.f;

@@ -381,6 +381,7 @@ namespace Config {
         if (!RegisterFloat("hitImpulseMassExponent", options.hitImpulseMassExponent)) success = false;
 
         if (!RegisterFloat("powerAttackImpulseMultiplier", options.powerAttackImpulseMultiplier)) success = false;
+        if (!RegisterFloat("fatalHitImpulseMultiplier", options.fatalHitImpulseMultiplier)) success = false;
 
         if (!RegisterFloat("hitImpulseMinStrength", options.hitImpulseMinStrength)) success = false;
         if (!RegisterFloat("hitImpulseMaxStrength", options.hitImpulseMaxStrength)) success = false;
