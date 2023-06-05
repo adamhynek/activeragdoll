@@ -198,8 +198,8 @@ namespace Config {
         if (!RegisterBool("blendWhenGettingUp", options.blendWhenGettingUp)) success = false;
         if (!RegisterDouble("getUpBlendInTime", options.getUpBlendInTime)) success = false;
 
-        if (!RegisterBool("enableKeyframes", options.enableKeyframes)) success = false;
-        if (!RegisterDouble("blendInKeyframeTime", options.blendInKeyframeTime)) success = false;
+        if (!RegisterBool("blendInWhenAddingToWorld", options.blendInWhenAddingToWorld)) success = false;
+        if (!RegisterDouble("addToWorldSnapTime", options.addToWorldSnapTime)) success = false;
 
         if (!RegisterBool("knockDownAfterBuggedGetUp", options.knockDownAfterBuggedGetUp)) success = false;
 

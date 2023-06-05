@@ -2606,12 +2606,14 @@ bool AddRagdollToWorld(Actor *actor)
                         std::shared_ptr<ActiveRagdoll> activeRagdoll(new ActiveRagdoll());
                         g_activeRagdolls[driver] = activeRagdoll;
 
-                        Blender &blender = activeRagdoll->blender;
-                        blender.StartBlend(Blender::BlendType::AnimToRagdoll, g_currentFrameTime, Config::options.blendInTime);
+                        if (Config::options.blendInWhenAddingToWorld) {
+                            Blender &blender = activeRagdoll->blender;
+                            blender.StartBlend(Blender::BlendType::AnimToRagdoll, g_currentFrameTime, Config::options.blendInTime);
 
-                        hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
-                        blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
-                        blender.isFirstBlendFrame = false;
+                            hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(driver->character);
+                            blender.initialPose.assign(poseLocal, poseLocal + driver->character->numPoseLocal);
+                            blender.isFirstBlendFrame = false;
+                        }
 
                         activeRagdoll->stateChangedTime = g_currentFrameTime;
                         activeRagdoll->state = RagdollState::BlendIn;
@@ -3163,7 +3165,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
     if (world != g_physicsListener.world) {
         if (NiPointer<bhkWorld> oldWorld = g_physicsListener.world) {
-            _MESSAGE("Removing listeners from old havok world");
+            _MESSAGE("%d: Removing listeners from old havok world", *g_currentFrameCounter);
             {
                 BSWriteLocker lock(&oldWorld->worldLock);
                 if (hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(oldWorld->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK)) {
@@ -3178,7 +3180,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             ResetObjects();
         }
 
-        _MESSAGE("Havok world changed");
+        _MESSAGE("%d: Havok world changed", *g_currentFrameCounter);
         {
             BSWriteLocker lock(&world->worldLock);
 
@@ -3226,7 +3228,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
         if (controller != g_characterProxyListener.proxy) {
             if (RE::hkRefPtr<hkpCharacterProxy> proxy = controller->proxy.characterProxy) {
-                _MESSAGE("Player Character Proxy changed");
+                _MESSAGE("%d: Player Character Proxy changed", *g_currentFrameCounter);
 
                 BSWriteLocker lock(&world->worldLock);
 
@@ -4053,22 +4055,25 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
     }
     ragdoll->wasRigidBodyOn = isRigidBodyOn;
 
-    if (Config::options.enableKeyframes) {
-        double elapsedTime = (g_currentFrameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
-        if (elapsedTime <= Config::options.blendInKeyframeTime) {
-            if (keyframedBonesHeader && keyframedBonesHeader->m_onFraction > 0.f) {
-                SetBonesKeyframedReporting(driver, generatorOutput, *keyframedBonesHeader);
-            }
-        }
-    }
-
     if (rigidBodyHeader && rigidBodyHeader->m_onFraction > 0.f && rigidBodyHeader->m_numData > 0) {
         hkaKeyFrameHierarchyUtility::ControlData *data = (hkaKeyFrameHierarchyUtility::ControlData *)(Track_getData(generatorOutput, *rigidBodyHeader));
+
+        double snapElapsedTime = (g_currentFrameTime - ragdoll->stateChangedTime) * *g_globalTimeMultiplier;
+        bool useSnapController = snapElapsedTime <= Config::options.addToWorldSnapTime;
+
         for (int i = 0; i < rigidBodyHeader->m_numData; i++) {
             hkaKeyFrameHierarchyUtility::ControlData &elem = data[i];
             elem.m_hierarchyGain = Config::options.hierarchyGain;
             elem.m_velocityGain = Config::options.velocityGain;
             elem.m_positionGain = Config::options.positionGain;
+
+            if (useSnapController) {
+                elem.m_snapGain = 1.f;
+                elem.m_snapMaxLinearDistance = 100.f;
+                elem.m_snapMaxAngularDistance = 100.f;
+                elem.m_snapMaxLinearVelocity = 100.f;
+                elem.m_snapMaxAngularVelocity = 100.f;
+            }
         }
     }
 

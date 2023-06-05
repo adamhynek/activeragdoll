@@ -18,13 +18,12 @@ namespace Config {
 
         bool skipRootCalculations = false;
 
-        double blendInTime = 0.2;
-
         bool blendWhenGettingUp = false;
         double getUpBlendInTime = 0.3;
 
-        bool enableKeyframes = true;
-        double blendInKeyframeTime = 0.05;
+        bool blendInWhenAddingToWorld = true;
+        double blendInTime = 0.2;
+        double addToWorldSnapTime = 0.1;
 
         bool knockDownAfterBuggedGetUp = true;
 
