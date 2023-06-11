@@ -447,6 +447,7 @@ namespace Config {
         if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
         if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;
+        if (!ReadStringSet("disableConstraintsRaces", Config::options.disableConstraintsRaces)) success = false;
 
         g_registrationComplete = true;
 

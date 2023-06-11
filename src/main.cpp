@@ -4027,7 +4027,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
         }
 
         if (allNoForce) {
-            // Only powered constraints are active and they are effectively disabled
+            // Only powered constraints are active and they are effectively disabled. This is the typical case for dead/ragdolled actors.
             return;
         }
     }
@@ -4161,6 +4161,26 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                 rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
                 hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
             }
+
+            /*if (ragdoll->easeConstraintsAction) {
+                // Restore constraint limits from before we loosened them last time
+
+                hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
+                ragdoll->easeConstraintsAction = nullptr;
+
+                if (Config::options.loosenRagdollConstraintPivots) {
+                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                            if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
+                                data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
+                                data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+                            }
+                        }
+                    }
+                }
+            }*/
 
             if (!ragdoll->easeConstraintsAction) {
                 // Loosen ragdoll constraints to allow the anim pose
@@ -4421,7 +4441,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
             //}
         //}
 
-    if (Config::options.disableConstraints) {
+    if (Config::options.disableConstraints || (actor->race && Config::options.disableConstraintsRaces.count(actor->race->editorId.c_str()))) {
         for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
             hkpConstraintInstance_setEnabled(constraint, false);
         }
@@ -4987,14 +5007,16 @@ _hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_
 void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_1(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+    const hkQsTransform *originalPoseBLocalSpaceOverride = Config::options.useReferencePoseAsOriginalPoseRagdollToAnim ? _this->m_mapping.m_skeletonB->m_referencePose.m_data : originalPoseBLocalSpace;
+    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original(_this, poseAModelSpace, originalPoseBLocalSpaceOverride, poseBModelSpaceInOut, sourceOverride);
 }
 
 _hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original = 0;
 void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_2(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original(_this, poseAModelSpace, originalPoseBLocalSpace, poseBModelSpaceInOut, sourceOverride);
+    const hkQsTransform *originalPoseBLocalSpaceOverride = Config::options.useReferencePoseAsOriginalPoseRagdollToAnim ? _this->m_mapping.m_skeletonB->m_referencePose.m_data : originalPoseBLocalSpace;
+    MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original(_this, poseAModelSpace, originalPoseBLocalSpaceOverride, poseBModelSpaceInOut, sourceOverride);
 }
 
 _hkaSkeletonMapper_mapPose hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Original = 0;

@@ -207,6 +207,7 @@ namespace Config {
         bool applyRigidBodyTWhenReadingRigidBodies = true;
         bool applyRigidBodyTWhenWritingRigidBodies = true;
         bool dontRestrictBoneLengthsWhenMappingFromRagdollToAnim = true;
+        bool useReferencePoseAsOriginalPoseRagdollToAnim = false;
         bool dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll = true;
 
         bool fixupSkeletonMappings = true;
@@ -288,6 +289,7 @@ namespace Config {
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
         std::set<std::string, std::less<>> aggressionExcludeRaces;
+        std::set<std::string, std::less<>> disableConstraintsRaces;
     };
     extern Options options; // global object containing options
 
