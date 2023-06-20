@@ -292,6 +292,11 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
 
     hkStackArray<hkQsTransform> lowResPoseLocal(numPosesLow);
 
+    //const_cast<hkQsTransform *>(highResPoseLocal)[1].m_translation = NiPointToHkVector(HkVectorToNiPoint(highResPoseLocal[1].m_translation) + NiPoint3(0.f, -4.3f, -11.6f)); // TODO: Remove this hack
+    //const_cast<hkQsTransform *>(highResPoseLocal)[2].m_translation = NiPointToHkVector(HkVectorToNiPoint(highResPoseLocal[2].m_translation) + NiPoint3(0.f, 4.3f, 11.6f)); // TODO: Remove this hack
+    //const_cast<hkQsTransform *>(highResPoseLocal)[3].m_translation = NiPointToHkVector(HkVectorToNiPoint(highResPoseLocal[3].m_translation) + NiPoint3(0.f, 4.3f, 11.6f)); // TODO: Remove this hack
+    //const_cast<hkQsTransform *>(highResPoseLocal)[0x18].m_translation = NiPointToHkVector(HkVectorToNiPoint(highResPoseLocal[0x18].m_translation) + NiPoint3(0.f, 4.3f, 11.6f)); // TODO: Remove this hack
+
     hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal(driver, highResPoseLocal, lowResPoseLocal.m_data);
 
     hkStackArray<hkQsTransform> scaledLowResPoseLocal(numPosesLow);

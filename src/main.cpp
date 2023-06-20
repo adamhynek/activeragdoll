@@ -2543,6 +2543,11 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
     std::unordered_map<std::pair<hkInt16, hkInt16>, hkQsTransform, hkInt16PairHash> mappedBonesRagdollToAnim; // anim, ragdoll
 
     for (hkaSkeletonMapperData::SimpleMapping &mapping : ragdollToAnimMapper->m_mapping.m_simpleMappings) {
+        /*if (mapping.m_boneA == 0) {
+            if (VectorLength(HkVectorToNiPoint(mapping.m_aFromBTransform.m_translation)) > 0.1f) {
+                _WARNING("ragdolltoanim: root bone translation is not zero");
+            }
+        }*/
         std::pair<hkInt16, hkInt16> pair(mapping.m_boneB, mapping.m_boneA);
         auto it = mappedBonesRagdollToAnim.find(pair);
         if (it != mappedBonesRagdollToAnim.end()) {
@@ -2565,6 +2570,12 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 
     // Now replace the mappings in the skeleton mappers with the intersection
 
+    /*if (Actor *actor = GetActorFromCharacter(character)) {
+        if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+            _MESSAGE(name->name.data);
+        }
+    }*/
+
     int i = 0;
     for (auto it = mappedBones.begin(); it != mappedBones.end(); it++) {
         std::pair<hkInt16, hkInt16> pair = *it;
@@ -2574,6 +2585,13 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
             mapping.m_boneA = pair.first;
             mapping.m_boneB = pair.second;
             mapping.m_aFromBTransform = mappedBonesAnimToRagdoll[pair];
+            //mapping.m_aFromBTransform.m_translation = NiPointToHkVector(NiPoint3());
+            //mapping.m_aFromBTransform.m_rotation = NiQuatToHkQuat(QuaternionIdentity());
+            //mapping.m_aFromBTransform.m_scale = NiPointToHkVector(NiPoint3(1.0f, 1.0f, 1.0f));
+
+            /*NiPoint3 translation = HkVectorToNiPoint(mapping.m_aFromBTransform.m_translation);
+            NiPoint3 euler = MatrixToEuler(QuaternionToMatrix(HkQuatToNiQuat(mapping.m_aFromBTransform.m_rotation)));
+            _MESSAGE("%5.2f %5.2f %5.2f\t%5.2f %5.2f %5.2f\t%s", translation.x, translation.y, translation.z, euler.x, euler.y, euler.z, setup->m_animationSkeleton->m_bones[mapping.m_boneA].m_name.cString());*/
         }
 
         {
@@ -2581,6 +2599,9 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
             mapping.m_boneA = pair.second;
             mapping.m_boneB = pair.first;
             mapping.m_aFromBTransform = mappedBonesRagdollToAnim[pair];
+            //mapping.m_aFromBTransform.m_translation = NiPointToHkVector(NiPoint3());
+            //mapping.m_aFromBTransform.m_rotation = NiQuatToHkQuat(QuaternionIdentity());
+            //mapping.m_aFromBTransform.m_scale = NiPointToHkVector(NiPoint3(1.0f, 1.0f, 1.0f));
         }
 
         i++;
@@ -3921,6 +3942,33 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
     std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
     if (!ragdoll) return;
+
+    /*
+    NiPoint3 rootBoneMappingTranslation = { 0.f, 0.f, 0.f };
+    if (hkbCharacterSetup *setup = driver->character->setup) {
+        if (hkaSkeletonMapper *mapper = setup->m_animationToRagdollSkeletonMapper) {
+            for (int i = 0; i < mapper->m_mapping.m_simpleMappings.m_size; i++) {
+                hkaSkeletonMapperData::SimpleMapping &mapping = mapper->m_mapping.m_simpleMappings[i];
+                if (mapping.m_boneB == 0) {
+                    rootBoneMappingTranslation = HkVectorToNiPoint(mapping.m_aFromBTransform.m_translation);
+                    if (worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+                        if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+                            hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+                            hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+
+                            NiTransform rootBoneTransform = hkQsTransformToNiTransform(highResPoseLocal[mapping.m_boneA], false);
+                            rootBoneTransform = hkQsTransformToNiTransform(worldFromModel, false) * rootBoneTransform;
+
+                            NiPoint3 correction = rootBoneTransform.rot * rootBoneMappingTranslation;
+
+                            worldFromModel.m_translation = NiPointToHkVector(HkVectorToNiPoint(worldFromModel.m_translation) + correction);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    */
 
     ragdoll->deltaTime = deltaTime;
 
@@ -5741,7 +5789,7 @@ extern "C" {
                     _MESSAGE("Got higgs interface!");
 
                     unsigned int higgsVersion = g_higgsInterface->GetBuildNumber();
-                    if (higgsVersion < 1050100) {
+                    if (higgsVersion < 1060000) {
                         ShowErrorBoxAndTerminate("[CRITICAL] HIGGS is present but is a lower version than is required by this mod. Get the latest version of HIGGS and try again.");
                     }
 
