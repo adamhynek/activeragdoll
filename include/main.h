@@ -40,9 +40,11 @@ struct ActiveRagdoll
     bool fadeOutWorldFromModel = false;
     double worldFromModelFadeInTime = 0.0;
     double worldFromModelFadeOutTime = 0.0;
+    double loosenConstraintsStartTime = 0.0;
     bool isOn = false;
     bool shouldNullOutWorldWhenRemovingFromWorld = false;
     bool disableConstraintMotorsForOneFrame = false;
+    bool isInRagdollState = false;
 };
 
 struct ActorData

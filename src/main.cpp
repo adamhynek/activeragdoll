@@ -1108,10 +1108,10 @@ void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, con
                 QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
                 ForEachAdjacentBody(driver, adjacentBody, [hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
                     QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
-                    });
                 });
             });
         });
+    });
 
     // Apply a point impulse at the hit location to the body we actually hit
     QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
@@ -1368,7 +1368,7 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
                     isRagdollRigidBody = true;
                 }
             }
-            });
+        });
         if (isRagdollRigidBody) return;
 
         body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
@@ -2466,6 +2466,10 @@ void ModifyConstraints(Actor *actor)
 
                     hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxLinearVelocity, Config::options.ragdollBoneMaxLinearVelocity);
                     hkRealTohkUFloat8(rigidBody->getRigidMotion()->getMotionState()->m_maxAngularVelocity, Config::options.ragdollBoneMaxAngularVelocity);
+
+                    if (Config::options.activateActorsOnAdd) {
+                        bhkRigidBody_setActivated(wrapper, true);
+                    }
                 }
             }
         }
@@ -2492,7 +2496,7 @@ void ModifyConstraints(Actor *actor)
                 }
             }
         }
-        });
+    });
 }
 
 struct hkInt16PairHash {
@@ -2614,7 +2618,7 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 
 bool AddRagdollToWorld(Actor *actor)
 {
-    if (Actor_IsInRagdollState(actor)) return false;
+    if (!Config::options.processRagdolledActors && Actor_IsInRagdollState(actor)) return false;
 
     bool hasRagdollInterface = false;
     BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
@@ -2690,7 +2694,8 @@ bool AddRagdollToWorld(Actor *actor)
 
 bool RemoveRagdollFromWorld(Actor *actor)
 {
-    if (Actor_IsInRagdollState(actor)) return false;
+    bool isInRagdollState = Actor_IsInRagdollState(actor);
+    if (!Config::options.processRagdolledActors && isInRagdollState) return false;
 
     bool hasRagdollInterface = false;
     BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
@@ -2708,8 +2713,10 @@ bool RemoveRagdollFromWorld(Actor *actor)
         }
 #endif // _DEBUG
 
-        bool x = false;
-        BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
+        if (!isInRagdollState) {
+            bool x = false;
+            BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
+        }
 
         if (GetAnimationGraphManager(actor, animGraphManager)) {
             BSAnimationGraphManager *manager = animGraphManager.ptr;
@@ -2717,8 +2724,7 @@ bool RemoveRagdollFromWorld(Actor *actor)
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
                     BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
-                    if (driver) {
+                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
                         if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
                             if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
                                 graph.ptr->world = nullptr;
@@ -2888,12 +2894,10 @@ float GetGrabbedStaminaCost(Actor *actor)
     if (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.grabbedstaminaDrainMaxRelationshipRank) return 0.f;
 
     if (Actor_IsInRagdollState(actor)) {
-        KnockState knockState = GetActorKnockState(actor);
-        bool isKnockedDown = knockState != KnockState::Normal && knockState != KnockState::GetUp; // knocked down and not getting up
-
-        bool isReanimating = actor->IsDead(1) && IsReanimating(actor);
-
-        if (!isKnockedDown && !isReanimating) return 0.f;
+        bool isReallyDead = actor->IsDead(1) && !IsReanimating(actor);
+        bool isParalyzed = actor->flags1 & (1 << 31);
+        bool isUnconscious = (actor->actorState.flags04 & 0x1E00000) == 0x600000;
+        if (isReallyDead || isParalyzed || isUnconscious) return 0.f;
     }
 
     bool isHostile = Actor_IsHostileToActor(actor, *g_thePlayer);
@@ -3590,7 +3594,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                                             g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
                                             //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
                                         }
-                                        });
+                                    });
                                 }
                             }
                         }
@@ -3655,7 +3659,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                         if (
                             (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
                             (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
-                            ) {
+                        ) {
                             g_noPlayerCharControllerCollideGroups.insert(collisionGroup);
                         }
                         else {
@@ -3863,7 +3867,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }
             else if (shouldRemoveFromWorld) {
-                if (isAddedToWorld && canAddToWorld) {
+                if (isAddedToWorld && isActiveActor && canAddToWorld) {
                     RemoveRagdollFromWorld(actor);
                     g_activeBipedGroups.erase(collisionGroup);
                     g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
@@ -3927,6 +3931,17 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput &ge
     }
 }
 
+
+struct SavedConstraintData
+{
+    NiPoint3 pivotA;
+    NiPoint3 pivotB;
+    float coneMaxAngle;
+    float planesMinAngle;
+    float planesMaxAngle;
+    float twistMinAngle;
+    float twistMaxAngle;
+};
 
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
@@ -4048,7 +4063,177 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
         ragdoll->worldFromModel = worldFromModel;
     }
 
-    bool isInRagdollState = Actor_IsInRagdollState(actor);
+    bool wasInRagdollState = ragdoll->isInRagdollState;
+    ragdoll->isInRagdollState = Actor_IsInRagdollState(actor);
+
+    if ((!wasInRagdollState && ragdoll->isInRagdollState) ||
+        (prevKnockState != KnockState::GetUp && ragdoll->knockState == KnockState::GetUp))
+    {
+        ragdoll->loosenConstraintsStartTime = g_currentFrameTime;
+    }
+
+    if (Config::options.loosenRagdollContraintsToMatchPose) {
+        if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+            hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
+            hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+
+            hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
+            MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
+
+            // Set rigidbody transforms to the anim pose ones and save the old values
+            static std::vector<hkTransform> savedTransforms{};
+            savedTransforms.clear();
+            for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+                hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+                hkQsTransform &transform = lowResPoseWorld[i];
+
+                savedTransforms.push_back(rb->getTransform());
+                rb->m_motion.getMotionState()->m_transform = hkQsTransformTohkTransform(transform);
+            }
+
+            // Save the constraint limits in case we need them in a bit
+            static std::unordered_map<hkpConstraintInstance *, SavedConstraintData> previousConstraintData{};
+            previousConstraintData.clear();
+
+            for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                    hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                    SavedConstraintData savedData;
+                    savedData.pivotA = HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformA.m_translation);
+                    savedData.pivotB = HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformB.m_translation);
+                    savedData.coneMaxAngle = data->m_atoms.m_coneLimit.m_maxAngle;
+                    savedData.planesMinAngle = data->m_atoms.m_planesLimit.m_minAngle;
+                    savedData.planesMaxAngle = data->m_atoms.m_planesLimit.m_maxAngle;
+                    savedData.twistMinAngle = data->m_atoms.m_twistLimit.m_minAngle;
+                    savedData.twistMaxAngle = data->m_atoms.m_twistLimit.m_maxAngle;
+                    previousConstraintData[constraint] = savedData;
+                }
+            }
+
+            if (ragdoll->easeConstraintsAction) {
+                // Restore constraint limits from before we loosened them last time
+
+                hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
+                ragdoll->easeConstraintsAction = nullptr;
+
+                if (Config::options.loosenRagdollConstraintPivots) {
+                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                            if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
+                                data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
+                                data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!ragdoll->easeConstraintsAction) {
+                // Loosen ragdoll constraints to allow the anim pose
+                hkpEaseConstraintsAction *easeConstraintsAction = hkAllocReferencedObject<hkpEaseConstraintsAction>();
+                hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity *>&)(driver->ragdoll->getRigidBodyArray()), 0);
+                ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
+                hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
+
+                // Loosen constraint pivots first
+                if (Config::options.loosenRagdollConstraintPivots) {
+                    ragdoll->originalConstraintPivots.clear();
+
+                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                            if (constraint->getInternal()) { // needed to tell master from slave
+                                hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
+                                hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
+
+                                hkVector4 pivotAbodySpace = data->m_atoms.m_transforms.m_transformA.m_translation;
+                                hkVector4 pivotBbodySpace = data->m_atoms.m_transforms.m_transformB.m_translation;
+                                ragdoll->originalConstraintPivots[constraint] = { pivotAbodySpace, pivotBbodySpace };
+
+                                hkVector4 pivotA; hkVector4_setTransformedPos(pivotA, bodyA->getTransform(), pivotAbodySpace);
+                                hkVector4 pivotB; hkVector4_setTransformedPos(pivotB, bodyB->getTransform(), pivotBbodySpace);
+
+                                hkVector4 masterPivot = bodyA == constraint->getSlaveEntity() ? pivotB : pivotA;
+
+                                hkpRagdollConstraintData_setPivotInWorldSpace(data, bodyA->getTransform(), bodyB->getTransform(), masterPivot);
+                            }
+                        }
+                    }
+                }
+
+                // Loosen angular constraints second
+                if (!ragdoll->isInRagdollState) {
+                    hkpEaseConstraintsAction_loosenConstraints(ragdoll->easeConstraintsAction);
+                }
+            }
+
+            // Restore rigidbody transforms
+            for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+                hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+                rb->m_motion.getMotionState()->m_transform = savedTransforms[i];
+            }
+
+            if (Config::options.graduallyLoosenConstraintsWhileRagdolled && (ragdoll->isInRagdollState || ragdoll->knockState != KnockState::Normal)) {
+                float maxDelta = 0.f;
+                float maxDeltaPivot = 0.f;
+                bool shouldActivate = false;
+                // Step the constraint limits by a fixed amount from the previous value towards the value they were just set to
+                for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                    if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                        hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                        if (auto it = previousConstraintData.find(constraint); it != previousConstraintData.end()) {
+                            SavedConstraintData &savedData = it->second;
+
+                            // Note: Don't clamp the elapsed time fraction, so that the speed can go unbounded
+                            float elapsedTimeFraction = (g_currentFrameTime - ragdoll->loosenConstraintsStartTime) / Config::options.loosenConstraintsRampUpTime;
+                            float angularStep = lerp(Config::options.loosenConstraintsSpeedAngularStart, Config::options.loosenConstraintsSpeedAngularEnd, elapsedTimeFraction) * deltaTime;
+                            float linearStep = lerp(Config::options.loosenConstraintsSpeedLinearStart, Config::options.loosenConstraintsSpeedLinearEnd, elapsedTimeFraction) * deltaTime;
+
+                            // Angular limits
+                            float delta;
+                            data->m_atoms.m_coneLimit.m_maxAngle = AdvanceFloat(savedData.coneMaxAngle, data->m_atoms.m_coneLimit.m_maxAngle, angularStep, &delta);
+                            if (delta > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDelta = max(maxDelta, delta);
+                            data->m_atoms.m_planesLimit.m_minAngle = AdvanceFloat(savedData.planesMinAngle, data->m_atoms.m_planesLimit.m_minAngle, angularStep, &delta);
+                            if (delta > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDelta = max(maxDelta, delta);
+                            data->m_atoms.m_planesLimit.m_maxAngle = AdvanceFloat(savedData.planesMaxAngle, data->m_atoms.m_planesLimit.m_maxAngle, angularStep, &delta);
+                            if (delta > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDelta = max(maxDelta, delta);
+                            data->m_atoms.m_twistLimit.m_minAngle = AdvanceFloat(savedData.twistMinAngle, data->m_atoms.m_twistLimit.m_minAngle, angularStep, &delta);
+                            if (delta > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDelta = max(maxDelta, delta);
+                            data->m_atoms.m_twistLimit.m_maxAngle = AdvanceFloat(savedData.twistMaxAngle, data->m_atoms.m_twistLimit.m_maxAngle, angularStep, &delta);
+                            if (delta > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDelta = max(maxDelta, delta);
+
+                            // Pivots
+                            NiPoint3 deltaPivot;
+                            data->m_atoms.m_transforms.m_transformA.m_translation = NiPointToHkVector(AdvanceVector(savedData.pivotA, HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformA.m_translation), linearStep, &deltaPivot));
+                            if (VectorLength(deltaPivot) > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDeltaPivot = max(maxDeltaPivot, VectorLength(deltaPivot));
+                            data->m_atoms.m_transforms.m_transformB.m_translation = NiPointToHkVector(AdvanceVector(savedData.pivotB, HkVectorToNiPoint(data->m_atoms.m_transforms.m_transformB.m_translation), linearStep, &deltaPivot));
+                            if (VectorLength(deltaPivot) > Config::options.loosenConstraintsActivateDeltaThreshold) shouldActivate = true;
+                            maxDeltaPivot = max(maxDeltaPivot, VectorLength(deltaPivot));
+                        }
+                    }
+                }
+
+                if (shouldActivate) {
+                    for (hkpRigidBody *rigidBody : driver->ragdoll->m_rigidBodies) {
+                        if (bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData) {
+                            bhkRigidBody_setActivated(wrapper, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     bool isPoweredOnly = !isRigidBodyOn && isPoweredOn;
     if (isPoweredOnly) {
@@ -4064,7 +4249,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
         }
 
         if (Config::options.knockDownAfterBuggedGetUp) {
-            if (allNoForce && isUsingRootBoneAsWorldFromModel && !isInRagdollState) {
+            if (allNoForce && isUsingRootBoneAsWorldFromModel && !ragdoll->isInRagdollState) {
                 if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
                     _MESSAGE("%s bugged out while getting up. Knocking them down again.", name->name);
                 }
@@ -4138,7 +4323,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
     if (poweredHeader && poweredHeader->m_onFraction > 0.f && poweredHeader->m_numData > 0) {
         hkbPoweredRagdollControlData *data = (hkbPoweredRagdollControlData *)(Track_getData(generatorOutput, *poweredHeader));
-        if (isComputingWorldFromModel) {
+        if (isComputingWorldFromModel || ragdoll->isInRagdollState) {
             for (int i = 0; i < poweredHeader->m_numData; i++) {
                 hkbPoweredRagdollControlData &elem = data[i];
                 elem.m_maxForce = Config::options.getUpMaxForce;
@@ -4169,7 +4354,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
     if (Actor_IsInRagdollState(actor)) return;
 
     if (isPoweredOnly) {
-        // Don't want to do foot ik / constraint loosening / disabling gravity when powered only
+        // Don't want to do foot ik / disabling gravity when powered only
         return;
     }
 
@@ -4186,92 +4371,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                     hkInt16 numPoses = poseHeader->m_numData;
                     memcpy(Track_getData(generatorOutput, *poseHeader), poseLocal, numPoses * sizeof(hkQsTransform));
                 }
-            }
-        }
-    }
-
-    if (Config::options.loosenRagdollContraintsToMatchPose) {
-        if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-            hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(generatorOutput, *worldFromModelHeader);
-            hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-
-            hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
-            MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
-
-            // Set rigidbody transforms to the anim pose ones and save the old values
-            static std::vector<hkTransform> savedTransforms{};
-            savedTransforms.clear();
-            for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-                hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-                hkQsTransform &transform = lowResPoseWorld[i];
-
-                savedTransforms.push_back(rb->getTransform());
-                rb->m_motion.getMotionState()->m_transform.m_translation = transform.m_translation;
-                hkRotation_setFromQuat(&rb->m_motion.getMotionState()->m_transform.m_rotation, transform.m_rotation);
-            }
-
-            /*if (ragdoll->easeConstraintsAction) {
-                // Restore constraint limits from before we loosened them last time
-
-                hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
-                ragdoll->easeConstraintsAction = nullptr;
-
-                if (Config::options.loosenRagdollConstraintPivots) {
-                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
-                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
-
-                            if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
-                                data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
-                                data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
-                            }
-                        }
-                    }
-                }
-            }*/
-
-            if (!ragdoll->easeConstraintsAction) {
-                // Loosen ragdoll constraints to allow the anim pose
-                hkpEaseConstraintsAction *easeConstraintsAction = hkAllocReferencedObject<hkpEaseConstraintsAction>();
-                hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity *>&)(driver->ragdoll->getRigidBodyArray()), 0);
-                ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
-                hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
-
-                // Loosen constraint pivots first
-                if (Config::options.loosenRagdollConstraintPivots) {
-                    ragdoll->originalConstraintPivots.clear();
-
-                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
-                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
-
-                            if (constraint->getInternal()) { // needed to tell master from slave
-                                hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
-                                hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
-
-                                hkVector4 pivotAbodySpace = data->m_atoms.m_transforms.m_transformA.m_translation;
-                                hkVector4 pivotBbodySpace = data->m_atoms.m_transforms.m_transformB.m_translation;
-                                ragdoll->originalConstraintPivots[constraint] = { pivotAbodySpace, pivotBbodySpace };
-
-                                hkVector4 pivotA; hkVector4_setTransformedPos(pivotA, bodyA->getTransform(), pivotAbodySpace);
-                                hkVector4 pivotB; hkVector4_setTransformedPos(pivotB, bodyB->getTransform(), pivotBbodySpace);
-
-                                hkVector4 slavePivot = bodyA == constraint->getSlaveEntity() ? pivotA : pivotB;
-
-                                hkpRagdollConstraintData_setPivotInWorldSpace(data, bodyA->getTransform(), bodyB->getTransform(), slavePivot);
-                            }
-                        }
-                    }
-                }
-
-                // Loosen angular constraints second
-                hkpEaseConstraintsAction_loosenConstraints(ragdoll->easeConstraintsAction);
-            }
-
-            // Restore rigidbody transforms
-            for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-                hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-                rb->m_motion.getMotionState()->m_transform = savedTransforms[i];
             }
         }
     }
@@ -4317,7 +4416,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                     Config::options.doWarp &&
                                     (!Config::options.disableWarpWhenGettingUp || ragdoll->knockState != KnockState::GetUp) &&
                                     VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp
-                                    ) {
+                                ) {
 #ifdef _DEBUG
                                     TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
                                     _MESSAGE("%d %s: Warp", *g_currentFrameCounter, name->name);
@@ -4563,29 +4662,6 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
     RagdollState state = ragdoll->state;
 
-    if (Config::options.loosenRagdollContraintsToMatchPose) {
-        if (ragdoll->easeConstraintsAction) {
-            // Restore constraint limits from before we loosened them
-            // TODO: Can the character die between drivetopose and postphysics? If so, we should do this if the ragdoll character dies too.
-
-            hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
-            ragdoll->easeConstraintsAction = nullptr;
-
-            if (Config::options.loosenRagdollConstraintPivots) {
-                for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                    if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
-                        hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
-
-                        if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
-                            data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
-                            data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     if (Config::options.disableGravityForActiveRagdolls) {
         for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
             hkpRigidBody *rigidBody = driver->ragdoll->m_rigidBodies[i];
@@ -4721,7 +4797,7 @@ void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manag
                 if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
                     activeRagdoll->disableConstraintMotorsForOneFrame = true;
                 }
-                });
+            });
         }
 
         return;
@@ -5051,11 +5127,12 @@ void hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransf
     }
 }
 
+
 _hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original = 0;
 void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_1(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    const hkQsTransform *originalPoseBLocalSpaceOverride = Config::options.useReferencePoseAsOriginalPoseRagdollToAnim ? _this->m_mapping.m_skeletonB->m_referencePose.m_data : originalPoseBLocalSpace;
+    const hkQsTransform *originalPoseBLocalSpaceOverride = originalPoseBLocalSpace;
     MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_1_Original(_this, poseAModelSpace, originalPoseBLocalSpaceOverride, poseBModelSpaceInOut, sourceOverride);
 }
 
@@ -5063,7 +5140,7 @@ _hkaSkeletonMapper_mapPose MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_
 void MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_2(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source)
 {
     UInt32 sourceOverride = Config::options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim ? hkaSkeletonMapper::ConstraintSource::NO_CONSTRAINTS : source;
-    const hkQsTransform *originalPoseBLocalSpaceOverride = Config::options.useReferencePoseAsOriginalPoseRagdollToAnim ? _this->m_mapping.m_skeletonB->m_referencePose.m_data : originalPoseBLocalSpace;
+    const hkQsTransform *originalPoseBLocalSpaceOverride = originalPoseBLocalSpace;
     MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original(_this, poseAModelSpace, originalPoseBLocalSpaceOverride, poseBModelSpaceInOut, sourceOverride);
 }
 

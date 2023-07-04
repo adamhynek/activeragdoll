@@ -207,8 +207,17 @@ namespace Config {
         bool applyRigidBodyTWhenReadingRigidBodies = true;
         bool applyRigidBodyTWhenWritingRigidBodies = true;
         bool dontRestrictBoneLengthsWhenMappingFromRagdollToAnim = true;
-        bool useReferencePoseAsOriginalPoseRagdollToAnim = false;
         bool dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll = true;
+        bool processRagdolledActors = true;
+        bool activateActorsOnAdd = true;
+        bool graduallyLoosenConstraintsWhileRagdolled = true;
+
+        float loosenConstraintsSpeedLinearStart = 0.15f;
+        float loosenConstraintsSpeedLinearEnd = 1.f;
+        float loosenConstraintsSpeedAngularStart = 0.5f;
+        float loosenConstraintsSpeedAngularEnd = 6.f;
+        double loosenConstraintsRampUpTime = 0.7;
+        float loosenConstraintsActivateDeltaThreshold = 0.001f;
 
         bool fixupSkeletonMappings = true;
 

@@ -194,6 +194,14 @@ NiTransform hkQsTransformToNiTransform(const hkQsTransform &in, bool useHavokSca
     return out;
 }
 
+hkTransform hkQsTransformTohkTransform(const hkQsTransform &in)
+{
+    hkTransform out;
+    out.m_translation = in.m_translation;
+    hkRotation_setFromQuat(&out.m_rotation, in.m_rotation);
+    return out;
+}
+
 hkQsTransform NiTransformTohkQsTransform(const NiTransform &in, bool useHavokScale)
 {
     hkQsTransform out;
@@ -447,6 +455,61 @@ Point2 &Point2::operator/= (float scalar)
     return *this;
 }
 
+std::optional<NiTransform> AdvanceTransform(const NiTransform &currentTransform, const NiTransform &targetTransform, float posSpeed, float rotSpeed)
+{
+    NiQuaternion currentQuat = MatrixToQuaternion(currentTransform.rot);
+    NiQuaternion desiredQuat = MatrixToQuaternion(targetTransform.rot);
+
+    float deltaAngle = rotSpeed * 0.0174533f * *g_deltaTime;
+    float quatAngle = QuaternionAngle(currentQuat, desiredQuat);
+
+    NiPoint3 deltaDir = VectorNormalized(targetTransform.pos - currentTransform.pos);
+    NiPoint3 deltaPos = deltaDir * posSpeed * *g_deltaTime;
+
+    bool doRotation = deltaAngle < quatAngle;
+    bool doTranslation = VectorLengthSquared(deltaPos) < VectorLengthSquared(targetTransform.pos - currentTransform.pos);
+
+    if (doRotation || doTranslation) {
+        // Rotation or position is not yet close enough
+
+        NiTransform advancedTransform = targetTransform;
+        if (doRotation) {
+            // update rotation
+            double slerpAmount = deltaAngle / quatAngle;
+            NiQuaternion newQuat = slerp(currentQuat, desiredQuat, slerpAmount);
+            newQuat = QuaternionNormalized(newQuat);
+            advancedTransform.rot = QuaternionToMatrix(newQuat);
+        }
+
+        if (doTranslation) {
+            // If not close enough, move the object closer to the hand at some velocity
+            advancedTransform.pos = currentTransform.pos + deltaPos;
+        }
+
+        return advancedTransform;
+    }
+    return std::nullopt;
+}
+
+float AdvanceFloat(float a, float b, float speed, float *deltaOut)
+{
+    float delta = b - a;
+    if (deltaOut) *deltaOut = delta;
+    if (abs(delta) > speed) {
+        return a + speed * (delta > 0.f ? 1.f : -1.f);
+    }
+    return b;
+}
+
+NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoint3 *deltaOut)
+{
+    NiPoint3 delta = b - a;
+    if (deltaOut) *deltaOut = delta;
+    if (VectorLength(delta) > speed) {
+        return a + VectorNormalized(delta) * speed;
+    }
+    return b;
+}
 
 namespace MathUtils
 {

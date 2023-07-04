@@ -90,6 +90,7 @@ NiTransform hkTransformToNiTransform(const hkTransform &t, float scale);
 hkTransform NiTransformTohkTransform(NiTransform &t);
 NiTransform hkQsTransformToNiTransform(const hkQsTransform &in, bool useHavokScale = true);
 hkQsTransform NiTransformTohkQsTransform(const NiTransform &in, bool useHavokScale = true);
+hkTransform hkQsTransformTohkTransform(const hkQsTransform &in);
 NiMatrix33 QuaternionToMatrix(const NiQuaternion &q);
 inline NiQuaternion MatrixToQuaternion(const NiMatrix33 &m) { NiQuaternion q; NiMatrixToNiQuaternion(q, m); return q; }
 inline NiQuaternion HkQuatToNiQuat(const hkQuaternion &quat) { return { quat.m_vec(3), quat.m_vec(0), quat.m_vec(1), quat.m_vec(2) }; }
@@ -113,6 +114,9 @@ inline double lerp(double a, double b, double t) { return a * (1.0 - t) + b * t;
 hkQsTransform lerphkQsTransform(hkQsTransform &a, hkQsTransform &b, double t);
 float Determinant33(const NiMatrix33 &m);
 NiPoint3 QuadraticFromPoints(const NiPoint2 &p1, const NiPoint2 &p2, const NiPoint2 &p3);
+std::optional<NiTransform> AdvanceTransform(const NiTransform &currentTransform, const NiTransform &targetTransform, float posSpeed, float rotSpeed);
+float AdvanceFloat(float a, float b, float speed, float *deltaOut);
+NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoint3 *deltaOut);
 inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
 inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }

@@ -367,6 +367,16 @@ namespace Config {
         if (!RegisterBool("applyRigidBodyTWhenWritingRigidBodies", options.applyRigidBodyTWhenWritingRigidBodies)) success = false;
         if (!RegisterBool("dontRestrictBoneLengthsWhenMappingFromRagdollToAnim", options.dontRestrictBoneLengthsWhenMappingFromRagdollToAnim)) success = false;
         if (!RegisterBool("dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll", options.dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll)) success = false;
+        if (!RegisterBool("processRagdolledActors", options.processRagdolledActors)) success = false;
+        if (!RegisterBool("activateActorsOnAdd", options.activateActorsOnAdd)) success = false;
+        if (!RegisterBool("graduallyLoosenConstraintsWhileRagdolled", options.graduallyLoosenConstraintsWhileRagdolled)) success = false;
+
+        if (!RegisterFloat("loosenConstraintsSpeedLinearStart", options.loosenConstraintsSpeedLinearStart)) success = false;
+        if (!RegisterFloat("loosenConstraintsSpeedLinearEnd", options.loosenConstraintsSpeedLinearEnd)) success = false;
+        if (!RegisterFloat("loosenConstraintsSpeedAngularStart", options.loosenConstraintsSpeedAngularStart)) success = false;
+        if (!RegisterFloat("loosenConstraintsSpeedAngularEnd", options.loosenConstraintsSpeedAngularEnd)) success = false;
+        if (!RegisterDouble("loosenConstraintsRampUpTime", options.loosenConstraintsRampUpTime)) success = false;
+        if (!RegisterFloat("loosenConstraintsActivateDeltaThreshold", options.loosenConstraintsActivateDeltaThreshold)) success = false;
 
         if (!RegisterBool("fixupSkeletonMappings", options.fixupSkeletonMappings)) success = false;
 
