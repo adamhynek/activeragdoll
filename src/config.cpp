@@ -288,6 +288,8 @@ namespace Config {
 
         if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;
         if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;
+        if (!RegisterBool("damageHittingObjectOnPhysicalHit", options.damageHittingObjectOnPhysicalHit)) success = false;
+        if (!RegisterFloat("hittingObjectSelfDamage", options.hittingObjectSelfDamage)) success = false;
 
         if (!RegisterBool("doWarp", options.doWarp)) success = false;
         if (!RegisterBool("disableWarpWhenGettingUp", options.disableWarpWhenGettingUp)) success = false;

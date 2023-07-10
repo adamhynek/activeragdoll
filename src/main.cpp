@@ -1501,6 +1501,12 @@ struct PhysicsListener :
                 if (Config::options.physicsHitRecoveryTime > 0) {
                     physicsHitCooldownTargets[{ target, collidingBody->hkBody }] = g_currentFrameTime;
                 }
+
+                if (Config::options.damageHittingObjectOnPhysicalHit) {
+                    if (NiPointer<TESObjectREFR> hittingRefr = GetRefFromCollidable(collidingBody->hkBody->getCollidable())) {
+                        BSTaskPool_QueueDestructibleDamageTask(BSTaskPool::GetSingleton(), hittingRefr, Config::options.hittingObjectSelfDamage);
+                    }
+                }
             }
         }
     }

@@ -130,6 +130,8 @@ namespace Config {
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
         float collisionDamageMinMassPlayerInflicted = 6.f;
+        bool damageHittingObjectOnPhysicalHit = true;
+        float hittingObjectSelfDamage = 10.f;
 
         bool doWarp = true;
         bool disableWarpWhenGettingUp = true;
