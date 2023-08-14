@@ -428,6 +428,9 @@ T *hkAllocReferencedObject() {
 }
 
 void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener *worldListener);
+bool hkpWorld_hasContactListener(hkpWorld *_this, hkpContactListener *listener);
+bool hkpWorld_hasWorldPostSimulationListener(hkpWorld *_this, hkpWorldPostSimulationListener *listener);
+bool hkpWorld_hasEntityListener(hkpWorld *_this, hkpEntityListener *listener);
 int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener *proxyListener);
 float hkpContactPointEvent_getSeparatingVelocity(const hkpContactPointEvent &_this);
 void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *constraint, const hkTransform &bodyATransform, const hkTransform &bodyBTransform, const hkVector4 &pivot);

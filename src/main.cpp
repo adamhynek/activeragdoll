@@ -1932,7 +1932,7 @@ struct PhysicsListener :
         g_taskInterface->AddTask(PotentiallyConvertBipedObjectToDeadBipTask::Create(GetOrCreateRefrHandle(refr), wrapper));
     }
 
-    NiPointer<bhkWorld> world = nullptr;
+    bhkWorld *world = nullptr;
 };
 PhysicsListener g_physicsListener{};
 
@@ -3206,19 +3206,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     }
 
     if (world != g_physicsListener.world) {
-        if (NiPointer<bhkWorld> oldWorld = g_physicsListener.world) {
-            _MESSAGE("%d: Removing listeners from old havok world", *g_currentFrameCounter);
-            {
-                BSWriteLocker lock(&oldWorld->worldLock);
-                if (hkpWorldExtension *collisionCallbackExtension = hkpWorld_findWorldExtension(oldWorld->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK)) {
-                    // There are times when the collision callback extension is gone even if we required it earlier...
-                    hkpCollisionCallbackUtil_releaseCollisionCallbackUtil(oldWorld->world);
-                }
-                hkpWorld_removeContactListener(oldWorld->world, &g_physicsListener);
-                hkpWorld_removeWorldPostSimulationListener(oldWorld->world, &g_physicsListener);
-                hkpWorld_removeEntityListener(oldWorld->world, &g_physicsListener);
-            }
-
+        if (g_physicsListener.world) {
             ResetObjects();
         }
 
@@ -3226,11 +3214,19 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         {
             BSWriteLocker lock(&world->worldLock);
 
-            hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
+            if (!hkpWorld_findWorldExtension(world->world, hkpKnownWorldExtensionIds::HK_WORLD_EXTENSION_COLLISION_CALLBACK)) {
+                hkpCollisionCallbackUtil_requireCollisionCallbackUtil(world->world);
+            }
 
-            hkpWorld_addContactListener(world->world, &g_physicsListener);
-            hkpWorld_addWorldPostSimulationListener(world->world, &g_physicsListener);
-            hkpWorld_addEntityListener(world->world, &g_physicsListener);
+            if (!hkpWorld_hasContactListener(world->world, &g_physicsListener)) {
+                hkpWorld_addContactListener(world->world, &g_physicsListener);
+            }
+            if (!hkpWorld_hasWorldPostSimulationListener(world->world, &g_physicsListener)) {
+                hkpWorld_addWorldPostSimulationListener(world->world, &g_physicsListener);
+            }
+            if (!hkpWorld_hasEntityListener(world->world, &g_physicsListener)) {
+                hkpWorld_addEntityListener(world->world, &g_physicsListener);
+            }
 
             bhkCollisionFilter *filter = (bhkCollisionFilter *)world->world->m_collisionFilter;
 

@@ -254,6 +254,39 @@ void hkpWorld_removeContactListener(hkpWorld *_this, hkpContactListener *worldLi
     }
 }
 
+bool hkpWorld_hasContactListener(hkpWorld *_this, hkpContactListener *listener)
+{
+    hkArray<hkpContactListener *> &listeners = _this->m_contactListeners;
+    for (int i = 0; i < listeners.getSize(); i++) {
+        if (listeners[i] == listener) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hkpWorld_hasWorldPostSimulationListener(hkpWorld *_this, hkpWorldPostSimulationListener *listener)
+{
+    hkArray<hkpWorldPostSimulationListener *> &listeners = _this->m_worldPostSimulationListeners;
+    for (int i = 0; i < listeners.getSize(); i++) {
+        if (listeners[i] == listener) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hkpWorld_hasEntityListener(hkpWorld *_this, hkpEntityListener *listener)
+{
+    hkArray<hkpEntityListener *> &listeners = _this->m_entityListeners;
+    for (int i = 0; i < listeners.getSize(); i++) {
+        if (listeners[i] == listener) {
+            return true;
+        }
+    }
+    return false;
+}
+
 int hkpCharacterProxy_findCharacterProxyListener(hkpCharacterProxy *_this, hkpCharacterProxyListener *proxyListener)
 {
     hkArray<hkpCharacterProxyListener *> &listeners = _this->m_listeners;
