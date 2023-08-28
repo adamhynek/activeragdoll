@@ -455,6 +455,7 @@ namespace Config {
         if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
 
         if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;
+        if (!RegisterBool("removeRagdollWhenExitingHighProcess", options.removeRagdollWhenExitingHighProcess)) success = false;
 
         if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;

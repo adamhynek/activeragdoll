@@ -1384,7 +1384,6 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
     NiPointer<bhkRigidBody> rigidBody;
 };
 
-
 float g_savedMinSoundVel;
 double g_restoreSoundVelTime = 0.0;
 
@@ -2698,6 +2697,36 @@ bool AddRagdollToWorld(Actor *actor)
     return true;
 }
 
+
+void CleanupActiveRagdollTracking(Actor *actor)
+{
+    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    if (GetAnimationGraphManager(actor, animGraphManager)) {
+        BSAnimationGraphManager *manager = animGraphManager.ptr;
+        {
+            SimpleLocker lock(&manager->updateLock);
+            for (int i = 0; i < manager->graphs.size; i++) {
+                BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+                if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                        if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
+                            graph.ptr->world = nullptr;
+                        }
+                    }
+                    g_activeRagdolls.erase(driver);
+                    g_activeActors.erase(actor);
+                }
+            }
+        }
+    }
+}
+
+void CleanupActiveGroupTracking(UInt32 collisionGroup)
+{
+    g_activeBipedGroups.erase(collisionGroup);
+    g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
+}
+
 bool RemoveRagdollFromWorld(Actor *actor)
 {
     bool isInRagdollState = Actor_IsInRagdollState(actor);
@@ -2724,31 +2753,13 @@ bool RemoveRagdollFromWorld(Actor *actor)
             BSAnimationGraphManager_RemoveRagdollFromWorld(animGraphManager.ptr, &x);
         }
 
-        if (GetAnimationGraphManager(actor, animGraphManager)) {
-            BSAnimationGraphManager *manager = animGraphManager.ptr;
-            {
-                SimpleLocker lock(&manager->updateLock);
-                for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-                        if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                            if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
-                                graph.ptr->world = nullptr;
-                            }
-                        }
-                        g_activeRagdolls.erase(driver);
-
-                        g_activeActors.erase(actor);
-                    }
-                }
-            }
-        }
+        CleanupActiveRagdollTracking(actor);
     }
 
     return true;
 }
 
-void DisableSyncOnUpdate(Actor *actor)
+void DisableOrEnableSyncOnUpdate(Actor *actor, bool disableElseEnable)
 {
     if (Actor_IsInRagdollState(actor)) return;
 
@@ -2759,8 +2770,39 @@ void DisableSyncOnUpdate(Actor *actor)
     }
 
     if (hasRagdollInterface) {
-        bool x[2] = { false, true };
+        bool x[2] = { false, disableElseEnable };
         BSAnimationGraphManager_DisableOrEnableSyncOnUpdate(animGraphManager.ptr, x);
+    }
+}
+
+void RemoveActorFromWorldIfActive(Actor *actor)
+{
+    // Why is this its own function? Why not use RemoveRagdollFromWorld()?
+    // This is called from MoveToX() functions, and it needs to happen at the time they are called.
+    // At similar times, DetachHavok() gets called by the game, which removes the rigidbodies individually.
+    // RemoveRagdollFromWorld() removes them in a batch, and if that happens at a similar time to DetachHavok(), it will crash.
+
+    bool isActiveActor = g_activeActors.count(actor);
+
+    UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
+    UInt16 collisionGroup = filterInfo >> 16;
+
+    bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
+
+    if (isActiveActor) {
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d Remove Active Actor %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+        get_vfunc<_Actor_DetachHavok>(actor, 0x65)(actor);
+        DisableOrEnableSyncOnUpdate(actor, false); // this is also necessary not only to enable sync on update, but to prevent the game from calling AddHavok() during MoveHavok() for bhkBlendCollisionObject s.
+
+        CleanupActiveRagdollTracking(actor);
+        CleanupActiveGroupTracking(collisionGroup);
+    }
+    else if (isHittableCharController) {
+        g_hittableCharControllerGroups.erase(collisionGroup);
     }
 }
 
@@ -3490,7 +3532,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         }
     }
 
-    if (g_currentFrameTime - g_worldChangedTime < Config::options.worldChangedWaitTime) return;
+    if (g_currentFrameTime - g_worldChangedTime < Config::options.worldChangedWaitTime) {
+        return;
+    }
 
     // Do this before any NPC state updates
     g_isRightHandAggressivelyPositioned = IsHandWithinConeFromHmd(false, Config::options.aggressionRequiredHandWithinHmdConeHalfAngle);
@@ -3670,7 +3714,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     }
 
                     // Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
-                    DisableSyncOnUpdate(actor);
+                    DisableOrEnableSyncOnUpdate(actor, true);
 
                     if (Config::options.forceAnimationUpdateForActiveActors) {
                         // Force the game to run the animation graph update (and hence driveToPose, etc.)
@@ -3869,10 +3913,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }
             else if (shouldRemoveFromWorld) {
-                if (isAddedToWorld && isActiveActor && canAddToWorld) {
+                if (isAddedToWorld && canAddToWorld && isActiveActor) {
                     RemoveRagdollFromWorld(actor);
-                    g_activeBipedGroups.erase(collisionGroup);
-                    g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
+                    CleanupActiveGroupTracking(collisionGroup);
                 }
                 else if (isHittableCharController) {
                     g_hittableCharControllerGroups.erase(collisionGroup);
@@ -4419,10 +4462,10 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                     (!Config::options.disableWarpWhenGettingUp || ragdoll->knockState != KnockState::GetUp) &&
                                     VectorLength(ragdoll->rootOffset) > Config::options.maxAllowedDistBeforeWarp
                                 ) {
-#ifdef _DEBUG
-                                    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-                                    _MESSAGE("%d %s: Warp", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
+                                    {
+                                        TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+                                        _MESSAGE("%d %s: Warp %.2f m", *g_currentFrameCounter, name->name, VectorLength(ragdoll->rootOffset));
+                                    }
 
                                     // Set rigidbody transforms to the anim pose ones
                                     for (int i = 0; i < lowResPoseWorld.m_size; i++) {
@@ -5024,6 +5067,56 @@ bool AttackStopHandler_Handle_Hook(void *_this, Actor *actor)
         }
     }
     return g_originalAttackStopHandlerHandle(_this, actor);
+}
+
+static RelocPtr<_hkp3AxisSweep_removeObject> hkp3AxisSweep_removeObject_vtbl(0x17D25B8);
+static RelocPtr<_hkp3AxisSweep_removeObjectBatch> hkp3AxisSweep_removeObjectBatch_vtbl(0x17D25C0);
+
+static RelocPtr<_bhkWorld_dtor> bhkWorld_dtor_vtbl(0x1823978);
+static RelocPtr<_Actor_DetachHavok> Actor_DetachHavok_vtbl(0x16D7108);
+static RelocPtr<_Actor_DetachHavok> Actor_MoveHavok_vtbl(0x16D7210);
+static RelocPtr<_Actor_MoveToHigh> Actor_MoveToHigh_vtbl(0x16D7578);
+
+_Actor_MoveToHigh g_Actor_MoveToMiddleHigh_Original = nullptr;
+static RelocPtr<_Actor_MoveToHigh> Actor_MoveToMiddleHigh_vtbl(0x16D7590);
+void Actor_MoveToMiddleHigh_Hook(Actor *actor)
+{
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d MoveToMiddleHigh %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+    RemoveActorFromWorldIfActive(actor);
+
+    return g_Actor_MoveToMiddleHigh_Original(actor);
+}
+
+_Actor_MoveToHigh g_Actor_MoveToMiddleLow_Original = nullptr;
+static RelocPtr<_Actor_MoveToHigh> Actor_MoveToMiddleLow_vtbl(0x16D7588);
+void Actor_MoveToMiddleLow_Hook(Actor *actor)
+{
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d MoveToMiddleLow %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+    RemoveActorFromWorldIfActive(actor);
+
+    return g_Actor_MoveToMiddleLow_Original(actor);
+}
+
+_Actor_MoveToHigh g_Actor_MoveToLow_Original = nullptr;
+static RelocPtr<_Actor_MoveToHigh> Actor_MoveToLow_vtbl(0x16D7580);
+void Actor_MoveToLow_Hook(Actor *actor)
+{
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d MoveToLow %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+    RemoveActorFromWorldIfActive(actor);
+
+    return g_Actor_MoveToLow_Original(actor);
 }
 
 _Actor_IsRagdollMovingSlowEnoughToGetUp Actor_IsRagdollMovingSlowEnoughToGetUp_Original = 0;
@@ -5996,8 +6089,20 @@ extern "C" {
         g_originalAttackStopHandlerHandle = *AttackStopHandler_Handle_vtbl;
         SafeWrite64(AttackStopHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(AttackStopHandler_Handle_Hook));
 
+        if (Config::options.removeRagdollWhenExitingHighProcess) {
+            g_Actor_MoveToLow_Original = *Actor_MoveToLow_vtbl;
+            SafeWrite64(Actor_MoveToLow_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToLow_Hook));
+
+            g_Actor_MoveToMiddleHigh_Original = *Actor_MoveToMiddleHigh_vtbl;
+            SafeWrite64(Actor_MoveToMiddleHigh_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToMiddleHigh_Hook));
+
+            g_Actor_MoveToMiddleLow_Original = *Actor_MoveToMiddleLow_vtbl;
+            SafeWrite64(Actor_MoveToMiddleLow_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToMiddleLow_Hook));
+        }
+
         g_timer.Start();
 
         return true;
     }
 };
+

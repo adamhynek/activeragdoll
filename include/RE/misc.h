@@ -651,3 +651,7 @@ typedef void(*_BSIntrusiveRefCounted_Destruct)(BSIntrusiveRefCounted *_this, UIn
 typedef bool(*_TESActionData_Process)(TESActionData *_this);
 typedef bool(*_HitFrameHandler_Handle)(void *_this, Actor *actor, BSFixedString *side); // side == "Left" when offhand, "" when main hand
 typedef bool(*_AttackHandler_Handle)(void *_this, Actor *actor);
+typedef void(*_Actor_MoveToHigh)(Actor *actor);
+typedef void(*_Actor_DetachHavok)(Actor *actor);
+typedef void (*_bhkWorld_dtor)(bhkWorld *);
+

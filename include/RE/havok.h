@@ -6,6 +6,7 @@
 #include <Physics/Dynamics/Entity/hkpRigidBody.h>
 #include <Physics/Dynamics/Phantom/hkpSimpleShapePhantom.h>
 #include <Physics/Collide/Agent/hkpProcessCollisionInput.h>
+#include <Physics/Collide/BroadPhase/3AxisSweep/hkp3AxisSweep.h>
 #include <Physics/Collide/Filter/hkpCollisionFilter.h>
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Collide/Agent/Collidable/hkpCdPoint.h>
@@ -51,6 +52,7 @@ namespace RE
 
 enum class HavokProperty : hkUint32
 {
+    RootNode = 0, // NiNode - set for charcontroller rigidbodies
     Node = 1, // NiAVObject
     CollisionObject = 2, // bhkCollisionObject
     Character = 1000, // Character
@@ -440,3 +442,7 @@ void bhkMalleableConstraint_ctor(bhkMalleableConstraint *_this, hkMalleableConst
 bhkMalleableConstraint *CreateMalleableConstraint(bhkConstraint *constraint, float strength);
 hkpConstraintInstance *LimitedHingeToRagdollConstraint(hkpConstraintInstance *constraint);
 bhkRagdollConstraint *ConvertToRagdollConstraint(bhkConstraint *constraint);
+
+typedef void (*_hkp3AxisSweep_removeObject)(hkp3AxisSweep *, hkpBroadPhaseHandle *, hkArray<hkpBroadPhaseHandlePair> *);
+typedef void (*_hkp3AxisSweep_removeObjectBatch)(hkp3AxisSweep *, hkArrayBase<hkpBroadPhaseHandle *> *, hkArray<hkpBroadPhaseHandlePair> *);
+

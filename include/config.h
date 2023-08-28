@@ -296,6 +296,7 @@ namespace Config {
         float playerCapsuleRadius = 0.15f;
 
         bool convertNonRagdollBipedObjectsToDeadBip = true;
+        bool removeRagdollWhenExitingHighProcess = true;
 
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
