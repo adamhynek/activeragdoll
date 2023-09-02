@@ -486,6 +486,9 @@ extern RelocAddr<_NiNode_AddOrRemoveMalleableConstraints> NiNode_AddOrRemoveMall
 typedef void(*_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints)(BSAnimationGraphManager *_this, bool *a1);
 extern RelocAddr<_BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints> BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints;
 
+typedef void(*_BSAnimationGraphManager_RemoveNonRagdollRigidBodiesFromWorld)(BSAnimationGraphManager *_this, bool *a1);
+extern RelocAddr<_BSAnimationGraphManager_RemoveNonRagdollRigidBodiesFromWorld> BSAnimationGraphManager_RemoveNonRagdollRigidBodiesFromWorld;
+
 typedef hkaRagdollInstance *(*_hkbRagdollDriver_getRagdoll)(hkbRagdollDriver *_this);
 extern RelocAddr<_hkbRagdollDriver_getRagdoll> hkbRagdollDriver_getRagdoll;
 

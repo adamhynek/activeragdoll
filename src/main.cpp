@@ -5175,11 +5175,49 @@ void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType
     GetUpEnd_NiNode_SetMotionTypeDownwards_Original(node, motionType, a3, a4, a5);
 }
 
+
+struct RemoveNonRagdollRigidBodiesFromWorldTask : TaskDelegate
+{
+    static RemoveNonRagdollRigidBodiesFromWorldTask *Create(UInt32 refHandle)
+    {
+        RemoveNonRagdollRigidBodiesFromWorldTask *cmd = new RemoveNonRagdollRigidBodiesFromWorldTask;
+        if (cmd) {
+            cmd->handle = refHandle;
+        }
+        return cmd;
+    }
+
+    virtual void Run() {
+        NiPointer<TESObjectREFR> refr;
+        if (LookupREFRByHandle(handle, refr)) {
+            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+                BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+                if (GetAnimationGraphManager(actor, animGraphManager)) {
+                    BSAnimationGraphManager *manager = animGraphManager.ptr;
+
+                    bool x = false;
+                    BSAnimationGraphManager_RemoveNonRagdollRigidBodiesFromWorld(manager, &x);
+                }
+            }
+        }
+    }
+
+    virtual void Dispose() {
+        delete this;
+    }
+
+    UInt32 handle;
+};
+
 _BSTaskPool_QueueRemoveCollisionFromWorld GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original = 0;
 void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *node)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(node);
-    if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
+    if (refr && g_activeActors.count(static_cast<Actor *>(refr))) {
+        UInt32 handle = GetOrCreateRefrHandle(refr);
+        g_taskInterface->AddTask(RemoveNonRagdollRigidBodiesFromWorldTask::Create(handle));
+        return;
+    }
 
     GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original(taskPool, node);
 }
