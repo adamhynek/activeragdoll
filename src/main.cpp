@@ -679,7 +679,9 @@ struct SwingHandler
 
         float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
         float currentStamina = player->actorValueOwner.GetCurrent(26);
-        if (staminaCost > 0.f && currentStamina <= 0.f) {
+        float requiredStamina = Config::options.requireFullPowerAttackStamina ? staminaCost : 0.f;
+
+        if (staminaCost > 0.f && currentStamina <= requiredStamina) {
             if (!isBash) {
                 // No stamina to power attack, so re-set the attackdata but this time explicitly set powerattack to false
                 PlayerCharacter_UpdateAndGetAttackData(player, isLeft, isOffhand, false, &attackData);
@@ -735,7 +737,9 @@ struct SwingHandler
 
         float staminaCost = ActorValueOwner_GetStaminaCostForAttackData(&player->actorValueOwner, attackData);
         float currentStamina = player->actorValueOwner.GetCurrent(26);
-        if (staminaCost > 0.f && currentStamina <= 0.f) {
+        float requiredStamina = Config::options.requireFullBashStamina ? staminaCost : 0.f;
+
+        if (staminaCost > 0.f && currentStamina <= requiredStamina) {
             // No stamina to bash
             if (Config::options.failBashWhenOutOfStamina) {
                 SetAttackState(player, 0);

@@ -191,6 +191,9 @@ namespace Config {
         if (!RegisterFloat("activeRagdollStartDistance", options.activeRagdollStartDistance)) success = false;
         if (!RegisterFloat("activeRagdollEndDistance", options.activeRagdollEndDistance)) success = false;
 
+        if (!RegisterBool("requireFullPowerAttackStamina", options.requireFullPowerAttackStamina)) success = false;
+        if (!RegisterBool("requireFullBashStamina", options.requireFullBashStamina)) success = false;
+
         if (!RegisterBool("skipRootCalculations", options.skipRootCalculations)) success = false;
 
         if (!RegisterDouble("blendInTime", options.blendInTime)) success = false;

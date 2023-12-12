@@ -17,6 +17,9 @@ namespace Config {
         double physicalBlockWindow = 0.2;
         float weaponRotationRecloneThreshold = 0.1f;
 
+        bool requireFullPowerAttackStamina = false;
+        bool requireFullBashStamina = false;
+
         bool skipRootCalculations = false;
 
         bool blendWhenGettingUp = false;
