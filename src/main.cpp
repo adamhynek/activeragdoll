@@ -2227,6 +2227,12 @@ struct NPCData
     {
         if (character->IsDead(1)) return;
         if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
+
+        {
+            std::scoped_lock lock(g_interface001.aggressionIgnoredActorsLock);
+            if (g_interface001.aggressionIgnoredActors.count(character)) return;
+        }
+
         if ((Config::options.followersSkipAggression && IsTeammate(character)) ||
             (RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank))
         {
