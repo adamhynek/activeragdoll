@@ -470,10 +470,12 @@ inline bool IsHeldRigidBody(hkpRigidBody *rigidBody)
 
 inline bool IsHiggsRigidBody(hkpRigidBody *rigidBody)
 {
-    if ((rigidBody->getCollidable()->getBroadPhaseHandle()->getCollisionFilterInfo() & 0x7f) != g_higgsCollisionLayer) {
+    UInt32 collisionLayer = GetCollisionLayer(rigidBody);
+    bool isHeld = IsHeldRigidBody(rigidBody);
+    if (collisionLayer != g_higgsCollisionLayer && !isHeld) {
         return false;
     }
-    return IsPlayerHandRigidBody(rigidBody) || IsPlayerWeaponRigidBody(rigidBody) || IsHeldRigidBody(rigidBody);
+    return IsPlayerHandRigidBody(rigidBody) || IsPlayerWeaponRigidBody(rigidBody) || isHeld;
 }
 
 inline bool IsHittableCharController(TESObjectREFR *refr)
@@ -1577,7 +1579,7 @@ struct PhysicsListener :
 
                     if (Config::options.doClutterVsBipedCollisionDamage) {
                         hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
-                        if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {
+                        if (!IsHiggsRigidBody(hittingBody) && !physicsHitCooldownTargets.count({ actor, hittingBody })) {
                             bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
                             // Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just use the base game's minimums)
                             Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
@@ -1634,17 +1636,21 @@ struct PhysicsListener :
             }
         }
 
-        if (layerA != g_higgsCollisionLayer && layerB != g_higgsCollisionLayer) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
+        bool isAhiggs = IsHiggsRigidBody(rigidBodyA);
+        bool isBhiggs = IsHiggsRigidBody(rigidBodyB);
+        if (!isAhiggs && !isBhiggs) return; // Every collision we care about involves a rigidbody involved with higgs (hand, weapon, held object)
 
-        if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) {
-            // Both objects are on the higgs layer
+        if (isAhiggs && isBhiggs) {
+            // Both objects are higgs rigidbodies - don't let them hit each other
             if (!IsMoveableEntity(rigidBodyA) && !IsMoveableEntity(rigidBodyB)) {
+                // Both nonmoveable likely implies hand vs hand, or weapon vs hand, or weapon vs weapon
+                // We set those to keyframed_reporting and if we don't disable contact, it'll trigger haptics and such
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
             }
             return;
         }
 
-        hkpRigidBody *hitRigidBody = layerA == g_higgsCollisionLayer ? rigidBodyB : rigidBodyA;
+        hkpRigidBody *hitRigidBody = isAhiggs ? rigidBodyB : rigidBodyA;
         hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
         bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
@@ -1794,11 +1800,13 @@ struct PhysicsListener :
         hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
         hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
-        UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-        UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
-        if (layerA != g_higgsCollisionLayer && layerB != g_higgsCollisionLayer) return; // Every collision we care about involves a body on the higgs layer (hand, held object...)
+        UInt32 layerA = GetCollisionLayer(rigidBodyA);
+        UInt32 layerB = GetCollisionLayer(rigidBodyB);
+        bool isAhiggs = IsHiggsRigidBody(rigidBodyA);
+        bool isBhiggs = IsHiggsRigidBody(rigidBodyB);
+        if (!isAhiggs && !isBhiggs) return; // Every collision we care about involves a rigidbody involved with higgs (hand, weapon, held object)
 
-        if (layerA == g_higgsCollisionLayer && layerB == g_higgsCollisionLayer) return; // Both objects are on the higgs layer
+        if (isAhiggs && isBhiggs) return; // Both objects are on the higgs layer
 
         events.push_back({ rigidBodyA, rigidBodyB, CollisionEvent::Type::Added });
         //_DMESSAGE("%d Added %x %x", *g_currentFrameCounter, (UInt64)rigidBodyA, (UInt64)rigidBodyB);
