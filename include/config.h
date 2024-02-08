@@ -43,6 +43,7 @@ namespace Config {
         double thrownObjectLingerTime = 5.0;
 
         double worldChangedWaitTime = 0.4;
+        int minFramesBetweenActorAdds = 2;
 
         bool disablePlayerFollowerCollision = false;
         bool disablePlayerSummonCollision = false;

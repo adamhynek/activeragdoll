@@ -218,6 +218,7 @@ namespace Config {
         if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
 
         if (!RegisterDouble("worldChangedWaitTime", options.worldChangedWaitTime)) success = false;
+        if (!RegisterInt("minFramesBetweenActorAdds", options.minFramesBetweenActorAdds)) success = false;
 
         if (!RegisterBool("disablePlayerFollowerCollision", options.disablePlayerFollowerCollision)) success = false;
         if (!RegisterBool("disablePlayerSummonCollision", options.disablePlayerSummonCollision)) success = false;

@@ -1800,8 +1800,6 @@ struct PhysicsListener :
         hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
         hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
 
-        UInt32 layerA = GetCollisionLayer(rigidBodyA);
-        UInt32 layerB = GetCollisionLayer(rigidBodyB);
         bool isAhiggs = IsHiggsRigidBody(rigidBodyA);
         bool isBhiggs = IsHiggsRigidBody(rigidBodyB);
         if (!isAhiggs && !isBhiggs) return; // Every collision we care about involves a rigidbody involved with higgs (hand, weapon, held object)
@@ -2441,7 +2439,7 @@ bool IsAddedToWorld(Actor *actor)
     return true;
 }
 
-bool CanAddToWorld(Actor *actor)
+bool IsAddableToWorld(Actor *actor)
 {
     if (TESRace *race = actor->race) {
         const char *name = race->editorId;
@@ -2639,6 +2637,9 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
     ragdollToAnimMapper->m_mapping.m_simpleMappings.m_size = mappedBones.size();
 }
 
+
+int g_lastActorAddedToWorldFrame = 0;
+
 bool AddRagdollToWorld(Actor *actor)
 {
     if (!Config::options.processRagdolledActors && Actor_IsInRagdollState(actor)) return false;
@@ -2711,6 +2712,8 @@ bool AddRagdollToWorld(Actor *actor)
             }
         }
     }
+
+    g_lastActorAddedToWorldFrame = *g_currentFrameCounter;
 
     return true;
 }
@@ -3568,7 +3571,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(actorHandle, refr) && refr != player) {
             Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
-            if (!actor || !actor->GetNiNode()) continue;
+            if (!actor || !actor->GetNiNode()) {
+                continue;
+            }
 
             std::shared_ptr<ActorData> actorData = GetActorData(actor);
             if (!actorData) {
@@ -3682,16 +3687,18 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
             bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
 
-            bool shouldAddToWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
-            bool shouldRemoveFromWorld = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
+            bool shouldBeActive = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
+            bool shouldBeInactive = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
             bool isAddedToWorld = IsAddedToWorld(actor);
             bool isActiveActor = g_activeActors.count(actor);
             bool isProcessedActor = isActiveActor || isHittableCharController;
-            bool canAddToWorld = CanAddToWorld(actor);
+            bool isAddableToWorld = IsAddableToWorld(actor);
 
-            if (shouldAddToWorld) {
-                if ((!isAddedToWorld || !isProcessedActor) && canAddToWorld) {
+            bool isAllowedToAddToWorld = *g_currentFrameCounter - g_lastActorAddedToWorldFrame > Config::options.minFramesBetweenActorAdds;
+
+            if (shouldBeActive) {
+                if ((!isAddedToWorld || !isProcessedActor) && isAddableToWorld && isAllowedToAddToWorld) {
                     AddRagdollToWorld(actor);
                     if (collisionGroup != 0) {
                         g_activeBipedGroups.insert(collisionGroup);
@@ -3701,7 +3708,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     }
                 }
 
-                if (!canAddToWorld) {
+                if (!isAddableToWorld) {
                     if (isActiveActor) {
                         // Someone in range went from having a ragdoll or not being excluded, to not having a ragdoll or being excluded
                         RemoveRagdollFromWorld(actor);
@@ -3930,8 +3937,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
                 }
             }
-            else if (shouldRemoveFromWorld) {
-                if (isAddedToWorld && canAddToWorld && isActiveActor) {
+            else if (shouldBeInactive) {
+                if (isAddedToWorld && isAddableToWorld && isActiveActor) {
                     RemoveRagdollFromWorld(actor);
                     CleanupActiveGroupTracking(collisionGroup);
                 }
@@ -5091,6 +5098,7 @@ static RelocPtr<_hkp3AxisSweep_removeObject> hkp3AxisSweep_removeObject_vtbl(0x1
 static RelocPtr<_hkp3AxisSweep_removeObjectBatch> hkp3AxisSweep_removeObjectBatch_vtbl(0x17D25C0);
 
 static RelocPtr<_bhkWorld_dtor> bhkWorld_dtor_vtbl(0x1823978);
+
 static RelocPtr<_Actor_DetachHavok> Actor_DetachHavok_vtbl(0x16D7108);
 static RelocPtr<_Actor_DetachHavok> Actor_MoveHavok_vtbl(0x16D7210);
 static RelocPtr<_Actor_MoveToHigh> Actor_MoveToHigh_vtbl(0x16D7578);
