@@ -2797,7 +2797,7 @@ void DisableOrEnableSyncOnUpdate(Actor *actor, bool disableElseEnable)
     }
 }
 
-void RemoveActorFromWorldIfActive(Actor *actor)
+void RemoveActorFromWorldIfActiveFromProcessTransition(Actor *actor)
 {
     // Why is this its own function? Why not use RemoveRagdollFromWorld()?
     // This is called from MoveToX() functions, and it needs to happen at the time they are called.
@@ -2825,6 +2825,16 @@ void RemoveActorFromWorldIfActive(Actor *actor)
     }
     else if (isHittableCharController) {
         g_hittableCharControllerGroups.erase(collisionGroup);
+    }
+}
+
+void RemoveActorFromWorldIfActive(Actor *actor)
+{
+    bool isActiveActor = g_activeActors.count(actor);
+    bool isAddedToWorld = IsAddedToWorld(actor);
+
+    if (isAddedToWorld && isActiveActor) {
+        RemoveRagdollFromWorld(actor);
     }
 }
 
@@ -5134,7 +5144,7 @@ void Actor_MoveToMiddleHigh_Hook(Actor *actor)
     _MESSAGE("%d MoveToMiddleHigh %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActive(actor);
+    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToMiddleHigh_Original(actor);
 }
@@ -5148,7 +5158,7 @@ void Actor_MoveToMiddleLow_Hook(Actor *actor)
     _MESSAGE("%d MoveToMiddleLow %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActive(actor);
+    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToMiddleLow_Original(actor);
 }
@@ -5162,7 +5172,7 @@ void Actor_MoveToLow_Hook(Actor *actor)
     _MESSAGE("%d MoveToLow %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActive(actor);
+    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToLow_Original(actor);
 }
