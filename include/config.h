@@ -302,6 +302,8 @@ namespace Config {
         bool convertNonRagdollBipedObjectsToDeadBip = true;
         bool removeRagdollWhenExitingHighProcess = true;
 
+        bool removeActiveActorsOnLoad = true;
+
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
         std::set<std::string, std::less<>> aggressionExcludeRaces;

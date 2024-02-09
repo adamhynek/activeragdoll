@@ -3190,6 +3190,27 @@ bool UpdateActorShove(Actor *actor)
 
 void ResetObjects()
 {
+#ifdef _DEBUG
+    _MESSAGE("%d Reset objects", *g_currentFrameCounter);
+#endif // _DEBUG
+
+    if (Config::options.removeActiveActorsOnLoad) {
+        if (AIProcessManager *processManager = *g_aiProcessManager) {
+            for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
+                UInt32 actorHandle = processManager->actorsHigh[i];
+                NiPointer<TESObjectREFR> refr;
+                if (LookupREFRByHandle(actorHandle, refr) && refr != *g_thePlayer) {
+                    Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
+                    if (!actor || !actor->GetNiNode()) {
+                        continue;
+                    }
+
+                    RemoveActorFromWorldIfActive(actor);
+                }
+            }
+        }
+    }
+
     g_npcs.clear();
     g_activeActors.clear();
     g_activeRagdolls.clear();

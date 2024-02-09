@@ -461,6 +461,8 @@ namespace Config {
         if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;
         if (!RegisterBool("removeRagdollWhenExitingHighProcess", options.removeRagdollWhenExitingHighProcess)) success = false;
 
+        if (!RegisterBool("removeActiveActorsOnLoad", options.removeActiveActorsOnLoad)) success = false;
+
         if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
         if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;
