@@ -1571,21 +1571,23 @@ struct PhysicsListener :
                         return;
                     }
 
-                    hkpRigidBody *otherBody = isATarget ? rigidBodyB : rigidBodyA;
-                    if (Config::options.disableBipedClutterCollisionWithNonMoveableObjects && !IsMoveableEntity(otherBody) && g_activeActors.count(actor)) {
-                        evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
-                        return;
-                    }
+                    hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
 
-                    if (Config::options.doClutterVsBipedCollisionDamage) {
-                        hkpRigidBody *hittingBody = isATarget ? rigidBodyB : rigidBodyA;
-                        if (!IsHiggsRigidBody(hittingBody) && !physicsHitCooldownTargets.count({ actor, hittingBody })) {
-                            bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
-                            // Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just use the base game's minimums)
-                            Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
-                            float minMass = aggressor ? Config::options.collisionDamageMinMassPlayerInflicted : *g_fPhysicsDamage1Mass;
-                            float minSpeed = aggressor ? Config::options.collisionDamageMinSpeedPlayerInflicted : *g_fPhysicsDamageSpeedMin;
-                            ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()), minMass, minSpeed);
+                    if (!IsHiggsRigidBody(hittingBody)) {
+                        if (Config::options.disableBipedClutterCollisionWithNonMoveableObjects && !IsMoveableEntity(hittingBody) && g_activeActors.count(actor)) {
+                            evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+                            return;
+                        }
+
+                        if (Config::options.doClutterVsBipedCollisionDamage) {
+                            if (!physicsHitCooldownTargets.count({ actor, hittingBody })) {
+                                bhkRigidBody *collidingRigidBody = (bhkRigidBody *)hittingBody->m_userData;
+                                // Different hit speed / mass thresholds for stuff thrown by the player vs random stuff colliding (for non-player thrown stuff, just use the base game's minimums)
+                                Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
+                                float minMass = aggressor ? Config::options.collisionDamageMinMassPlayerInflicted : *g_fPhysicsDamage1Mass;
+                                float minSpeed = aggressor ? Config::options.collisionDamageMinSpeedPlayerInflicted : *g_fPhysicsDamageSpeedMin;
+                                ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()), minMass, minSpeed);
+                            }
                         }
                     }
                 }
