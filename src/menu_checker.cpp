@@ -17,7 +17,6 @@ namespace MenuChecker
         "Dialogue Menu",
         "Crafting Menu",
         "Credits Menu",
-        "Cursor Menu",
         "Debug Text Menu",
         "FavoritesMenu",
         "GiftMenu",
