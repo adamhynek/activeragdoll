@@ -1864,7 +1864,17 @@ struct PhysicsListener :
         // Now fill in the currently collided-with actors based on active collisions
         for (auto [pair, count] : activeCollisions) {
             auto [bodyA, bodyB] = pair;
-            hkpRigidBody *collidedBody = IsHiggsRigidBody(bodyA) ? bodyB : bodyA;
+
+            // There is a case where we touch someone with a held object and then let go.
+            // The active collision will remain even though we are no longer holding the object.
+            // This can happen even if the held "object" is part of the character's ragdoll.
+            // So keep the collision tracked (in case we re-grab the object) but don't truly count it. It will be removed either way when the collision is removed, held or not.
+
+            bool isAhiggs = IsHiggsRigidBody(bodyA);
+            bool isBhiggs = IsHiggsRigidBody(bodyB);
+            if (!isAhiggs && !isBhiggs) continue;
+
+            hkpRigidBody *collidedBody = isAhiggs ? bodyB : bodyA;
             collidedRigidbodies.insert(collidedBody);
 
             if (TESObjectREFR *collidedRef = GetRefFromCollidable(collidedBody->getCollidable())) {
