@@ -266,6 +266,8 @@ namespace Config {
         bool playMeleeWorldImpactSounds = true;
         bool playMeleeImpactEffects = true;
 
+        bool preventActorSelfHits = true;
+
         int numControllerVelocitySmoothingFrames = 5;
         int numControllerAngularVelocityTrackingFrames = 10;
 

@@ -1700,6 +1700,16 @@ struct PhysicsListener :
             return;
         }
 
+        if (Config::options.preventActorSelfHits) {
+            NiPointer<TESObjectREFR> hittingRefr = GetRefFromCollidable(&hittingRigidBody->m_collidable);
+            if (hittingRefr && hittingRefr == hitRefr && hitRefr->formType == kFormType_Character) {
+                // Thing that hit is from the same refr as the thing getting hit.
+                // We don't want this, to prevent stuff like if you grab someone's arm and "hit" them with it.
+                // Don't disable contact in this case, just don't proceed with the hit.
+                return;
+            }
+        }
+
         // A contact point of any sort confirms a collision, regardless of any collision added or removed events
 
         hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();

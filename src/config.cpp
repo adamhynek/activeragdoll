@@ -425,6 +425,8 @@ namespace Config {
         if (!RegisterBool("playMeleeWorldImpactSounds", options.playMeleeWorldImpactSounds)) success = false;
         if (!RegisterBool("playMeleeImpactEffects", options.playMeleeImpactEffects)) success = false;
 
+        if (!RegisterBool("preventActorSelfHits", options.preventActorSelfHits)) success = false;
+
         if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
         if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;
 
