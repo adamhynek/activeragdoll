@@ -41,6 +41,7 @@ namespace Config {
         double physicsHitRecoveryTime = 0.01;
 
         double thrownObjectLingerTime = 5.0;
+        double thrownObjectIgnoreHitTime = 0.1;
 
         double worldChangedWaitTime = 0.4;
         int minFramesBetweenActorAdds = 2;

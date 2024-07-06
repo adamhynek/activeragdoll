@@ -423,6 +423,7 @@ std::unordered_set<UInt16> g_hittableCharControllerGroups{};
 std::unordered_set<UInt16> g_selfCollidableBipedGroups{};
 
 std::unordered_map<bhkRigidBody *, double> g_higgsLingeringRigidBodies{};
+std::unordered_map<TESObjectREFR *, double> g_higgsLingeringRefrs[2]{}; // [right hand, left hand]
 bhkRigidBody *g_rightHand = nullptr;
 bhkRigidBody *g_leftHand = nullptr;
 bhkRigidBody *g_rightWeapon = nullptr;
@@ -1649,7 +1650,7 @@ struct PhysicsListener :
                 // We set those to keyframed_reporting and if we don't disable contact, it'll trigger haptics and such
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
             }
-            return;
+            return; // TODO: We may want to loosen this constraint and let you hit a held object, so that you can e.g. destroy a bottle you're holding
         }
 
         hkpRigidBody *hitRigidBody = isAhiggs ? rigidBodyB : rigidBodyA;
@@ -1692,6 +1693,11 @@ struct PhysicsListener :
         if (hitCooldownTargets[isLeft].count(hitRefr)) {
             // refr is currently under a hit cooldown, so disable the contact point and gtfo
             evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+            return;
+        }
+
+        if (g_higgsLingeringRefrs[isLeft].count(hitRefr)) {
+            // This refr was recently dropped by the player. Don't eat the collision but don't allow the hit.
             return;
         }
 
@@ -2158,6 +2164,46 @@ void PrePhysicsStepCallback(void *world)
             // collision is enabled
             rb->hkBody->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo |= 0x4000; // disable collision
             bhkWorldObject_UpdateCollisionFilter(rb);
+        }
+    }
+
+    {
+        // Set lingering rigidbodies while we hold them
+        if (g_rightHeldObject) {
+            g_higgsLingeringRigidBodies[g_rightHeldObject] = g_currentFrameTime;
+        }
+        if (g_leftHeldObject) {
+            g_higgsLingeringRigidBodies[g_leftHeldObject] = g_currentFrameTime;
+        }
+
+        // Clear out old dropped / thrown rigidbodies
+        for (auto it = g_higgsLingeringRigidBodies.begin(); it != g_higgsLingeringRigidBodies.end();) {
+            auto [target, lastHeldTime] = *it;
+            if ((g_currentFrameTime - lastHeldTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectLingerTime)
+                it = g_higgsLingeringRigidBodies.erase(it);
+            else
+                ++it;
+        }
+
+
+        // Lingering refrs are those that were just dropped
+        if (g_rightHeldRefr) {
+            g_higgsLingeringRefrs[0][g_rightHeldRefr] = g_currentFrameTime;
+        }
+        if (g_leftHeldRefr) {
+            g_higgsLingeringRefrs[1][g_leftHeldRefr] = g_currentFrameTime;
+        }
+
+        for (int isLeft = 0; isLeft < 2; isLeft++) {
+            auto &lingeringRefrs = g_higgsLingeringRefrs[isLeft];
+            for (auto it = lingeringRefrs.begin(); it != lingeringRefrs.end();) {
+                auto [target, lastHeldTime] = *it;
+                if ((g_currentFrameTime - lastHeldTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectIgnoreHitTime) {
+                    it = lingeringRefrs.erase(it);
+                }
+                else
+                    ++it;
+            }
         }
     }
 }
@@ -3253,6 +3299,8 @@ void ResetObjects()
     g_hittableCharControllerGroups.clear();
     g_selfCollidableBipedGroups.clear();
     g_higgsLingeringRigidBodies.clear();
+    g_higgsLingeringRefrs[0].clear();
+    g_higgsLingeringRefrs[1].clear();
     g_keepOffsetActors.clear();
     g_bumpActors.clear();
     g_shoveData.clear();
@@ -3548,30 +3596,14 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             g_higgsCollisionLayer = rightHand->hkBody->m_collidable.getBroadPhaseHandle()->m_collisionFilterInfo & 0x7f;
         }
 
-        g_prevLeftHeldObject = g_leftHeldObject;
         g_prevRightHeldObject = g_rightHeldObject;
+        g_prevLeftHeldObject = g_leftHeldObject;
 
         g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
         g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
 
         g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
         g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
-
-        if (g_rightHeldObject) {
-            g_higgsLingeringRigidBodies[g_rightHeldObject] = g_currentFrameTime;
-        }
-        if (g_leftHeldObject) {
-            g_higgsLingeringRigidBodies[g_leftHeldObject] = g_currentFrameTime;
-        }
-
-        // Clear out old dropped / thrown rigidbodies
-        for (auto it = g_higgsLingeringRigidBodies.begin(); it != g_higgsLingeringRigidBodies.end();) {
-            auto [target, hitTime] = *it;
-            if ((g_currentFrameTime - hitTime) * *g_globalTimeMultiplier >= Config::options.thrownObjectLingerTime)
-                it = g_higgsLingeringRigidBodies.erase(it);
-            else
-                ++it;
-        }
     }
 
     UpdateHiggsDrop();

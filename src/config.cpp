@@ -216,6 +216,7 @@ namespace Config {
         if (!RegisterDouble("physicsHitRecoveryTime", options.physicsHitRecoveryTime)) success = false;
 
         if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
+        if (!RegisterDouble("thrownObjectIgnoreHitTime", options.thrownObjectIgnoreHitTime)) success = false;
 
         if (!RegisterDouble("worldChangedWaitTime", options.worldChangedWaitTime)) success = false;
         if (!RegisterInt("minFramesBetweenActorAdds", options.minFramesBetweenActorAdds)) success = false;
