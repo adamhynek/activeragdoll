@@ -1643,17 +1643,31 @@ struct PhysicsListener :
         bool isBhiggs = IsHiggsRigidBody(rigidBodyB);
         if (!isAhiggs && !isBhiggs) return; // Every collision we care about involves a rigidbody involved with higgs (hand, weapon, held object)
 
+        bool isAheld = IsHeldRigidBody(rigidBodyA);
+        bool isBheld = IsHeldRigidBody(rigidBodyB);
+
         if (isAhiggs && isBhiggs) {
             // Both objects are higgs rigidbodies - don't let them hit each other
             if (!IsMoveableEntity(rigidBodyA) && !IsMoveableEntity(rigidBodyB)) {
                 // Both nonmoveable likely implies hand vs hand, or weapon vs hand, or weapon vs weapon
                 // We set those to keyframed_reporting and if we don't disable contact, it'll trigger haptics and such
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+                return;
             }
-            return; // TODO: We may want to loosen this constraint and let you hit a held object, so that you can e.g. destroy a bottle you're holding
+            else if (isAheld && isBheld) {
+                // Both are held objects - don't let them hit each other
+                // TODO: We could try to handle this properly
+                return;
+            }
+            else if (!isAheld && !isBheld) {
+                // Only allow hits vs held objects. Still let the collision happen though.
+                return;
+            }
         }
 
-        hkpRigidBody *hitRigidBody = isAhiggs ? rigidBodyB : rigidBodyA;
+        // Since neither object is held, this means at least one of them is a weapon or hand
+        bool isAhandOrWeapon = isAhiggs && !isAheld;
+        hkpRigidBody *hitRigidBody = isAhandOrWeapon ? rigidBodyB : rigidBodyA;
         hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
         bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
