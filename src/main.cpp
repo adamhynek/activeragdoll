@@ -1733,10 +1733,13 @@ struct PhysicsListener :
         // A contact point of any sort confirms a collision, regardless of any collision added or removed events
 
         hkVector4 hkHitPos = evnt.m_contactPoint->getPosition();
-        hkVector4 pointVelocity; hittingRigidBody->getPointVelocity(hkHitPos, pointVelocity);
-        NiPoint3 hkHitVelocity = HkVectorToNiPoint(pointVelocity);
+        NiPoint3 hittingObjPointVelocity = hkpRigidBody_getPointVelocity(hittingRigidBody, hkHitPos);
+        NiPoint3 hitObjPointVelocity = hkpRigidBody_getPointVelocity(hitRigidBody, hkHitPos);
+
+        NiPoint3 hkHitVelocity = hittingObjPointVelocity - hitObjPointVelocity;
+
         float hitSpeed = VectorLength(hkHitVelocity);
-        // TODO: Make the hit speed affect damage? (how?)
+
         bool isOffhand = *g_leftHandedMode ? !isLeft : isLeft;
         TESForm *equippedObj = player->GetEquippedObject(isOffhand);
         TESObjectWEAP *weap = DYNAMIC_CAST(equippedObj, TESForm, TESObjectWEAP);

@@ -374,6 +374,8 @@ inline bool IsMotionTypeMoveable(UInt8 motionType) {
 }
 inline bool IsMoveableEntity(hkpEntity *entity) { return IsMotionTypeMoveable(entity->m_motion.m_type); }
 
+NiPoint3 hkpRigidBody_getPointVelocity(const hkpRigidBody *body, const hkVector4 &pos);
+
 hkMemoryRouter &hkGetMemoryRouter();
 inline void *hkHeapAlloc(int numBytes) {
     return hkGetMemoryRouter().heap().blockAlloc(numBytes);

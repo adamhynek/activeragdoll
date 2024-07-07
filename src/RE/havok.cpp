@@ -422,3 +422,10 @@ bool bhkCollisionFilter_CompareFilterInfosEx(bhkCollisionFilter *_this, UInt32 f
 
     return _bittest64(&layerBitfield, layerB);
 }
+
+NiPoint3 hkpRigidBody_getPointVelocity(const hkpRigidBody *body, const hkVector4 &pos)
+{
+    hkVector4 pointVelocity; body->getPointVelocity(pos, pointVelocity);
+    return HkVectorToNiPoint(pointVelocity);
+}
+
