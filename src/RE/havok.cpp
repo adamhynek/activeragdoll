@@ -382,56 +382,6 @@ void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *con
 //    }
 //}
 
-NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec)
-{
-    NiPoint3 qreal = { quat.m_fW, quat.m_fW, quat.m_fW };
-    NiPoint3 q2minus1 = NiPoint3(qreal.x * qreal.x, qreal.y * qreal.y, qreal.z * qreal.z) - NiPoint3(0.5, 0.5, 0.5);
-
-    NiPoint3 ret;
-    //ret.setMul4(q2minus1, direction);
-    ret = { q2minus1.x * vec.x, q2minus1.y * vec.y, q2minus1.z * vec.z };
-
-    //hkReal imagDotDir = quat.getImag().dot3(direction);
-    float imagDotDir = DotProduct({quat.m_fX, quat.m_fY, quat.m_fZ}, vec);
-
-    //ret.addMul4(imagDotDir, quat.getImag());
-    ret += {quat.m_fX * imagDotDir, quat.m_fY * imagDotDir, quat.m_fZ * imagDotDir};
-
-    NiPoint3 imagCrossDir;
-    //imagCrossDir.setCross(quat.getImag(), direction);
-    imagCrossDir = CrossProduct({quat.m_fX, quat.m_fY, quat.m_fZ}, vec);
-    //ret.addMul4(qreal, imagCrossDir);
-    ret += {qreal.x * imagCrossDir.x, qreal.y * imagCrossDir.y, qreal.z * imagCrossDir.z};
-
-    //this->setAdd4(ret, ret);
-    return ret + ret;
-}
-
-hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b)
-{
-    hkQsTransform tmp;
-
-    tmp.m_scale.setMul4(a->m_scale, b.m_scale);
-    tmp.m_rotation = NiQuatToHkQuat(QuaternionMultiply(HkQuatToNiQuat(a->m_rotation), HkQuatToNiQuat(b.m_rotation)));
-
-
-    //hkVector4 rotatedDir; rotatedDir.setRotatedDir(a->m_rotation, b.m_translation);
-    hkVector4 rotatedDir = NiPointToHkVector(RotateVectorByQuaternion(HkQuatToNiQuat(a->m_rotation), HkVectorToNiPoint(b.m_translation)));
-    rotatedDir.setMul4(rotatedDir, a->m_scale);
-
-    tmp.m_translation.setAdd4(a->m_translation, rotatedDir);
-
-    return tmp;
-}
-
-void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const hkQsTransform &a_worldFromModel, const hkQsTransform *a_poseLocal, hkQsTransform *a_poseWorldOut)
-{
-    for (int i = 0; i < a_numBones; i++) {
-        int parentIndex = a_parentIndices[i];
-        const hkQsTransform *parentPose = parentIndex == -1 ? &a_worldFromModel : &a_poseWorldOut[parentIndex];
-        a_poseWorldOut[i] = hkQsTransform_Multiply(parentPose, a_poseLocal[i]);
-    }
-}
 
 void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut)
 {
@@ -460,7 +410,7 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
     ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
 
     //hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
-    hkbPoseLocalToPoseWorld_Custom(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
+    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
 }
 
 void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hkQsTransform &worldFromModel, const hkQsTransform *poseLocalIn, hkQsTransform *poseLocalOut)
@@ -469,7 +419,7 @@ void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hk
     hkStackArray<hkQsTransform> boneTransformsWS(ragdoll->getNumBones());
 
     //hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
-    hkbPoseLocalToPoseWorld_Custom(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
+    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
 
     // Now apply the rigid body T transforms to all the world transforms
     for (int i = 0; i < ragdoll->getNumBones(); i++) {

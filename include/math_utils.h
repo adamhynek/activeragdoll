@@ -127,3 +127,122 @@ inline float AngleDifference(float angle1, float angle2)
 }
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);
+
+
+
+namespace NiMathDouble
+{
+    class NiPoint3
+    {
+    public:
+        long double	x;	// 0
+        long double	y;	// 4
+        long double	z;	// 8
+
+        NiPoint3();
+        NiPoint3(long double X, long double Y, long double Z) : x(X), y(Y), z(Z) { };
+        NiPoint3(const ::NiPoint3 &pointSingle);
+
+        ::NiPoint3 ToSingle() const { return ::NiPoint3(x, y, z); }
+
+        // Negative
+        NiPoint3 operator- () const;
+
+        // Basic operations
+        NiPoint3 operator+ (const NiPoint3 &pt) const;
+        NiPoint3 operator- (const NiPoint3 &pt) const;
+
+        NiPoint3 &operator+= (const NiPoint3 &pt);
+        NiPoint3 &operator-= (const NiPoint3 &pt);
+
+        // Scalar operations
+        NiPoint3 operator* (long double fScalar) const;
+        NiPoint3 operator/ (long double fScalar) const;
+
+        NiPoint3 &operator*= (long double fScalar);
+        NiPoint3 &operator/= (long double fScalar);
+    };
+
+    class NiMatrix33
+    {
+    public:
+        union
+        {
+            long double	data[3][3];
+            long double   arr[9];
+        };
+
+        NiMatrix33() = default;
+        NiMatrix33(const ::NiMatrix33 &matSingle);
+
+        ::NiMatrix33 ToSingle() const;
+
+        void Identity();
+
+        // Matric mult
+        NiMatrix33 operator*(const NiMatrix33 &mat) const;
+
+        // Vector mult
+        NiPoint3 operator*(const NiPoint3 &pt) const;
+
+        // Scalar multiplier
+        NiMatrix33 operator*(long double fScalar) const;
+
+        NiMatrix33 Transpose() const;
+    };
+
+    // 34
+    class NiTransform
+    {
+    public:
+        NiMatrix33	rot;	// 00
+        NiPoint3	pos;	// 24
+        long double		scale;	// 30
+
+        NiTransform();
+        NiTransform(const ::NiTransform &transformSingle);
+
+        ::NiTransform ToSingle() const;
+
+        // Multiply transforms
+        NiTransform operator*(const NiTransform &rhs) const;
+
+        // Transform point
+        NiPoint3 operator*(const NiPoint3 &pt) const;
+
+        // Invert
+        void Invert(NiTransform &kDest) const;
+    };
+
+    struct NiQuaternion
+    {
+        double	m_fW;	// 0
+        double	m_fX;	// 4
+        double	m_fY;	// 8
+        double	m_fZ;	// C
+
+        NiQuaternion() = default;
+        NiQuaternion(const ::NiQuaternion &quatSingle);
+        ::NiQuaternion ToSingle() const;
+    };
+
+    struct hkQsTransform
+    {
+        NiPoint3 m_translation;
+        NiQuaternion m_rotation;
+        NiPoint3 m_scale;
+
+        hkQsTransform() = default;
+        hkQsTransform(const ::hkQsTransform &transformSingle);
+        ::hkQsTransform ToSingle() const;
+    };
+
+    inline NiTransform InverseTransform(const NiTransform &t) { NiTransform inverse; t.Invert(inverse); return inverse; }
+    inline float DotProduct(const NiPoint3 &vec1, const NiPoint3 &vec2) { return vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z; }
+    NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
+
+    NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
+    hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b);
+    void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut);
+}
+
