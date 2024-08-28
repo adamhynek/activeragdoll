@@ -5,7 +5,6 @@
 #include <iostream>
 #include <fstream>
 #include <regex>
-#include <map>
 
 #include "skse64/GameRTTI.h"
 #include "skse64/NiExtraData.h"

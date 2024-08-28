@@ -315,6 +315,73 @@ void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *con
     hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformA.m_translation, bodyATransform, pivot);
     hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformB.m_translation, bodyBTransform, pivot);
 }
+//
+//void __fastcall hkbPoseLocalToPoseWorld(int a_numBones, SInt16 *a_parentIndices, hkQsTransform *a_worldFromModel, hkQsTransform *a_poseLocal, hkQsTransform *a_poseWorldOut)
+//{
+//    __int64 parentIndex; // rax
+//    __m128 parentRotation; // xmm5
+//    hkVector4 v11; // xmm2
+//    __m128 v12; // xmm4
+//    float v14; // xmm0_4
+//    __m128 v15; // xmm4
+//    __m128 v18; // xmm2
+//    __m128 v19; // xmm6
+//    __m128 v20; // xmm3
+//    __m128 v21; // xmm5
+//    __m128 v22; // xmm1
+//
+//    for (int i = 0; i < a_numBones; i++)
+//    {
+//        parentIndex = a_parentIndices[i];
+//        hkQsTransform *parentPose = parentIndex == -1 ? a_worldFromModel : &a_poseWorldOut[parentIndex];
+//        parentRotation = parentPose->m_rotation;
+//
+//        {
+//            v11 = a_poseLocal[i].m_translation;
+//            v12 = _mm_mul_ps(parentRotation, v11);
+//            __m128 qreal = _mm_shuffle_ps(parentRotation, parentRotation, 255); // w
+//            v14 = _mm_shuffle_ps(v12, v12, 85).m128_f32_0[0] + v12.m128_f32_0[0]; // y
+//            v15 = _mm_shuffle_ps(v12, v12, 170); // z
+//            v15.m128_f32_0[0] = v15.m128_f32_0[0] + v14;
+//
+//            __m128 ret = _mm_add_ps(
+//                _mm_mul_ps(
+//                    _mm_sub_ps(
+//                        _mm_mul_ps(_mm_shuffle_ps(parentRotation, parentRotation, 201), _mm_shuffle_ps(v11, v11, 210)), // yzxw zxyw
+//                        _mm_mul_ps(_mm_shuffle_ps(parentRotation, parentRotation, 210), _mm_shuffle_ps(v11, v11, 201))), // zxyw yzxw
+//                    qreal),
+//                _mm_add_ps(
+//                    _mm_mul_ps(_mm_add_ps(_mm_mul_ps(qreal, qreal), { -0.5f, -0.5f, -0.5f, -0.5f }), v11),
+//                    _mm_mul_ps(_mm_shuffle_ps(v15, v15, 0), parentRotation))); // x
+//            __m128 rotatedDir = _mm_add_ps(ret, ret);
+//            a_poseWorldOut[i].m_translation = _mm_add_ps(rotatedDir, parentPose->m_translation);
+//        }
+//
+//        v18 = _mm_shuffle_ps(a_poseLocal[i].m_rotation, a_poseLocal[i].m_rotation, 255); // w
+//        v19 = _mm_mul_ps(a_poseLocal[i].m_rotation, parentRotation);
+//        v20 = _mm_shuffle_ps(parentRotation, parentRotation, 255); // w
+//        v21 = _mm_add_ps(
+//            _mm_add_ps(
+//                _mm_sub_ps(
+//                    _mm_mul_ps(
+//                        _mm_shuffle_ps(a_poseLocal[i].m_rotation, a_poseLocal[i].m_rotation, 210), // zxyw
+//                        _mm_shuffle_ps(parentRotation, parentRotation, 201)), // yzxw
+//                    _mm_mul_ps(
+//                        _mm_shuffle_ps(a_poseLocal[i].m_rotation, a_poseLocal[i].m_rotation, 201), // yzxw
+//                        _mm_shuffle_ps(parentRotation, parentRotation, 210))), // zxyw
+//                _mm_mul_ps(a_poseLocal[i].m_rotation, _mm_shuffle_ps(v20, v20, 0))), // x
+//            _mm_mul_ps(parentRotation, _mm_shuffle_ps(v18, v18, 0))); // x
+//        v22 = _mm_shuffle_ps(v19, v19, 170); // z
+//        v22.m128_f32_0[0] = v22.m128_f32_0[0] + (_mm_shuffle_ps(v19, v19, 85).m128_f32_0[0] + v19.m128_f32_0[0]); // y
+//        a_poseWorldOut[i].m_rotation = _mm_shuffle_ps(
+//            v21,
+//            _mm_unpackhi_ps(v21, _mm_sub_ps(v19, _mm_shuffle_ps(v22, v22, 0))), // x
+//            196); // xyxz
+//
+//        a_poseWorldOut[i].m_scale = _mm_mul_ps(a_poseLocal[i].m_scale, parentPose->m_scale);
+//    }
+//}
+
 
 void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut)
 {
@@ -342,7 +409,8 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
 
     ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
 
-    hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
+    //hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
+    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
 }
 
 void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hkQsTransform &worldFromModel, const hkQsTransform *poseLocalIn, hkQsTransform *poseLocalOut)
@@ -350,7 +418,8 @@ void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hk
     // First, compute the worldspace transforms of all bones
     hkStackArray<hkQsTransform> boneTransformsWS(ragdoll->getNumBones());
 
-    hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
+    //hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
+    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
 
     // Now apply the rigid body T transforms to all the world transforms
     for (int i = 0; i < ragdoll->getNumBones(); i++) {

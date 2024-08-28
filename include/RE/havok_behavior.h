@@ -621,3 +621,8 @@ BShkbAnimationGraph *GetAnimationGraph(hkbCharacter *character);
 Actor *GetActorFromCharacter(hkbCharacter *character);
 Actor *GetActorFromRagdollDriver(hkbRagdollDriver *driver);
 void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt8 layer);
+
+
+void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const hkQsTransform &a_worldFromModel, const hkQsTransform *a_poseLocal, hkQsTransform *a_poseWorldOut);
+
+

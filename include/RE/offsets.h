@@ -950,6 +950,9 @@ extern RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingS
 typedef void(*_Debug_MessageBox)(UInt64 a1, UInt64 a2, UInt64 a3, BSFixedString *messageBoxText);
 extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;
 
+typedef void(*_bhkCharacterController_ApplyVelocityForDuration)(bhkCharacterController *a1, const NiPoint3 &a_knockbackVec, float a_duration);
+extern RelocAddr<_bhkCharacterController_ApplyVelocityForDuration> bhkCharacterController_ApplyVelocityForDuration;
+
 
 struct UnkSwingData
 {

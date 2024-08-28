@@ -3931,6 +3931,16 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                         actor->flags2 |= (1 << 8);
                     }
 
+
+                    if (g_physicsListener.IsCollided(actor)) {
+                        if (bhkCharacterController *controller = GetCharacterController(actor)) {
+                            NiPoint3 vec = VectorNormalized(actor->pos - player->pos) * 100.f;
+                            float duration = *g_deltaTime;
+                            //bhkCharacterController_ApplyVelocityForDuration(controller, vec, duration);
+                        }
+                    }
+
+
                     // Set whether we want biped self-collision for this actor
                     if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
                         if (TESRace *race = actor->race) {
@@ -4198,6 +4208,8 @@ struct SavedConstraintData
     float twistMaxAngle;
 };
 
+NiPoint3 g_lastFootPos;
+
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
     Actor *actor = GetActorFromRagdollDriver(driver);
@@ -4334,6 +4346,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
             hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
             MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
+
+            if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+                if (std::string_view(name->name) == "Madesi") {
+                    PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(lowResPoseWorld[8].m_translation) - g_lastFootPos)), "printtofile.txt");
+                    g_lastFootPos = HkVectorToNiPoint(lowResPoseWorld[8].m_translation);
+                }
+            }
 
             // Set rigidbody transforms to the anim pose ones and save the old values
             static std::vector<hkTransform> savedTransforms{};
