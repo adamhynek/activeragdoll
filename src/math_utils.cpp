@@ -1517,15 +1517,15 @@ namespace NiMathDouble
 
     NiQuaternion::NiQuaternion(const ::NiQuaternion &quatSingle)
     {
+        m_fW = quatSingle.m_fW;
         m_fX = quatSingle.m_fX;
         m_fY = quatSingle.m_fY;
         m_fZ = quatSingle.m_fZ;
-        m_fW = quatSingle.m_fW;
     }
 
     ::NiQuaternion NiQuaternion::ToSingle() const
     {
-        return { float(m_fX), float(m_fY), float(m_fZ), float(m_fW) };
+        return { float(m_fW), float(m_fX), float(m_fY), float(m_fZ) };
     }
 
     hkQsTransform::hkQsTransform(const ::hkQsTransform &transformSingle)
@@ -1626,6 +1626,7 @@ namespace NiMathDouble
             }
 
             hkQsTransform tmpParentPose = *parentPose;
+            // TODO: USE THE COMMENTED CODE BELOW! THIS IS ONLY HERE TO DEBUG A BIT
             a_poseWorldOut[i] = hkQsTransform_Multiply(&tmpParentPose, a_poseLocal[i]).ToSingle();
             //a_poseWorldOut[i] = hkQsTransform_Multiply(&g_transforms[parentPose], g_transforms[&a_poseLocal[i]]).ToSingle();
         }
