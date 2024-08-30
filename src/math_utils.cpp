@@ -1621,14 +1621,10 @@ namespace NiMathDouble
                 g_transforms[parentPose] = *parentPose;
             }
 
-            if (!g_transforms.count(&a_poseLocal[i])) {
-                g_transforms[&a_poseLocal[i]] = a_poseLocal[i];
-            }
-
-            hkQsTransform tmpParentPose = *parentPose;
-            // TODO: USE THE COMMENTED CODE BELOW! THIS IS ONLY HERE TO DEBUG A BIT
-            a_poseWorldOut[i] = hkQsTransform_Multiply(&tmpParentPose, a_poseLocal[i]).ToSingle();
-            //a_poseWorldOut[i] = hkQsTransform_Multiply(&g_transforms[parentPose], g_transforms[&a_poseLocal[i]]).ToSingle();
+            hkQsTransform poseWorld = hkQsTransform_Multiply(&g_transforms[parentPose], a_poseLocal[i]);
+            g_transforms[&a_poseWorldOut[i]] = poseWorld;
+            a_poseWorldOut[i] = poseWorld.ToSingle();
         }
     }
 }
+
