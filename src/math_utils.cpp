@@ -2,6 +2,7 @@
 #include "utils.h"
 
 #include "skse64/NiGeometry.h"
+#include "skse64/GameRTTI.h"
 
 #include <array>
 #include <unordered_set>
@@ -1625,6 +1626,16 @@ namespace NiMathDouble
             g_transforms[&a_poseWorldOut[i]] = poseWorld;
             a_poseWorldOut[i] = poseWorld.ToSingle();
         }
+    }
+
+    hkQsTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale)
+    {
+        hkQsTransform rigidBodyLocalTransform{}; // identity
+        if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(rigidBody, bhkRigidBody, bhkRigidBodyT)) {
+            rigidBodyLocalTransform.m_translation = HkVectorToNiPoint(rigidBodyT->translation) * (useHavokScale ? *g_inverseHavokWorldScale : 1.0);
+            rigidBodyLocalTransform.m_rotation = HkQuatToNiQuat(rigidBodyT->rotation);
+        }
+        return rigidBodyLocalTransform;
     }
 }
 

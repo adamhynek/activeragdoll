@@ -425,10 +425,13 @@ void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hk
     for (int i = 0; i < ragdoll->getNumBones(); i++) {
         if (hkpRigidBody *rigidBody = ragdoll->getRigidBodyOfBone(i)) {
             if (bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData) {
-                NiTransform rigidBodyTLocalTransform = GetRigidBodyTLocalTransform(wrapper, false);
+                //NiTransform rigidBodyTLocalTransform = GetRigidBodyTLocalTransform(wrapper, false);
+                NiMathDouble::hkQsTransform rigidBodyTLocalTransform = NiMathDouble::GetRigidBodyTLocalTransform(wrapper, false);
 
                 hkQsTransform &transform = boneTransformsWS[i];
-                transform = NiTransformTohkQsTransform(hkQsTransformToNiTransform(transform, false) * rigidBodyTLocalTransform, false);
+                //transform = NiTransformTohkQsTransform(hkQsTransformToNiTransform(transform, false) * rigidBodyTLocalTransform, false);
+                NiMathDouble::hkQsTransform transformDouble = transform;
+                transform = NiMathDouble::hkQsTransform_Multiply(&transformDouble, rigidBodyTLocalTransform).ToSingle();
             }
         }
     }

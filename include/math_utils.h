@@ -221,7 +221,7 @@ namespace NiMathDouble
         double	m_fY;	// 8
         double	m_fZ;	// C
 
-        NiQuaternion() = default;
+        NiQuaternion() : m_fW(1.0), m_fX(0.0), m_fY(0.0), m_fZ(0.0) { }
         NiQuaternion(const ::NiQuaternion &quatSingle);
         ::NiQuaternion ToSingle() const;
     };
@@ -232,7 +232,7 @@ namespace NiMathDouble
         NiQuaternion m_rotation;
         NiPoint3 m_scale;
 
-        hkQsTransform() = default;
+        hkQsTransform() : m_translation(0, 0, 0), m_rotation(), m_scale(1.0, 1.0, 1.0) { }
         hkQsTransform(const ::hkQsTransform &transformSingle);
         ::hkQsTransform ToSingle() const;
     };
@@ -244,5 +244,6 @@ namespace NiMathDouble
     NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
     hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b);
     void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut);
+    hkQsTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale);
 }
 
