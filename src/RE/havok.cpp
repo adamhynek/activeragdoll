@@ -410,7 +410,7 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
     ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
 
     //hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
-    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
+    NiMathDouble::hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
 }
 
 void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hkQsTransform &worldFromModel, const hkQsTransform *poseLocalIn, hkQsTransform *poseLocalOut)
@@ -419,7 +419,7 @@ void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hk
     hkStackArray<hkQsTransform> boneTransformsWS(ragdoll->getNumBones());
 
     //hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
-    NiMathDouble::hkbPoseLocalToPoseWorld_Custom(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
+    NiMathDouble::hkbPoseLocalToPoseWorld(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModel, poseLocalIn, boneTransformsWS.m_data);
 
     // Now apply the rigid body T transforms to all the world transforms
     for (int i = 0; i < ragdoll->getNumBones(); i++) {
@@ -437,7 +437,8 @@ void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hk
     }
 
     // Finally, convert the worldspace transforms back to local space
-    MapPoseWorldSpaceToPoseLocalSpace(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, boneTransformsWS.m_data, poseLocalOut);
+    //MapPoseWorldSpaceToPoseLocalSpace(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, boneTransformsWS.m_data, poseLocalOut);
+    NiMathDouble::MapPoseWorldSpaceToPoseLocalSpace(ragdoll->getNumBones(), ragdoll->m_skeleton->m_parentIndices.begin(), &worldFromModel, boneTransformsWS.m_data, poseLocalOut);
 }
 
 // This is essentially the default game logic for determining whether 2 filter infos should collide or not

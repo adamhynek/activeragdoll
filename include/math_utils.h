@@ -243,7 +243,9 @@ namespace NiMathDouble
 
     NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
     hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b);
-    void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut);
+    void hkbPoseLocalToPoseWorld(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut);
     hkQsTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale);
+    hkQsTransform InversehkQsTransform(const hkQsTransform &t);
+    void MapPoseWorldSpaceToPoseLocalSpace(int a_numPoses, SInt16 *a_parentIndices, const ::hkQsTransform *a_worldFromModel, const ::hkQsTransform *a_ragdollPoseWS, ::hkQsTransform *a_poseLocalSpaceOut);
 }
 

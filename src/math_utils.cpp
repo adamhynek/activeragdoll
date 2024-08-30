@@ -1524,6 +1524,19 @@ namespace NiMathDouble
         m_fZ = quatSingle.m_fZ;
     }
 
+    NiQuaternion QuaternionInverse(const NiQuaternion &q)
+    {
+        NiQuaternion inverse;
+        double normSquared = q.m_fW * q.m_fW + q.m_fX * q.m_fX + q.m_fY * q.m_fY + q.m_fZ * q.m_fZ;
+        if (!normSquared)
+            normSquared = 1.0;
+        inverse.m_fW = q.m_fW / normSquared;
+        inverse.m_fX = -q.m_fX / normSquared;
+        inverse.m_fY = -q.m_fY / normSquared;
+        inverse.m_fZ = -q.m_fZ / normSquared;
+        return inverse;
+    }
+
     ::NiQuaternion NiQuaternion::ToSingle() const
     {
         return { float(m_fW), float(m_fX), float(m_fY), float(m_fZ) };
@@ -1610,7 +1623,7 @@ namespace NiMathDouble
 
     std::unordered_map<const ::hkQsTransform *, hkQsTransform> g_transforms;
 
-    void hkbPoseLocalToPoseWorld_Custom(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut)
+    void hkbPoseLocalToPoseWorld(int a_numBones, const hkInt16 *a_parentIndices, const ::hkQsTransform &a_worldFromModel, const ::hkQsTransform *a_poseLocal, ::hkQsTransform *a_poseWorldOut)
     {
         g_transforms.clear();
 
@@ -1636,6 +1649,35 @@ namespace NiMathDouble
             rigidBodyLocalTransform.m_rotation = HkQuatToNiQuat(rigidBodyT->rotation);
         }
         return rigidBodyLocalTransform;
+    }
+
+    hkQsTransform InversehkQsTransform(const hkQsTransform &t)
+    {
+        hkQsTransform inv;
+        inv.m_rotation = QuaternionInverse(t.m_rotation);
+        inv.m_scale = { 1.0 / t.m_scale.x, 1.0 / t.m_scale.y, 1.0 / t.m_scale.z };
+        inv.m_translation = RotateVectorByQuaternion(inv.m_rotation, -t.m_translation);
+        inv.m_translation = { inv.m_translation.x * inv.m_scale.x, inv.m_translation.y * inv.m_scale.y, inv.m_translation.z * inv.m_scale.z };
+        return inv;
+    }
+
+    void MapPoseWorldSpaceToPoseLocalSpace(int a_numPoses, SInt16 *a_parentIndices, const ::hkQsTransform *a_worldFromModel, const ::hkQsTransform *a_ragdollPoseWS, ::hkQsTransform *a_poseLocalSpaceOut)
+    {
+        g_transforms.clear();
+
+        for (int i = 0; i < a_numPoses; i++) {
+            int parentIndex = a_parentIndices[i];
+            const ::hkQsTransform *parentPose = parentIndex == -1 ? &a_worldFromModel[i] : &a_ragdollPoseWS[parentIndex];
+
+            if (!g_transforms.count(parentPose)) {
+                g_transforms[parentPose] = *parentPose;
+            }
+
+            hkQsTransform inverseParent = InversehkQsTransform(g_transforms[parentPose]);
+            hkQsTransform poseLocal = hkQsTransform_Multiply(&inverseParent, a_ragdollPoseWS[i]);
+            g_transforms[&a_poseLocalSpaceOut[i]] = poseLocal;
+            a_poseLocalSpaceOut[i] = poseLocal.ToSingle();
+        }
     }
 }
 
