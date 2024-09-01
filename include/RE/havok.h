@@ -367,6 +367,14 @@ static_assert(sizeof(bhkMalleableConstraint) == 0x20);
 struct bhkRagdollConstraint : bhkConstraint {};
 static_assert(sizeof(bhkRagdollConstraint) == 0x20);
 
+struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
+{
+    ::hkQsTransform transform1; // 00
+    ::hkQsTransform transform2; // 30
+};
+static_assert(sizeof(hkaKeyFrameHierarchyUtility__ApplyKeyFrameData) == 0x60);
+
+
 inline bool IsMotionTypeMoveable(UInt8 motionType) {
     return (
         motionType == hkpMotion::MotionType::MOTION_DYNAMIC ||

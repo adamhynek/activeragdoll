@@ -238,8 +238,10 @@ namespace NiMathDouble
     };
 
     inline NiTransform InverseTransform(const NiTransform &t) { NiTransform inverse; t.Invert(inverse); return inverse; }
-    inline float DotProduct(const NiPoint3 &vec1, const NiPoint3 &vec2) { return vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z; }
+    inline double DotProduct(const NiPoint3 &vec1, const NiPoint3 &vec2) { return vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z; }
+    inline double DotProduct(const NiQuaternion &q1, const NiQuaternion &q2) { return q1.m_fW * q2.m_fW + q1.m_fX * q2.m_fX + q1.m_fY * q2.m_fY + q1.m_fZ * q2.m_fZ; }
     NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
+    inline NiPoint3 lerp(const NiPoint3 &a, const NiPoint3 &b, double t) { return a * (1.0 - t) + b * t; }
 
     NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
     hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b);
@@ -247,5 +249,6 @@ namespace NiMathDouble
     hkQsTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale);
     hkQsTransform InversehkQsTransform(const hkQsTransform &t);
     void MapPoseWorldSpaceToPoseLocalSpace(int a_numPoses, SInt16 *a_parentIndices, const ::hkQsTransform *a_worldFromModel, const ::hkQsTransform *a_ragdollPoseWS, ::hkQsTransform *a_poseLocalSpaceOut);
+    void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData(::hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData);
 }
 

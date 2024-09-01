@@ -1577,6 +1577,56 @@ namespace NiMathDouble
         return multiple;
     }
 
+    NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t)
+    {
+        // quaternion to return
+        NiQuaternion qm;
+        // Calculate angle between them.
+        double cosHalfTheta = DotProduct(qa, qb);
+        // if qa=qb or qa=-qb then theta = 0 and we can return qb
+        if (fabs(cosHalfTheta) >= 0.99999) { // I actually experimentally determined this value. The value where I got this code was 0.9995 which is way too low for small angles
+            qm.m_fW = qb.m_fW;
+            qm.m_fX = qb.m_fX;
+            qm.m_fY = qb.m_fY;
+            qm.m_fZ = qb.m_fZ;
+            return qm;
+        }
+
+        // If the dot product is negative, slerp won't take
+        // the shorter path. Note that qb and -qb are equivalent when
+        // the negation is applied to all four components. Fix by 
+        // reversing one quaternion.
+        NiQuaternion q2 = qb;
+        if (cosHalfTheta < 0) {
+            q2.m_fW *= -1;
+            q2.m_fX *= -1;
+            q2.m_fY *= -1;
+            q2.m_fZ *= -1;
+            cosHalfTheta *= -1;
+        }
+
+        // Calculate temporary values.
+        double halfTheta = acos(cosHalfTheta);
+        double sinHalfTheta = sqrt(1.0 - cosHalfTheta * cosHalfTheta);
+        // if theta = 180 degrees then result is not fully defined
+        // we could rotate around any axis normal to qa or qb
+        if (fabs(sinHalfTheta) < 0.001) { // fabs is floating point absolute
+            qm.m_fW = (qa.m_fW * 0.5 + q2.m_fW * 0.5);
+            qm.m_fX = (qa.m_fX * 0.5 + q2.m_fX * 0.5);
+            qm.m_fY = (qa.m_fY * 0.5 + q2.m_fY * 0.5);
+            qm.m_fZ = (qa.m_fZ * 0.5 + q2.m_fZ * 0.5);
+            return qm;
+        }
+        double ratioA = sin((1 - t) * halfTheta) / sinHalfTheta;
+        double ratioB = sin(t * halfTheta) / sinHalfTheta;
+        // calculate Quaternion
+        qm.m_fW = (qa.m_fW * ratioA + q2.m_fW * ratioB);
+        qm.m_fX = (qa.m_fX * ratioA + q2.m_fX * ratioB);
+        qm.m_fY = (qa.m_fY * ratioA + q2.m_fY * ratioB);
+        qm.m_fZ = (qa.m_fZ * ratioA + q2.m_fZ * ratioB);
+        return qm;
+    }
+
     NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec)
     {
         NiPoint3 qreal = { quat.m_fW, quat.m_fW, quat.m_fW };
@@ -1677,6 +1727,51 @@ namespace NiMathDouble
             hkQsTransform poseLocal = hkQsTransform_Multiply(&inverseParent, a_ragdollPoseWS[i]);
             g_transforms[&a_poseLocalSpaceOut[i]] = poseLocal;
             a_poseLocalSpaceOut[i] = poseLocal.ToSingle();
+        }
+    }
+
+    void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData(::hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData)
+    {
+        for (int i = 0; i < a_bodyData->m_numRigidBodies; i++) {
+            int parentIndex = a_bodyData->m_parentIndices[i];
+            const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].transform2;
+
+            hkQsTransform parentPoseDouble = parentPose;
+            hkQsTransform poseWorld = hkQsTransform_Multiply(&parentPoseDouble, a_desiredPoseLocal[i]);
+            a_applyKeyframeData[i].transform2 = poseWorld.ToSingle();
+
+            NiPoint3 translation = poseWorld.m_translation;
+            NiQuaternion rotation = poseWorld.m_rotation;
+
+
+            int controlDataIndex = a_bodyData->m_controlDataIndices ? a_bodyData->m_controlDataIndices[i] : 0;
+            if (controlDataIndex == -1) continue;
+
+            hkaKeyFrameHierarchyUtility::ControlData &controlData = a_controlPalette[controlDataIndex];
+            float hierarchyGain = controlData.m_hierarchyGain;
+            if (a_bodyData->m_boneWeights) {
+                hierarchyGain *= a_bodyData->m_boneWeights[i];
+            }
+            if (hierarchyGain > 0.f && parentIndex >= 0) {
+                hkpRigidBody *parentBody = a_bodyData->m_rigidBodies[parentIndex];
+
+                hkQsTransform parentBodyTransform;
+                parentBodyTransform.m_translation = HkVectorToNiPoint(parentBody->getPosition());
+                parentBodyTransform.m_rotation = HkQuatToNiQuat(parentBody->getRotation());
+
+                hkQsTransform transformedLocal = hkQsTransform_Multiply(&parentBodyTransform, a_desiredPoseLocal[i]);
+                rotation = slerp(rotation, transformedLocal.m_rotation, hierarchyGain);
+                translation = lerp(translation, transformedLocal.m_translation, hierarchyGain);
+            }
+
+            NiPoint3 centerOfMassLocal = HkVectorToNiPoint(a_bodyData->m_rigidBodies[i]->getCenterOfMassLocal());
+
+            hkQsTransform transform1;
+            transform1.m_translation = translation + RotateVectorByQuaternion(rotation, centerOfMassLocal);
+            transform1.m_rotation = rotation;
+            transform1.m_scale = { 0.0, 0.0, 0.0 };
+
+            a_applyKeyframeData[i].transform1 = transform1.ToSingle();
         }
     }
 }

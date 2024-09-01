@@ -5594,6 +5594,8 @@ auto MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2 = Re
 
 auto hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc = RelocAddr<uintptr_t>(0xA28005);
 
+auto hkaKeyFrameHierarchyUtility_applyKeyFrame_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc = RelocAddr<uintptr_t>(0xBA3B36);
+
 
 std::uintptr_t Write5Call(std::uintptr_t a_src, std::uintptr_t a_dst)
 {
@@ -5722,6 +5724,10 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(bhkCollisionFilter_SetFromBGSCollisionLayers_HookLoc.GetUIntPtr(), uintptr_t(bhkCollisionFilter_SetFromBGSCollisionLayers_Hook));
         bhkCollisionFilter_SetFromBGSCollisionLayers_Original = (_bhkCollisionFilter_SetFromBGSCollisionLayers)originalFunc;
+    }
+
+    {
+        Write5Call(hkaKeyFrameHierarchyUtility_applyKeyFrame_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc.GetUIntPtr(), uintptr_t(NiMathDouble::hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData));
     }
 
     {
