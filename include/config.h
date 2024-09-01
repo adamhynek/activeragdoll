@@ -310,6 +310,12 @@ namespace Config {
 
         bool removeActiveActorsOnLoad = true;
 
+        float dummyFloat0 = 0.f;
+        float dummyFloat1 = 0.f;
+        float dummyFloat2 = 0.f;
+        float dummyFloat3 = 0.f;
+        float dummyFloat4 = 0.f;
+
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
         std::set<std::string, std::less<>> aggressionExcludeRaces;
