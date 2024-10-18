@@ -354,14 +354,14 @@ struct ControllerTrackingData
     int GetNumSmoothingFrames()
     {
         int numSmoothingFrames = Config::options.numControllerVelocitySmoothingFrames;
-        float smoothingMultiplier = 0.011f / *g_deltaTime; // Half the number of frames at 45fps compared to 90fps, etc.
+        float smoothingMultiplier = 0.011f / *g_secondsSinceLastFrame_Unmultiplied; // Half the number of frames at 45fps compared to 90fps, etc.
         return round(float(numSmoothingFrames) * smoothingMultiplier);
     }
 
     int GetNumControllerAngularVelocityTrackingFrames()
     {
         int numFrames = Config::options.numControllerAngularVelocityTrackingFrames;
-        float smoothingMultiplier = 0.011f / *g_deltaTime; // Half the number of frames at 45fps compared to 90fps, etc.
+        float smoothingMultiplier = 0.011f / *g_secondsSinceLastFrame_Unmultiplied; // Half the number of frames at 45fps compared to 90fps, etc.
         return round(float(numFrames) * smoothingMultiplier);
     }
 
