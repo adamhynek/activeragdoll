@@ -1429,6 +1429,8 @@ struct PhysicsListener :
 
     std::unordered_map<TESObjectREFR *, double> physicalBlockTimes{};
 
+    UInt32 lastPhysicsDamageFormId = 0;
+
     inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
         if ((uint64_t)a <= (uint64_t)b) return { a, b };
         else return { b, a };
@@ -1503,6 +1505,14 @@ struct PhysicsListener :
                 hitData.aggressor = GetOrCreateRefrHandle(source);
             }
             if (hitData.totalDamage > 0.f) {
+                if (NiPointer<TESObjectREFR> hittingRefr = GetRefFromCollidable(collidingBody->hkBody->getCollidable())) {
+                    if (TESForm *baseForm = hittingRefr->baseForm) {
+                        // set an unused flag to signify that this is physics damage
+                        hitData.flags |= (1 << 29);
+                        lastPhysicsDamageFormId = baseForm->formID;
+                    }
+                }
+
                 Actor_GetHit(target, hitData);
                 if (Config::options.physicsHitRecoveryTime > 0) {
                     physicsHitCooldownTargets[{ target, collidingBody->hkBody }] = g_currentFrameTime;
@@ -1514,6 +1524,8 @@ struct PhysicsListener :
                     }
                 }
             }
+
+            HitData_dtor(&hitData);
         }
     }
 
@@ -1530,7 +1542,7 @@ struct PhysicsListener :
         UInt32 layerA = rigidBodyA->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
         UInt32 layerB = rigidBodyB->m_collidable.m_broadPhaseHandle.m_collisionFilterInfo & 0x7f;
 
-        if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && layerB != g_higgsCollisionLayer) ||
+        /*if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && layerB != g_higgsCollisionLayer) ||
             (layerB == BGSCollisionLayer::kCollisionLayer_Biped && layerA != g_higgsCollisionLayer))
         {
             if ((layerA == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(rigidBodyA)) || (layerB == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(rigidBodyB))) {
@@ -1538,7 +1550,7 @@ struct PhysicsListener :
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                 return;
             }
-        }
+        }*/
 
         if ((layerA == BGSCollisionLayer::kCollisionLayer_CharController && (layerB == BGSCollisionLayer::kCollisionLayer_Clutter || layerB == BGSCollisionLayer::kCollisionLayer_Weapon)) ||
             (layerB == BGSCollisionLayer::kCollisionLayer_CharController && (layerA == BGSCollisionLayer::kCollisionLayer_Clutter || layerA == BGSCollisionLayer::kCollisionLayer_Weapon)))
@@ -5002,7 +5014,7 @@ _HitData_populate Character_HitTarget_HitData_populate_Original = 0;
 void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr, Actor *targetRefr, InventoryEntryData *weapon, bool isOffhand)
 {
     if (targetRefr == *g_thePlayer) {
-        // TODO: This works, but the game still does the cone check so I think it's possible it does't work if we aren't looking at the enemy?
+        // TODO: This works, but the game still does the cone check so I think it's possible it doesn't work if we aren't looking at the enemy?
 
         if (IsPhysicallyBlocked(srcRefr)) {
             bool wasBlocking = Actor_IsBlocking(targetRefr);
@@ -5048,6 +5060,11 @@ void ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_Hook(E
         g_interface001.currentHitEvent = nullptr;
     }
     else {
+        if (hitData->flags >> 29 & 1) {
+            // It's from physics damage - set the source form to the form of the object that hit them
+            hitEvent->sourceFormID = g_physicsListener.lastPhysicsDamageFormId;
+        }
+
         dispatcher->SendEvent(hitEvent);
     }
 }
