@@ -170,6 +170,9 @@ inline void SetCollisionLayer(hkUint32 &collisionFilterInfo, UInt32 layer) {
 inline UInt32 GetCollisionLayer(hkpRigidBody *rigidBody) { return GetCollisionLayer(rigidBody->getCollisionFilterInfo()); }
 inline void SetCollisionLayer(hkpRigidBody *rigidBody, UInt32 layer) { return SetCollisionLayer(rigidBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo, layer); }
 
+inline UInt16 GetCollisionGroup(UInt32 collisionFilterInfo) { return collisionFilterInfo >> 16; }
+inline UInt16 GetCollisionGroup(hkpRigidBody *rigidBody) { return GetCollisionGroup(rigidBody->getCollisionFilterInfo()); }
+
 inline UInt64 GetAttackActionId(bool isOffhand) { return isOffhand ? 45 : 49; } // 45 and 49 are kActionLeftAttack and kActionRightAttack
 inline UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 70; } // 69 and 70 are kActionLeftPowerAttack and kActionRightPowerAttack
 

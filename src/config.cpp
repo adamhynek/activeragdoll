@@ -347,6 +347,9 @@ namespace Config {
         if (!RegisterBool("disableBipedCollisionWithWorld", options.disableBipedCollisionWithWorld)) success = false;
         if (!RegisterBool("enableBipedClutterCollision", options.enableBipedClutterCollision)) success = false;
         if (!RegisterBool("enableBipedWeaponCollision", options.enableBipedWeaponCollision)) success = false;
+        if (!RegisterBool("enableBipedPropsCollision", options.enableBipedPropsCollision)) success = false;
+        if (!RegisterBool("enableBipedTrapCollision", options.enableBipedTrapCollision)) success = false;
+        if (!RegisterBool("enableBipedSpellCollision", options.enableBipedSpellCollision)) success = false;
         if (!RegisterBool("enableBipedProjectileCollision", options.enableBipedProjectileCollision)) success = false;
         if (!RegisterBool("disableBipedClutterCollisionWithNonMoveableObjects", options.disableBipedClutterCollisionWithNonMoveableObjects)) success = false;
         if (!RegisterBool("disableGravityForActiveRagdolls", options.disableGravityForActiveRagdolls)) success = false;

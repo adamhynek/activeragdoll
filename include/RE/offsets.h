@@ -112,6 +112,8 @@ extern RelocPtr<BGSImpactManager *> g_impactManager;
 
 extern RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator;
 
+extern RelocPtr<bhkCollisionFilter *> g_collisionFilter;
+
 
 // Havok / Bethesda havok wrappers
 

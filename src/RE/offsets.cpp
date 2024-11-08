@@ -87,6 +87,8 @@ RelocPtr<BGSImpactManager *> g_impactManager(0x2FC52E0);
 
 RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator(0x1EB59C8);
 
+RelocPtr<bhkCollisionFilter *> g_collisionFilter(0x1F89190);
+
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
 RelocPtr<UInt64> unk_141E703B8(0x1E703B8);

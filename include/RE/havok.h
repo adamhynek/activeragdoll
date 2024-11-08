@@ -71,12 +71,15 @@ struct bhkCollisionFilter : hkpCollisionFilter
     UInt64 triggerBitfield1; // 3D0 - bit x determines if phantoms on layer x should get triggers created for them. They are also tested against if a charcontroller with bit 15 set and bit 7 unset collides with it.
     UInt64 triggerBitfield2; // 3D8 - similar to above, but it's not used in the collision filter comparison or when phantoms are added to the world, so not sure where it's actually used.
     BSFixedString layerNames[64]; // 3E0 - only 56 are non-null
+    UInt32 layerDebugColors[64]; // 5E0
+    UInt64 partNames[32]; // 6E0
 };
 static_assert(offsetof(bhkCollisionFilter, nextCollisionGroup) == 0x4C);
 static_assert(offsetof(bhkCollisionFilter, bipedBitfields) == 0x50);
 static_assert(offsetof(bhkCollisionFilter, layerCollisionGroups) == 0xD0);
 static_assert(offsetof(bhkCollisionFilter, layerBitfields) == 0x1D0);
 static_assert(offsetof(bhkCollisionFilter, layerNames) == 0x3E0);
+static_assert(offsetof(bhkCollisionFilter, partNames) == 0x6E0);
 
 struct ahkpWorld : hkpWorld
 {
