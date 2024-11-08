@@ -563,6 +563,9 @@ extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBody
 typedef bool(*_hkaSkeletonMapper_mapPose)(hkaSkeletonMapper *_this, const hkQsTransform *poseAModelSpace, const hkQsTransform *originalPoseBLocalSpace, hkQsTransform *poseBModelSpaceInOut, UInt32 source);
 extern RelocAddr<_hkaSkeletonMapper_mapPose> hkaSkeletonMapper_mapPose;
 
+typedef void(*_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)(hkQsTransform *desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *bodyData, hkaKeyFrameHierarchyUtility::ControlData *controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *applyKeyframeData);
+extern RelocAddr<_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData> hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData;
+
 typedef bool(*_hkaRagdollRigidBodyController_ctor)(hkaRagdollRigidBodyController *_this);
 extern RelocAddr<_hkaRagdollRigidBodyController_ctor> hkaRagdollRigidBodyController_ctor;
 

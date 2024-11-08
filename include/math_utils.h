@@ -135,12 +135,12 @@ namespace NiMathDouble
     class NiPoint3
     {
     public:
-        long double	x;	// 0
-        long double	y;	// 4
-        long double	z;	// 8
+        double	x;	// 0
+        double	y;	// 4
+        double	z;	// 8
 
         NiPoint3();
-        NiPoint3(long double X, long double Y, long double Z) : x(X), y(Y), z(Z) { };
+        NiPoint3(double X, double Y, double Z) : x(X), y(Y), z(Z) { };
         NiPoint3(const ::NiPoint3 &pointSingle);
 
         ::NiPoint3 ToSingle() const { return ::NiPoint3(x, y, z); }
@@ -156,11 +156,11 @@ namespace NiMathDouble
         NiPoint3 &operator-= (const NiPoint3 &pt);
 
         // Scalar operations
-        NiPoint3 operator* (long double fScalar) const;
-        NiPoint3 operator/ (long double fScalar) const;
+        NiPoint3 operator* (double fScalar) const;
+        NiPoint3 operator/ (double fScalar) const;
 
-        NiPoint3 &operator*= (long double fScalar);
-        NiPoint3 &operator/= (long double fScalar);
+        NiPoint3 &operator*= (double fScalar);
+        NiPoint3 &operator/= (double fScalar);
     };
 
     class NiMatrix33
@@ -168,8 +168,8 @@ namespace NiMathDouble
     public:
         union
         {
-            long double	data[3][3];
-            long double   arr[9];
+            double	data[3][3];
+            double   arr[9];
         };
 
         NiMatrix33() = default;
@@ -186,7 +186,7 @@ namespace NiMathDouble
         NiPoint3 operator*(const NiPoint3 &pt) const;
 
         // Scalar multiplier
-        NiMatrix33 operator*(long double fScalar) const;
+        NiMatrix33 operator*(double fScalar) const;
 
         NiMatrix33 Transpose() const;
     };
@@ -197,7 +197,7 @@ namespace NiMathDouble
     public:
         NiMatrix33	rot;	// 00
         NiPoint3	pos;	// 24
-        long double		scale;	// 30
+        double		scale;	// 30
 
         NiTransform();
         NiTransform(const ::NiTransform &transformSingle);
@@ -242,6 +242,7 @@ namespace NiMathDouble
     inline double DotProduct(const NiQuaternion &q1, const NiQuaternion &q2) { return q1.m_fW * q2.m_fW + q1.m_fX * q2.m_fX + q1.m_fY * q2.m_fY + q1.m_fZ * q2.m_fZ; }
     NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
     inline NiPoint3 lerp(const NiPoint3 &a, const NiPoint3 &b, double t) { return a * (1.0 - t) + b * t; }
+    inline double QuaternionLength(const NiQuaternion &q) { return sqrt(DotProduct(q, q)); }
 
     NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
     hkQsTransform hkQsTransform_Multiply(const hkQsTransform *a, const hkQsTransform &b);

@@ -369,8 +369,8 @@ static_assert(sizeof(bhkRagdollConstraint) == 0x20);
 
 struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
 {
-    ::hkQsTransform transform1; // 00
-    ::hkQsTransform transform2; // 30
+    hkQsTransform bodyWorld; // 00
+    hkQsTransform poseWorld; // 30
 };
 static_assert(sizeof(hkaKeyFrameHierarchyUtility__ApplyKeyFrameData) == 0x60);
 

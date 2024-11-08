@@ -1323,26 +1323,26 @@ namespace NiMathDouble
     }
 
     // Scalar operations
-    NiPoint3 NiPoint3::operator* (long double scalar) const
+    NiPoint3 NiPoint3::operator* (double scalar) const
     {
         return NiPoint3(scalar * x, scalar * y, scalar * z);
     }
-    NiPoint3 NiPoint3::operator/ (long double scalar) const
+    NiPoint3 NiPoint3::operator/ (double scalar) const
     {
-        long double invScalar = 1.0 / scalar;
+        double invScalar = 1.0 / scalar;
         return NiPoint3(invScalar * x, invScalar * y, invScalar * z);
     }
 
-    NiPoint3 &NiPoint3::operator*= (long double scalar)
+    NiPoint3 &NiPoint3::operator*= (double scalar)
     {
         x *= scalar;
         y *= scalar;
         z *= scalar;
         return *this;
     }
-    NiPoint3 &NiPoint3::operator/= (long double scalar)
+    NiPoint3 &NiPoint3::operator/= (double scalar)
     {
-        long double invScalar = 1.0 / scalar;
+        double invScalar = 1.0 / scalar;
         x *= invScalar;
         y *= invScalar;
         z *= invScalar;
@@ -1432,7 +1432,7 @@ namespace NiMathDouble
         return tmp;
     }
 
-    NiMatrix33 NiMatrix33::operator* (long double scalar) const
+    NiMatrix33 NiMatrix33::operator* (double scalar) const
     {
         NiMatrix33 result;
         result.data[0][0] = data[0][0] * scalar;
@@ -1567,6 +1567,25 @@ namespace NiMathDouble
         return result;
     }
 
+    NiQuaternion QuaternionMultiply(const NiQuaternion &q, double multiplier)
+    {
+        NiQuaternion multiple;
+        multiple.m_fW = q.m_fW * multiplier;
+        multiple.m_fX = q.m_fX * multiplier;
+        multiple.m_fY = q.m_fY * multiplier;
+        multiple.m_fZ = q.m_fZ * multiplier;
+        return multiple;
+    }
+
+    NiQuaternion QuaternionNormalized(const NiQuaternion &q)
+    {
+        double length = QuaternionLength(q);
+        if (length) {
+            return QuaternionMultiply(q, 1.0 / length);
+        }
+        return NiQuaternion(); // identity
+    }
+
     NiQuaternion QuaternionMultiply(const NiQuaternion &qa, const NiQuaternion &qb)
     {
         NiQuaternion multiple;
@@ -1637,7 +1656,7 @@ namespace NiMathDouble
         ret = { q2minus1.x * vec.x, q2minus1.y * vec.y, q2minus1.z * vec.z };
 
         //hkReal imagDotDir = quat.getImag().dot3(direction);
-        float imagDotDir = DotProduct({ quat.m_fX, quat.m_fY, quat.m_fZ }, vec);
+        double imagDotDir = DotProduct({ quat.m_fX, quat.m_fY, quat.m_fZ }, vec);
 
         //ret.addMul4(imagDotDir, quat.getImag());
         ret += {quat.m_fX *imagDotDir, quat.m_fY *imagDotDir, quat.m_fZ *imagDotDir};
@@ -1659,6 +1678,7 @@ namespace NiMathDouble
         //tmp.m_scale.setMul4(a->m_scale, b.m_scale);
         tmp.m_scale = { a->m_scale.x * b.m_scale.x, a->m_scale.y * b.m_scale.y, a->m_scale.z * b.m_scale.z };
         tmp.m_rotation = QuaternionMultiply(a->m_rotation, b.m_rotation);
+        //tmp.m_rotation = QuaternionNormalized(tmp.m_rotation);
 
         //hkVector4 rotatedDir; rotatedDir.setRotatedDir(a->m_rotation, b.m_translation);
         NiPoint3 rotatedDir = RotateVectorByQuaternion(a->m_rotation, b.m_translation);
@@ -1678,16 +1698,25 @@ namespace NiMathDouble
         g_transforms.clear();
 
         for (int i = 0; i < a_numBones; i++) {
+            const ::hkQsTransform *parentPose;
             int parentIndex = a_parentIndices[i];
-            const ::hkQsTransform *parentPose = parentIndex == -1 ? &a_worldFromModel : &a_poseWorldOut[parentIndex];
-
-            if (!g_transforms.count(parentPose)) {
-                g_transforms[parentPose] = *parentPose;
+            if (parentIndex == -1) {
+                g_transforms[&a_worldFromModel] = hkQsTransform(); // identity
+                parentPose = &a_worldFromModel;
+            }
+            else {
+                parentPose = &a_poseWorldOut[parentIndex];
             }
 
             hkQsTransform poseWorld = hkQsTransform_Multiply(&g_transforms[parentPose], a_poseLocal[i]);
             g_transforms[&a_poseWorldOut[i]] = poseWorld;
-            a_poseWorldOut[i] = poseWorld.ToSingle();
+        }
+
+        hkQsTransform worldFromModel = a_worldFromModel;
+        for (int i = 0; i < a_numBones; i++) {
+            hkQsTransform &poseWorld = g_transforms[&a_poseWorldOut[i]];
+            a_poseWorldOut[i] = hkQsTransform_Multiply(&worldFromModel, poseWorld).ToSingle();
+            int x = 0;
         }
     }
 
@@ -1732,13 +1761,19 @@ namespace NiMathDouble
 
     void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData(::hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData)
     {
+        g_transforms.clear();
+
         for (int i = 0; i < a_bodyData->m_numRigidBodies; i++) {
             int parentIndex = a_bodyData->m_parentIndices[i];
-            const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].transform2;
+            const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].poseWorld;
 
-            hkQsTransform parentPoseDouble = parentPose;
-            hkQsTransform poseWorld = hkQsTransform_Multiply(&parentPoseDouble, a_desiredPoseLocal[i]);
-            a_applyKeyframeData[i].transform2 = poseWorld.ToSingle();
+            if (!g_transforms.count(&parentPose)) {
+                g_transforms[&parentPose] = parentPose;
+            }
+
+            hkQsTransform poseWorld = hkQsTransform_Multiply(&g_transforms[&parentPose], a_desiredPoseLocal[i]);
+            g_transforms[&a_applyKeyframeData[i].poseWorld] = poseWorld;
+            a_applyKeyframeData[i].poseWorld = poseWorld.ToSingle();
 
             NiPoint3 translation = poseWorld.m_translation;
             NiQuaternion rotation = poseWorld.m_rotation;
@@ -1766,12 +1801,12 @@ namespace NiMathDouble
 
             NiPoint3 centerOfMassLocal = HkVectorToNiPoint(a_bodyData->m_rigidBodies[i]->getCenterOfMassLocal());
 
-            hkQsTransform transform1;
-            transform1.m_translation = translation + RotateVectorByQuaternion(rotation, centerOfMassLocal);
-            transform1.m_rotation = rotation;
-            transform1.m_scale = { 0.0, 0.0, 0.0 };
+            hkQsTransform bodyWorld;
+            bodyWorld.m_translation = translation + RotateVectorByQuaternion(rotation, centerOfMassLocal);
+            bodyWorld.m_rotation = rotation;
+            bodyWorld.m_scale = { 0.0, 0.0, 0.0 };
 
-            a_applyKeyframeData[i].transform1 = transform1.ToSingle();
+            a_applyKeyframeData[i].bodyWorld = bodyWorld.ToSingle();
         }
     }
 }
