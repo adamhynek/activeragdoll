@@ -99,13 +99,15 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
         UInt64 handle = handlePolicy->Create(target->formType, target);
 
         // Check if the object should dispatch hit events when hit, I think
-        bool shouldDispatchHitEvent = false;
+        bool shouldDispatchHitEventBasedOnScript = false;
         CheckHitEventsFunctor::Data checkHitEventsFunctorData{ registry, hitBody };
-        CheckHitEventsFunctor checkHitEventsFunctor{ &checkHitEventsFunctorData, &shouldDispatchHitEvent };
+        CheckHitEventsFunctor checkHitEventsFunctor{ &checkHitEventsFunctorData, &shouldDispatchHitEventBasedOnScript };
 
         registry->VisitScripts(handle, &checkHitEventsFunctor);
 
-        if (shouldDispatchHitEvent) {
+        bool dispatchHitEvent = shouldDispatchHitEventBasedOnScript || (Config::options.hitAnyMoveableObjects && IsMoveableEntity(hitBody));
+
+        if (dispatchHitEvent) {
             // Increment refcounts before dispatching the hit event. The game does this... so I'll do it too.
             NiPointer<TESObjectREFR> incTarget = target;
             NiPointer<TESObjectREFR> incSource = source;
@@ -122,7 +124,7 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
             get_vfunc<_VMClassRegistry_Destruct>(registry, 0x0)(registry, 1);
         }
 
-        return shouldDispatchHitEvent;
+        return dispatchHitEvent;
     }
 
     return false;
@@ -1282,6 +1284,10 @@ struct DoRefrHitTask : TaskDelegate
 {
     void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSMaterialType *hitMaterial, TESForm *weapon, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
     {
+#ifdef _DEBUG
+        _MESSAGE("%d: Refr hit", *g_currentFrameCounter);
+#endif // _DEBUG
+
         PlayerCharacter *player = *g_thePlayer;
 
         SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;

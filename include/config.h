@@ -310,6 +310,8 @@ namespace Config {
 
         bool removeActiveActorsOnLoad = true;
 
+        bool hitAnyMoveableObjects = true;
+
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
         std::set<std::string, std::less<>> aggressionExcludeRaces;
