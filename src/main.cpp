@@ -105,7 +105,8 @@ bool DispatchHitEvents(TESObjectREFR *source, TESObjectREFR *target, hkpRigidBod
 
         registry->VisitScripts(handle, &checkHitEventsFunctor);
 
-        bool dispatchHitEvent = shouldDispatchHitEventBasedOnScript || (Config::options.hitAnyMoveableObjects && IsMoveableEntity(hitBody));
+        bool isMoveable = IsMoveableEntity(hitBody);
+        bool dispatchHitEvent = shouldDispatchHitEventBasedOnScript || (Config::options.hitAnyMoveableObjects && isMoveable) || (Config::options.hitAnyStaticObjects && !isMoveable);
 
         if (dispatchHitEvent) {
             // Increment refcounts before dispatching the hit event. The game does this... so I'll do it too.

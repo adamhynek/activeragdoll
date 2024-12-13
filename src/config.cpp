@@ -470,6 +470,7 @@ namespace Config {
         if (!RegisterBool("removeActiveActorsOnLoad", options.removeActiveActorsOnLoad)) success = false;
 
         if (!RegisterBool("hitAnyMoveableObjects", options.hitAnyMoveableObjects)) success = false;
+        if (!RegisterBool("hitAnyStaticObjects", options.hitAnyStaticObjects)) success = false;
 
         if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
