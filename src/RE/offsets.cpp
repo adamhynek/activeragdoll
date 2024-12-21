@@ -333,6 +333,7 @@ RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm(0x987A70);
 RelocAddr<_Actor_IsTalking> Actor_IsTalking(0x5DA8F0);
 RelocAddr<_Actor_EvaluatePackage> Actor_EvaluatePackage(0x5E3990);
 RelocAddr<_BSTaskPool_QueueDestructibleDamageTask> BSTaskPool_QueueDestructibleDamageTask(0x5CB4F0);
+RelocAddr<_BSTaskPool_QueueDamageObjectTask> BSTaskPool_QueueDamageObjectTask(0x5CB5B0);
 RelocAddr<_TESForm_GetDestructibleObjectForm> TESForm_GetDestructibleObjectForm(0x193030);
 RelocAddr<_PlayRumble> PlayRumble(0xC59440);
 RelocAddr<_ActorProcess_GetCurrentlyEquippedWeapon> ActorProcess_GetCurrentlyEquippedWeapon(0x683850);

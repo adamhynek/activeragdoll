@@ -1064,7 +1064,7 @@ void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffha
         HitData_dtor(&hitData);
     }
 
-    BSTaskPool_QueueDestructibleDamageTask(BSTaskPool::GetSingleton(), target, damage);
+    BSTaskPool_QueueDamageObjectTask(BSTaskPool::GetSingleton(), target, damage, false, source);
 }
 
 void HitRefr(Character *source, TESObjectREFR *target, bool setCause, bool isLeft, bool isOffhand)
@@ -1556,7 +1556,7 @@ struct PhysicsListener :
 
                 if (Config::options.damageHittingObjectOnPhysicalHit) {
                     if (NiPointer<TESObjectREFR> hittingRefr = GetRefFromCollidable(collidingBody->hkBody->getCollidable())) {
-                        BSTaskPool_QueueDestructibleDamageTask(BSTaskPool::GetSingleton(), hittingRefr, Config::options.hittingObjectSelfDamage);
+                        BSTaskPool_QueueDamageObjectTask(BSTaskPool::GetSingleton(), hittingRefr, Config::options.hittingObjectSelfDamage, false, source);
                     }
                 }
             }

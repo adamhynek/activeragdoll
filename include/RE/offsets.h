@@ -794,6 +794,9 @@ extern RelocAddr<_Actor_EvaluatePackage> Actor_EvaluatePackage;
 typedef void(*_BSTaskPool_QueueDestructibleDamageTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
 extern RelocAddr<_BSTaskPool_QueueDestructibleDamageTask> BSTaskPool_QueueDestructibleDamageTask;
 
+typedef void(*_BSTaskPool_QueueDamageObjectTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage, bool isInternalDamage, TESObjectREFR *instigator);
+extern RelocAddr<_BSTaskPool_QueueDamageObjectTask> BSTaskPool_QueueDamageObjectTask;
+
 typedef BGSDestructibleObjectForm *(*_TESForm_GetDestructibleObjectForm)(TESForm *_this);
 extern RelocAddr<_TESForm_GetDestructibleObjectForm> TESForm_GetDestructibleObjectForm;
 
