@@ -141,6 +141,10 @@ namespace Config {
         bool doWarp = true;
         bool disableWarpWhenGettingUp = true;
         float maxAllowedDistBeforeWarp = 15.f;
+        double warpDisableActorTime = 3.0;
+
+        double disableActorOnSetPositionTime = 3.0;
+        double disableActorOnSetPositionTimeJitter = 2.0;
 
         float hierarchyGain = 0.6f;
         float velocityGain = 0.6f;

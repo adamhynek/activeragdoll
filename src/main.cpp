@@ -2598,6 +2598,33 @@ bool IsAddedToWorld(Actor *actor)
     return true;
 }
 
+std::mutex g_temporaryIgnoredActorsLock;
+std::unordered_map<Actor *, double> g_temporaryIgnoredActors;
+void AddTemporaryIgnoredActor(Actor *actor, double duration)
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    g_temporaryIgnoredActors[actor] = g_currentFrameTime + duration;
+}
+
+bool IsTemporaryIgnoredActor(Actor *actor)
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    return g_temporaryIgnoredActors.size() > 0 && g_temporaryIgnoredActors.count(actor);
+}
+
+void UpdateTemporaryIgnoredActors()
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    for (auto it = g_temporaryIgnoredActors.begin(); it != g_temporaryIgnoredActors.end();) {
+        if (g_currentFrameTime > it->second) {
+            it = g_temporaryIgnoredActors.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
 bool IsAddableToWorld(Actor *actor)
 {
     if (TESRace *race = actor->race) {
@@ -2611,6 +2638,8 @@ bool IsAddableToWorld(Actor *actor)
         std::scoped_lock lock(g_interface001.ignoredActorsLock);
         if (g_interface001.ignoredActors.count(actor)) return false;
     }
+
+    if (IsTemporaryIgnoredActor(actor)) return false;
 
     BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
     if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
@@ -3466,6 +3495,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         UInt32 filterInfo; Actor_GetCollisionFilterInfo(player, filterInfo);
         g_playerCollisionGroup = filterInfo >> 16;
     }
+
+    UpdateTemporaryIgnoredActors();
 
     if (world != g_physicsListener.world) {
         if (g_physicsListener.world) {
@@ -4684,26 +4715,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                         _MESSAGE("%d %s: Warp %.2f m", *g_currentFrameCounter, name->name, VectorLength(ragdoll->rootOffset));
                                     }
 
-                                    // Set rigidbody transforms to the anim pose ones
-                                    for (int i = 0; i < lowResPoseWorld.m_size; i++) {
-                                        hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
-                                        if (!rb) continue;
-
-                                        hkQsTransform &transform = lowResPoseWorld[i];
-
-                                        hkTransform newTransform;
-                                        newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));
-                                        hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
-
-                                        rb->getRigidMotion()->setTransform(newTransform);
-                                        hkpEntity_updateMovedBodyInfo(rb);
-
-                                        rb->getRigidMotion()->setLinearVelocity(NiPointToHkVector(NiPoint3()));
-                                        rb->getRigidMotion()->setAngularVelocity(NiPointToHkVector(NiPoint3()));
-                                    }
-
-                                    // Reset all ragdoll controller state to stop it from going crazy
-                                    hkbRagdollDriver_reset(driver);
+                                    AddTemporaryIgnoredActor(actor, Config::options.warpDisableActorTime);
                                 }
                             }
 
@@ -5340,6 +5352,23 @@ void Actor_MoveToLow_Hook(Actor *actor)
     RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToLow_Original(actor);
+}
+
+_Actor_SetPosition g_Actor_SetPosition_Original = nullptr;
+static RelocPtr<_Actor_SetPosition> Actor_SetPosition_vtbl(0x16D7338);
+void Actor_SetPosition_Hook(Actor *actor, const NiPoint3 &pos, bool setCharControllerToo)
+{
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d SetPosition %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+    if (Config::options.disableActorOnSetPositionTime > 0.0 && Config::options.disableActorOnSetPositionTimeJitter > 0.0) {
+        double ignoreDuration = Config::options.disableActorOnSetPositionTime + GetRandomNumberInRange(0.f, Config::options.disableActorOnSetPositionTimeJitter);
+        AddTemporaryIgnoredActor(actor, ignoreDuration);
+    }
+
+    g_Actor_SetPosition_Original(actor, pos, setCharControllerToo);
 }
 
 _Actor_IsRagdollMovingSlowEnoughToGetUp Actor_IsRagdollMovingSlowEnoughToGetUp_Original = 0;
@@ -6377,6 +6406,11 @@ extern "C" {
 
             g_Actor_MoveToMiddleLow_Original = *Actor_MoveToMiddleLow_vtbl;
             SafeWrite64(Actor_MoveToMiddleLow_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToMiddleLow_Hook));
+        }
+
+        {
+            g_Actor_SetPosition_Original = *Actor_SetPosition_vtbl;
+            SafeWrite64(Actor_SetPosition_vtbl.GetUIntPtr(), uintptr_t(Actor_SetPosition_Hook));
         }
 
         g_timer.Start();

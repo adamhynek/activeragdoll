@@ -299,6 +299,10 @@ namespace Config {
         if (!RegisterBool("doWarp", options.doWarp)) success = false;
         if (!RegisterBool("disableWarpWhenGettingUp", options.disableWarpWhenGettingUp)) success = false;
         if (!RegisterFloat("maxAllowedDistBeforeWarp", options.maxAllowedDistBeforeWarp)) success = false;
+        if (!RegisterDouble("warpDisableActorTime", options.warpDisableActorTime)) success = false;
+
+        if (!RegisterDouble("disableActorOnSetPositionTime", options.disableActorOnSetPositionTime)) success = false;
+        if (!RegisterDouble("disableActorOnSetPositionTimeJitter", options.disableActorOnSetPositionTimeJitter)) success = false;
 
         if (!RegisterFloat("hierarchyGain", options.hierarchyGain)) success = false;
         if (!RegisterFloat("velocityGain", options.velocityGain)) success = false;
