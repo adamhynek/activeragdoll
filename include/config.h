@@ -30,6 +30,7 @@ namespace Config {
         double addToWorldSnapTime = 0.1;
 
         bool knockDownAfterBuggedGetUp = true;
+        bool enableForcedOrientationUpdate = true;
 
         bool fadeInComputedWorldFromModel = true;
         bool fadeOutComputedWorldFromModel = true;
@@ -240,6 +241,7 @@ namespace Config {
         bool resetKnockedDownTimerWhenRagdollIsGrabbed = true;
         bool resetFallStateWhenRagdollIsGrabbed = true;
         bool dontRemoveRagdollWhenDoneGettingUp = true;
+        float getUpMinTimeRagdolled = 0.1f;
 
         float hitImpulseBaseStrength = 1.f;
         float hitImpulseProportionalStrength = -0.15f;

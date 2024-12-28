@@ -205,6 +205,7 @@ namespace Config {
         if (!RegisterDouble("addToWorldSnapTime", options.addToWorldSnapTime)) success = false;
 
         if (!RegisterBool("knockDownAfterBuggedGetUp", options.knockDownAfterBuggedGetUp)) success = false;
+        if (!RegisterBool("enableForcedOrientationUpdate", options.enableForcedOrientationUpdate)) success = false;
 
         if (!RegisterBool("fadeInComputedWorldFromModel", options.fadeInComputedWorldFromModel)) success = false;
         if (!RegisterBool("fadeOutComputedWorldFromModel", options.fadeOutComputedWorldFromModel)) success = false;
@@ -399,6 +400,7 @@ namespace Config {
         if (!RegisterBool("resetKnockedDownTimerWhenRagdollIsGrabbed", options.resetKnockedDownTimerWhenRagdollIsGrabbed)) success = false;
         if (!RegisterBool("resetFallStateWhenRagdollIsGrabbed", options.resetFallStateWhenRagdollIsGrabbed)) success = false;
         if (!RegisterBool("dontRemoveRagdollWhenDoneGettingUp", options.dontRemoveRagdollWhenDoneGettingUp)) success = false;
+        if (!RegisterFloat("getUpMinTimeRagdolled", options.getUpMinTimeRagdolled)) success = false;
 
         if (!RegisterFloat("hitImpulseBaseStrength", options.hitImpulseBaseStrength)) success = false;
         if (!RegisterFloat("hitImpulseProportionalStrength", options.hitImpulseProportionalStrength)) success = false;

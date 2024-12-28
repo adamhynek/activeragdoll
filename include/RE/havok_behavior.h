@@ -282,7 +282,10 @@ struct bhkCharacterController : NiRefObject
     std::uint64_t                                    unk300;                     // 300
     std::uint64_t                                    unk308;                     // 308
     std::uint64_t                                    unk310;                     // 310
-    std::uint64_t                                    unk318;                     // 318
+    UInt32                                           unk318;                     // 318
+    UInt16                                           unk31C;                     // 31C
+    UInt8                                            unk31E;                     // 31E
+    bool                                             doOrientationUpdate;        // 31F
     std::uint64_t                                    unk320;                     // 320
     std::uint64_t                                    unk328;                     // 328
 };

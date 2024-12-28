@@ -5121,7 +5121,16 @@ void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manag
 
 void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager, UInt64 *a2, Actor *actor)
 {
-    if (g_activeActors.count(actor)) return;
+    if (g_activeActors.count(actor)) {
+        // We don't want to run RemoveNonRagdollRigidBodiesFromWorld immediately since the stuff is still yet to be added by AddHavok by a task.
+        // So we need to make sure we run RemoveNonRagdollRigidBodiesFromWorld at least 1 frame later than the next task queue run.
+        UInt32 handle = GetOrCreateRefrHandle(actor);
+        auto job = [handle]() {
+            g_taskInterface->AddTask(RemoveNonRagdollRigidBodiesFromWorldTask::Create(handle));
+        };
+        QueueDelayedJob(job, 0.1);
+        return;
+    }
     BSAnimationGraphManager_SetWorld(manager, a2);
 }
 
@@ -5432,6 +5441,14 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
             return false;
         }
     }
+    else {
+        if (ActorProcessManager *process = actor->processManager) {
+            float knockedDownTimer = *(float *)&process->middleProcess->unk2B0;
+            if (*g_fExplosionKnockStateExplodeDownTime - knockedDownTimer < Config::options.getUpMinTimeRagdolled) {
+            return false;
+        }
+    }
+    }
 
     return Actor_IsRagdollMovingSlowEnoughToGetUp_Original(actor);
 }
@@ -5564,6 +5581,25 @@ void bhkCollisionFilter_SetFromBGSCollisionLayers_Hook()
     bhkCollisionFilter *collisionFilter = *g_collisionFilter;
     g_originalBipedLayerBitfield = collisionFilter->layerBitfields[BGSCollisionLayer::kCollisionLayer_Biped];
     g_originalBipedNoCCLayerBitfield = collisionFilter->layerBitfields[BGSCollisionLayer::kCollisionLayer_BipedNoCC];
+}
+
+typedef void(*_Actor_UpdateFromCharacterControllerAndFootIK)(Actor *actor);
+_Actor_UpdateFromCharacterControllerAndFootIK UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original = 0;
+RelocAddr<uintptr_t> UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_HookLoc(0x703367);
+void UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook(Actor *actor)
+{
+    UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original(actor);
+
+    if (bhkCharacterController *controller = GetCharacterController(actor)) {
+        bool needsOrientationUpdate = controller->pitchAngle > 0.001f || controller->rollAngle > 0.001f;
+        bool wouldDoOrientationUpdate = controller->calculatePitchTimer > 0.f && controller->doOrientationUpdate && ((controller->flags & 0x6000000) != 0 || controller->pitchAngle != 0.f || controller->rollAngle != 0.f);
+        if (needsOrientationUpdate && !wouldDoOrientationUpdate) {
+            if (Config::options.enableForcedOrientationUpdate) {
+                controller->doOrientationUpdate = true;
+                controller->calculatePitchTimer = 5.f; // 5 is the default in the base game too
+            }
+        }
+    }
 }
 
 
@@ -5745,6 +5781,11 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(bhkCollisionFilter_SetFromBGSCollisionLayers_HookLoc.GetUIntPtr(), uintptr_t(bhkCollisionFilter_SetFromBGSCollisionLayers_Hook));
         bhkCollisionFilter_SetFromBGSCollisionLayers_Original = (_bhkCollisionFilter_SetFromBGSCollisionLayers)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_HookLoc.GetUIntPtr(), uintptr_t(UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook));
+        UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original = (_Actor_UpdateFromCharacterControllerAndFootIK)originalFunc;
     }
 
     {
