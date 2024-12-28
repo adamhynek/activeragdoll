@@ -5591,7 +5591,7 @@ void UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook(
     UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original(actor);
 
     if (bhkCharacterController *controller = GetCharacterController(actor)) {
-        bool needsOrientationUpdate = controller->pitchAngle > 0.001f || controller->rollAngle > 0.001f;
+        bool needsOrientationUpdate = fabs(controller->pitchAngle) > 0.001f || fabs(controller->rollAngle) > 0.001f;
         bool wouldDoOrientationUpdate = controller->calculatePitchTimer > 0.f && controller->doOrientationUpdate && ((controller->flags & 0x6000000) != 0 || controller->pitchAngle != 0.f || controller->rollAngle != 0.f);
         if (needsOrientationUpdate && !wouldDoOrientationUpdate) {
             if (Config::options.enableForcedOrientationUpdate) {
