@@ -247,6 +247,16 @@ struct LinearImpulseJob : GenericJob
 };
 
 
+std::unordered_map<hkbRagdollDriver *, std::shared_ptr<ActiveRagdoll>> g_activeRagdolls{};
+
+std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driver)
+{
+    auto it = g_activeRagdolls.find(driver);
+    if (it == g_activeRagdolls.end()) return nullptr;
+    return it->second;
+}
+
+
 void UpdateCollisionFilterOnAllBones(Actor *actor)
 {
     if (Actor_IsInRagdollState(actor)) return;
@@ -324,6 +334,38 @@ struct ControllerTrackingData
 
     std::deque<NiPoint3> positionsRoomspace{ 50, NiPoint3() };
     NiPoint2 angularVelocity;
+
+    NiPoint3 GetMaxVelocity(const std::deque<NiPoint3> &velocities)
+    {
+        float largestSpeed = -1;
+        int largestIndex = -1;
+        for (int i = 0; i < velocities.size(); i++) {
+            const NiPoint3 &velocity = velocities[i];
+            float speed = VectorLength(velocity);
+            if (speed > largestSpeed) {
+                largestSpeed = speed;
+                largestIndex = i;
+            }
+        }
+
+        if (largestIndex == 0) {
+            // Max is the first value
+            return velocities[0];
+        }
+        else if (largestIndex == velocities.size() - 1) {
+            // Max is the last value
+            return velocities[largestIndex];
+        }
+        else {
+            // Regular case - avg 3 values centered at the peak
+            return (velocities[largestIndex - 1] + velocities[largestIndex] + velocities[largestIndex + 1]) / 3;
+        }
+    }
+
+    NiPoint3 GetMaxRecentVelocity()
+    {
+        return GetMaxVelocity(velocities);
+    }
 
     NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
     {
@@ -441,6 +483,10 @@ UInt32 g_higgsCollisionLayer = 56;
 
 bhkRigidBody *g_prevRightHeldObject = nullptr;
 bhkRigidBody *g_prevLeftHeldObject = nullptr;
+TESObjectREFR *g_prevRightHeldRefr = nullptr;
+TESObjectREFR *g_prevLeftHeldRefr = nullptr;
+
+NiTransform g_currentGrabTransforms[2]{};
 
 UInt16 g_playerCollisionGroup = 0;
 
@@ -579,6 +625,35 @@ void StaggerActor(Actor *actor, NiPoint3 direction, float magnitude)
     get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, staggerStartStr);
 }
 
+
+std::mutex g_temporaryIgnoredActorsLock;
+std::unordered_map<Actor *, double> g_temporaryIgnoredActors;
+void AddTemporaryIgnoredActor(Actor *actor, double duration)
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    g_temporaryIgnoredActors[actor] = g_currentFrameTime + duration;
+}
+
+bool IsTemporaryIgnoredActor(Actor *actor)
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    return g_temporaryIgnoredActors.size() > 0 && g_temporaryIgnoredActors.count(actor);
+}
+
+void UpdateTemporaryIgnoredActors()
+{
+    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
+    for (auto it = g_temporaryIgnoredActors.begin(); it != g_temporaryIgnoredActors.end();) {
+        if (g_currentFrameTime > it->second) {
+            it = g_temporaryIgnoredActors.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+}
+
+
 bool ShouldKeepOffset(Actor *actor)
 {
     if (!Config::options.doKeepOffset) return false;
@@ -586,6 +661,22 @@ bool ShouldKeepOffset(Actor *actor)
     if (IsActorUsingFurniture(actor)) return false;
 
     if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
+
+    if (Config::options.disableKeepOffsetWhenFootHeld) {
+        for (int i = 0; i < 2; ++i) {
+            TESObjectREFR *heldRefr = i == 0 ? g_rightHeldRefr : g_leftHeldRefr;
+            if (heldRefr == actor) {
+                if (bhkRigidBody *heldRigidBody = i == 0 ? g_rightHeldObject : g_leftHeldObject) {
+                    if (NiAVObject *heldNode = GetNodeFromCollidable(heldRigidBody->hkBody->getCollidable())) {
+                        if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
+                            // Holding foot -> don't keep offset
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     return true;
 }
@@ -597,17 +688,110 @@ struct KeepOffsetData
 };
 std::unordered_map<Actor *, KeepOffsetData> g_keepOffsetActors{};
 
-bool ShouldRagdollOnGrab(Actor *actor)
+std::optional<float> GetStress(Actor *actor, const hkpRigidBody *desiredBody)
+{
+    std::optional<float> stress = std::nullopt;
+
+    ForEachRagdollDriver(actor, [desiredBody, &stress](hkbRagdollDriver *driver) -> void {
+        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
+                            stress = activeRagdoll->stress[i];
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    return stress;
+}
+
+std::optional<float> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
+{
+    std::optional<float> displacement = std::nullopt;
+    ForEachRagdollDriver(actor, [desiredBody, isLeft, &displacement](hkbRagdollDriver *driver) -> void {
+        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
+                            NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                            NiTransform nodeToHand = InverseTransform(handToNode);
+
+                            NiTransform animPose = hkQsTransformToNiTransform(activeRagdoll->lowResAnimPoseWS[i]);
+                            NiTransform rbPose = hkTransformToNiTransform(desiredBody->getTransform(), animPose.scale);
+
+                            NiTransform handOnAnimPose = animPose * nodeToHand;
+                            NiTransform handOnRbPose = rbPose * nodeToHand;
+
+                            NiPoint3 delta = handOnAnimPose.pos - handOnRbPose.pos;
+                            displacement = VectorLength(delta);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    return displacement;
+}
+
+bool CanRagdoll(Actor *actor)
 {
     if (!Config::options.ragdollOnGrab) return false;
 
     TESRace *race = actor->race;
     if (!race) return false;
 
-    if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return true; // small race
+    if (race->data.unk40 >= 2) return false; // race size is >= large
 
+    if (race->data.raceFlags & (1 << 22)) return false; // kNoKnockdowns
+
+    if (Actor_IsGhost(actor)) return false;
+
+    if (IsTemporaryIgnoredActor(actor)) return false;
+
+    return true;
+}
+
+bool IsAnimal(TESRace *race)
+{
+    return race->keyword.HasKeyword(g_keyword_actorTypeAnimal);
+}
+
+bool ShouldRagdollOnGrab(Actor *actor)
+{
+    if (!CanRagdoll(actor)) return false;
+
+    TESRace *race = actor->race;
+    if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return true; // small race
+    
     float health = actor->actorValueOwner.GetCurrent(24);
     if (health < Config::options.smallRaceHealthThreshold) return true;
+
+    if (Config::options.ragdollOnFootYank && !IsAnimal(race)) {
+        for (int isLeft = 0; isLeft < 2; ++isLeft) {
+            TESObjectREFR *heldRefr = !isLeft ? g_rightHeldRefr : g_leftHeldRefr;
+            if (heldRefr == actor) {
+                if (bhkRigidBody *heldRigidBody = !isLeft ? g_rightHeldObject : g_leftHeldObject) {
+                    if (NiAVObject *heldNode = GetNodeFromCollidable(heldRigidBody->hkBody->getCollidable())) {
+                        if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
+                            if (std::optional<float> stress = GetBoneDisplacement(actor, heldRigidBody->hkBody, isLeft)) {
+                                if (*stress > Config::options.footYankRequiredStressAmount) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     return false;
 }
@@ -1108,23 +1292,57 @@ NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocit
 void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
 {
     UInt32 targetHandle = GetOrCreateRefrHandle(actor);
+
+    // Apply a point impulse at the hit location to the body we actually hit
+    QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
+    std::unordered_set<hkpRigidBody *> visitedBodies{ rigidBody };
+
     // Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-    ForEachRagdollDriver(actor, [world, rigidBody, hitVelocity, impulseMult, targetHandle](hkbRagdollDriver *driver) {
+    ForEachRagdollDriver(actor, [world, rigidBody, hitVelocity, impulseMult, targetHandle, &visitedBodies](hkbRagdollDriver *driver) {
         // No deadlock here as the BSAnimationGraphManager update lock has already been acquired
         BSReadLocker lock(&world->worldLock);
-        ForEachAdjacentBody(driver, rigidBody, [driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+        ForEachAdjacentBody(driver, rigidBody, [&visitedBodies, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+            if (!visitedBodies.insert(adjacentBody).second) return;
             QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult1, targetHandle);
-            ForEachAdjacentBody(driver, adjacentBody, [driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+            ForEachAdjacentBody(driver, adjacentBody, [&visitedBodies, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+                if (!visitedBodies.insert(adjacentBody).second) return;
                 QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
-                ForEachAdjacentBody(driver, adjacentBody, [hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+                ForEachAdjacentBody(driver, adjacentBody, [&visitedBodies, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
+                    if (!visitedBodies.insert(adjacentBody).second) return;
                     QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
                 });
             });
         });
     });
+}
 
-    // Apply a point impulse at the hit location to the body we actually hit
-    QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
+NiPoint3 CalculateYankImpulse(hkpRigidBody *rigidBody, const NiPoint3 &velocity)
+{
+    float massInv = rigidBody->getMassInv();
+    float mass = massInv <= 0.001f ? 99999.f : 1.f / massInv;
+    NiPoint3 impulse = velocity * mass; // This impulse will give the object the exact velocity it is hit with
+    impulse.x *= Config::options.yankImpulseHorizontalMultiplier;
+    impulse.y *= Config::options.yankImpulseHorizontalMultiplier;
+    impulse.z *= (impulse.z >= 0.f) ? Config::options.yankImpulseUpwardsMultiplier : Config::options.yankImpulseDownwardsMultiplier;
+    return impulse;
+}
+
+void ApplyYankImpulse(bhkWorld *world, Actor *actor, bhkRigidBody *rigidBody, const NiPoint3 &velocity)
+{
+    UInt32 targetHandle = GetOrCreateRefrHandle(actor);
+
+    {
+        BSReadLocker lock(&world->worldLock);
+
+        ForEachAdjacentBody(actor->GetNiNode(), rigidBody,
+            [velocity, targetHandle](hkpRigidBody *adjacentBody, int wave) {
+                NiPoint3 impulse = CalculateYankImpulse(adjacentBody, velocity);
+                impulse *= powf(Config::options.yankImpulseDecayExponent, wave);
+                QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse, targetHandle);
+            },
+            Config::options.yankImpulseBoneRadius
+        );
+    }
 }
 
 BGSMaterialType *GetImpactMaterial(hkpRigidBody *hitRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition)
@@ -1240,6 +1458,9 @@ struct DoActorHitTask : TaskDelegate
                             if (isFatal) {
                                 // If the hit was fatal, apply a smaller impulse so they don't go flying
                                 impulseMult *= Config::options.fatalHitImpulseMultiplier;
+                            }
+                            else if (Actor_IsInRagdollState(hitChar)) {
+                                impulseMult *= Config::options.ragdolledHitImpulseMultiplier;
                             }
                             ApplyHitImpulse(world, hitChar, rigidBody->hkBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
                         }
@@ -1463,9 +1684,12 @@ struct PhysicsListener :
     std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
     std::vector<CollisionEvent> events{};
 
-    std::unordered_map<TESObjectREFR *, double> physicalBlockTimes{};
-
     UInt32 lastPhysicsDamageFormId = 0;
+
+    void IgnoreCollisionForSeconds(bool isLeft, Actor *actor, double duration)
+    {
+        collisionCooldownTargets[isLeft][actor] = g_currentFrameTime + duration;
+    }
 
     inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
         if ((uint64_t)a <= (uint64_t)b) return { a, b };
@@ -1765,13 +1989,6 @@ struct PhysicsListener :
         }
 
         UInt32 hitLayer = hitRigidBody == rigidBodyA ? layerA : layerB;
-
-        if (hitLayer == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(hitRigidBody) && IsPlayerWeaponRigidBody(hittingRigidBody)) {
-            // Physical block
-            physicalBlockTimes[hitRefr] = g_currentFrameTime;
-            return;
-        }
-
         bool isLeft = IsLeftRigidBody(hittingRigidBody);
 
         if (hitCooldownTargets[isLeft].count(hitRefr)) {
@@ -1780,13 +1997,20 @@ struct PhysicsListener :
             return;
         }
 
-        if (g_higgsLingeringRefrs[isLeft].count(hitRefr)) {
-            // This refr was recently dropped by the player. Don't eat the collision but don't allow the hit.
+        if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController && !IsHittableCharController(hitRefr)) {
+            evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
             return;
         }
 
-        if (hitLayer == BGSCollisionLayer::kCollisionLayer_CharController && !IsHittableCharController(hitRefr)) {
-            evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+        bool isHittingObjectHeld = IsHeldRigidBody(hittingRigidBody);
+
+        if (g_higgsLingeringRefrs[isLeft].count(hitRefr)) {
+            // This refr is currently held / was recently dropped in this hand. Don't eat the collision but don't allow the hit.
+            if (!isHittingObjectHeld && collisionCooldownTargets[isLeft].count(hitRefr)) {
+                // refr shouldn't be hit OR collided with
+                evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
+                return;
+            }
             return;
         }
 
@@ -1892,7 +2116,7 @@ struct PhysicsListener :
                 return;
             }
 
-            if (collisionCooldownTargets[isLeft].count(hitRefr)) {
+            if (!isHittingObjectHeld && collisionCooldownTargets[isLeft].count(hitRefr)) {
                 // refr shouldn't be collided with, but should still be able to be hit (so all code above still runs)
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                 return;
@@ -1997,10 +2221,6 @@ struct PhysicsListener :
                     // refr is still collided with, so refresh its hit cooldown
                     hitCooldownTargets[isLeft][collidedRef].stoppedCollidingTime = g_currentFrameTime;
                 }
-
-                if (GetCollisionLayer(collidedBody) == BGSCollisionLayer::kCollisionLayer_Biped && IsRagdollHandRigidBody(collidedBody) && IsPlayerWeaponRigidBody(collidingBody)) {
-                    physicalBlockTimes[collidedRef] = g_currentFrameTime;
-                }
             }
         }
 
@@ -2028,8 +2248,8 @@ struct PhysicsListener :
         // Clear out old collision cooldown targets
         for (auto &targets : collisionCooldownTargets) { // For each hand's cooldown targets
             for (auto it = targets.begin(); it != targets.end();) {
-                auto [target, disabledTime] = *it;
-                if ((g_currentFrameTime - disabledTime) > Config::options.collisionCooldownTime)
+                auto [target, cooldownUntil] = *it;
+                if (g_currentFrameTime > cooldownUntil)
                     it = targets.erase(it);
                 else
                     ++it;
@@ -2213,11 +2433,6 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
 
             if (!g_activeBipedGroups.count(otherGroup)) {
                 // Disable collision with biped objects that are not actors
-                return CollisionFilterComparisonResult::Ignore;
-            }
-
-            if (IsRagdollHandFilter(otherFilter)) {
-                // Disable collision between the player capsule and ragdoll hands (weapons)
                 return CollisionFilterComparisonResult::Ignore;
             }
 
@@ -2551,23 +2766,6 @@ void TryUpdateNPCState(Actor *actor, bool isShoved)
     }
 }
 
-std::unordered_map<hkbRagdollDriver *, std::shared_ptr<ActiveRagdoll>> g_activeRagdolls{};
-std::unordered_map<Actor *, std::shared_ptr<ActorData>> g_actorData{};
-
-std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driver)
-{
-    auto it = g_activeRagdolls.find(driver);
-    if (it == g_activeRagdolls.end()) return nullptr;
-    return it->second;
-}
-
-std::shared_ptr<ActorData> GetActorData(Actor *actor)
-{
-    auto it = g_actorData.find(actor);
-    if (it == g_actorData.end()) return nullptr;
-    return it->second;
-}
-
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
 hkArray<hkVector4> g_scratchHkArray{}; // We can't call the destructor of this ourselves, so this is a global array to be used at will and never deallocated.
@@ -2596,33 +2794,6 @@ bool IsAddedToWorld(Actor *actor)
     }
 
     return true;
-}
-
-std::mutex g_temporaryIgnoredActorsLock;
-std::unordered_map<Actor *, double> g_temporaryIgnoredActors;
-void AddTemporaryIgnoredActor(Actor *actor, double duration)
-{
-    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
-    g_temporaryIgnoredActors[actor] = g_currentFrameTime + duration;
-}
-
-bool IsTemporaryIgnoredActor(Actor *actor)
-{
-    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
-    return g_temporaryIgnoredActors.size() > 0 && g_temporaryIgnoredActors.count(actor);
-}
-
-void UpdateTemporaryIgnoredActors()
-{
-    std::scoped_lock lock(g_temporaryIgnoredActorsLock);
-    for (auto it = g_temporaryIgnoredActors.begin(); it != g_temporaryIgnoredActors.end();) {
-        if (g_currentFrameTime > it->second) {
-            it = g_temporaryIgnoredActors.erase(it);
-        }
-        else {
-            ++it;
-        }
-    }
 }
 
 bool IsAddableToWorld(Actor *actor)
@@ -3375,11 +3546,11 @@ bool UpdateActorShove(Actor *actor)
 
                     PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
                     // Ignore future contact points for a bit to make things less janky
-                    g_physicsListener.collisionCooldownTargets[isLeft][actor] = g_currentFrameTime;
+                    g_physicsListener.IgnoreCollisionForSeconds(isLeft, actor, Config::options.shoveCollisionCooldownTime);
 
                     if (g_controllerData[!isLeft].avgSpeed > Config::options.shoveSpeedThreshold) {
                         PlayRumble(isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
-                        g_physicsListener.collisionCooldownTargets[!isLeft][actor] = g_currentFrameTime;
+                        g_physicsListener.IgnoreCollisionForSeconds(!isLeft, actor, Config::options.shoveCollisionCooldownTime);
                     }
 
                     g_shovedActors[actor] = g_currentFrameTime;
@@ -3419,7 +3590,6 @@ void ResetObjects()
     g_npcs.clear();
     g_activeActors.clear();
     g_activeRagdolls.clear();
-    g_actorData.clear();
     g_activeBipedGroups.clear();
     g_noPlayerCharControllerCollideGroups.clear();
     g_hittableCharControllerGroups.clear();
@@ -3463,10 +3633,18 @@ void PreVrikPreHiggsCallback()
 NiTransform g_initialGrabTransforms[2]{};
 NiTransform g_initialHeldWeaponLocalTransforms[2]{};
 
-void ObjectGrabbedCallback(bool isLeft, TESObjectREFR *grabbedRefr)
+NiPoint3 g_maxHandVelocityWhenLetGo[2]{};
+
+void OnHiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 {
     g_initialGrabTransforms[isLeft] = g_higgsInterface->GetGrabTransform(isLeft);
 }
+
+void OnHiggsDrop(bool isLeft, TESObjectREFR *droppedRefr)
+{
+    g_maxHandVelocityWhenLetGo[isLeft] = g_controllerData[isLeft].GetMaxRecentVelocity();
+}
+
 
 _ProcessHavokHitJobs ProcessHavokHitJobs_Original = 0;
 void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
@@ -3739,8 +3917,14 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
         g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
 
+        g_prevRightHeldRefr = g_rightHeldRefr;
+        g_prevLeftHeldRefr = g_leftHeldRefr;
+
         g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
         g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
+
+        g_currentGrabTransforms[0] = g_higgsInterface->GetGrabTransform(false);
+        g_currentGrabTransforms[1] = g_higgsInterface->GetGrabTransform(true);
     }
 
     UpdateHiggsDrop();
@@ -3798,15 +3982,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 continue;
             }
 
-            std::shared_ptr<ActorData> actorData = GetActorData(actor);
-            if (!actorData) {
-                g_actorData[actor] = std::shared_ptr<ActorData>(new ActorData());
-            }
-
-            bool didShove = UpdateActorShove(actor);
-
-            TryUpdateNPCState(actor, didShove);
-
 #ifdef _DEBUG
             TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
             /*if (std::string_view(name->name) == "Faendal") {
@@ -3822,83 +3997,135 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 #endif // _DEBUG
 
             UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
-            UInt16 collisionGroup = filterInfo >> 16;
+            UInt16 collisionGroup = GetCollisionGroup(filterInfo);
 
-            bool isHeld = actor == g_rightHeldRefr || actor == g_leftHeldRefr;
+            bool isHeldLeft = actor == g_leftHeldRefr;
+            bool isHeldRight = actor == g_rightHeldRefr;
+            bool isHeld = isHeldLeft || isHeldRight;
+            bool wasHeld = actor == g_prevRightHeldRefr || actor == g_prevLeftHeldRefr;
+
+            bool doRagdoll = false;
+            bool keepOffset = false;
+
             if (isHeld) {
                 if (!Actor_IsInRagdollState(actor)) {
                     if (ShouldRagdollOnGrab(actor)) {
-                        if (ActorProcessManager *process = actor->processManager) {
-                            ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
-                        }
+                        doRagdoll = true;
+                        keepOffset = false;
                     }
                     else if (ShouldKeepOffset(actor)) {
-                        if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
-                            // Wasn't grabbed before
-                            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                            g_keepOffsetActors[actor] = { g_currentFrameTime, false };
-                        }
-                        else {
-                            // Already in the set, so check if it actually succeeded at first
-                            KeepOffsetData &data = it->second;
-
-                            if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
-                                if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
-                                    // Retry
-
-                                    if (Config::options.bumpActorIfKeepOffsetFails) {
-                                        // Try to get them unstuck by bumping them
-                                        QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
-                                    }
-
-                                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                                    data.lastAttemptTime = g_currentFrameTime;
-                                }
-                            }
-                            else {
-                                if (!data.success) {
-                                    // To be sure, do a single additional attempt once we know the interface exists
-                                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                                    data.success = true;
-                                }
-                                else { // KeepOffset interface exists and has succeeded
-                                    ForEachRagdollDriver(actor, [actor, player](hkbRagdollDriver *driver) {
-                                        if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                                            NiPoint3 offset = { 0.f, 0.f, 0.f };
-                                            /*
-                                            NiPoint3 rootOffsetXY = ragdoll->rootOffset;
-                                            rootOffsetXY.z = 0.f;
-                                            if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
-                                                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                                                NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
-                                                offset = InverseTransform(refrTransform) * offsetWS;
-                                            }
-                                            */
-
-                                            NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                                            if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
-                                                // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                                                offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
-                                            }
-
-                                            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-                                            UInt32 playerHandle = *g_playerHandle;
-                                            g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
-                                            //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
-                                        }
-                                    });
-                                }
-                            }
-                        }
+                        keepOffset = true;
+                        doRagdoll = false;
                     }
                 }
 
                 // When an npc is grabbed, disable collision with them
-                if (actor == g_rightHeldRefr) {
-                    rightHeldCollisionGroup = collisionGroup;
+                if (isHeldRight) {
+                    rightHeldCollisionGroup = collisionGroup; // ignore collision with player capsule
+                    g_physicsListener.IgnoreCollisionForSeconds(false, actor, Config::options.droppedActorIgnoreCollisionTime); // ignore collision with hands/weapons
                 }
-                if (actor == g_leftHeldRefr) {
+                if (isHeldLeft) {
                     leftHeldCollisionGroup = collisionGroup;
+                    g_physicsListener.IgnoreCollisionForSeconds(true, actor, Config::options.droppedActorIgnoreCollisionTime);
+                }
+            }
+            else if (wasHeld) {
+                if (!Actor_IsInRagdollState(actor) && CanRagdoll(actor)) {
+                    bool wasHeldRight = actor == g_prevRightHeldRefr;
+                    bool wasHeldLeft = actor == g_prevLeftHeldRefr;
+                    if (wasHeldRight && wasHeldLeft) {
+
+                    }
+                    else {
+                        if (Config::options.ragdollOnTwoHandedYank && !IsAnimal(actor->race)) {
+                            NiPoint3 velocity = g_maxHandVelocityWhenLetGo[wasHeldRight ? 0 : 1];
+                            if (VectorLength(velocity) > Config::options.twoHandedYankRequiredHandSpeedRoomspace) {
+                                doRagdoll = true;
+                                keepOffset = false;
+
+                                ApplyYankImpulse(world, actor, wasHeldRight ? g_prevRightHeldObject : g_prevLeftHeldObject, velocity); // TODO: Don't use prev objects, can be freed
+
+                                if (Config::options.playSoundOnTwoHandedYank) {
+                                    if (BGSSoundDescriptorForm *telekinesisThrowSound = GetDefaultObject<BGSSoundDescriptorForm>(188)) {
+                                        PlaySoundAtNode(telekinesisThrowSound, player->GetNiNode(), {});
+                                    }
+                                    //ActorProcess_TriggerDialogue(actor->processManager, actor, 3, 33, *g_thePlayer, 0, 0, 0, 0, 0); // TODO: This doesn't work. It plays the sound once they finish getting up from ragdolling, not when they're ragdolled.
+                                }
+
+                                g_shovedActors[actor] = g_currentFrameTime; // Prevent shoving right when letting go. This needs to be before the NPC state update.
+                            }
+                        }
+                    }
+                }
+            }
+
+            bool didShove = UpdateActorShove(actor);
+
+            TryUpdateNPCState(actor, didShove);
+
+            if (doRagdoll) {
+                if (ActorProcessManager *process = actor->processManager) {
+                    ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
+                }
+            }
+
+            if (keepOffset) {
+                if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
+                    // Wasn't grabbed before
+                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+                    g_keepOffsetActors[actor] = { g_currentFrameTime, false };
+                }
+                else {
+                    // Already in the set, so check if it actually succeeded at first
+                    KeepOffsetData &data = it->second;
+
+                    if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
+                        if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+                            // Retry
+
+                            if (Config::options.bumpActorIfKeepOffsetFails) {
+                                // Try to get them unstuck by bumping them
+                                QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
+                            }
+
+                            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+                            data.lastAttemptTime = g_currentFrameTime;
+                        }
+                    }
+                    else {
+                        if (!data.success) {
+                            // To be sure, do a single additional attempt once we know the interface exists
+                            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+                            data.success = true;
+                        }
+                        else { // KeepOffset interface exists and has succeeded
+                            ForEachRagdollDriver(actor, [actor, player](hkbRagdollDriver *driver) {
+                                if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                                    NiPoint3 offset = { 0.f, 0.f, 0.f };
+                                    /*
+                                    NiPoint3 rootOffsetXY = ragdoll->rootOffset;
+                                    rootOffsetXY.z = 0.f;
+                                    if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
+                                        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                                        NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
+                                        offset = InverseTransform(refrTransform) * offsetWS;
+                                    }
+                                    */
+
+                                    NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+                                    if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
+                                        // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+                                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+                                    }
+
+                                    UInt32 actorHandle = GetOrCreateRefrHandle(actor);
+                                    UInt32 playerHandle = *g_playerHandle;
+                                    g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
+                                    //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
+                                }
+                            });
+                        }
+                    }
                 }
             }
             else {
@@ -3907,6 +4134,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     g_keepOffsetActors.erase(actor);
                 }
             }
+
 
             bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
 
@@ -4689,6 +4917,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                             hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
                             MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
 
+                            ragdoll->lowResAnimPoseWS.assign(lowResPoseWorld.m_data, lowResPoseWorld.m_data + lowResPoseWorld.m_size);
+
                             hkQsTransform poseT = lowResPoseWorld[0];
 
                             if (ragdoll->rootBoneTransform) { // We compare against last frame's pose transform since the rigidbody transforms aren't updated yet for this frame until after the physics step.
@@ -5138,13 +5368,6 @@ bool IsPhysicallyBlocked(Actor *attacker)
 {
     if (!Config::options.enablePhysicalBlock) return false;
 
-    if (auto it = g_physicsListener.physicalBlockTimes.find(attacker); it != g_physicsListener.physicalBlockTimes.end()) {
-        _MESSAGE("%d: %.2f", *g_currentFrameCounter, g_currentFrameTime - it->second);
-        if (g_currentFrameTime - it->second < Config::options.physicalBlockWindow) {
-            return true;
-        }
-    }
-
     return false;
 }
 
@@ -5445,9 +5668,9 @@ bool Actor_IsRagdollMovingSlowEnoughToGetUp_Hook(Actor *actor)
         if (ActorProcessManager *process = actor->processManager) {
             float knockedDownTimer = *(float *)&process->middleProcess->unk2B0;
             if (*g_fExplosionKnockStateExplodeDownTime - knockedDownTimer < Config::options.getUpMinTimeRagdolled) {
-            return false;
+                return false;
+            }
         }
-    }
     }
 
     return Actor_IsRagdollMovingSlowEnoughToGetUp_Original(actor);
@@ -6323,7 +6546,8 @@ extern "C" {
                     g_higgsInterface->AddCollisionFilterComparisonCallback(CollisionFilterComparisonCallback);
                     g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
                     g_higgsInterface->AddPreVrikPreHiggsCallback(PreVrikPreHiggsCallback);
-                    g_higgsInterface->AddGrabbedCallback(ObjectGrabbedCallback);
+                    g_higgsInterface->AddGrabbedCallback(OnHiggsGrab);
+                    g_higgsInterface->AddDroppedCallback(OnHiggsDrop);
 
                     UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
                     bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters

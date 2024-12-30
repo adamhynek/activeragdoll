@@ -20,6 +20,7 @@ struct ActiveRagdoll
     Blender blender{};
     std::vector<hkQsTransform> animPose{};
     std::vector<hkQsTransform> ragdollPose{};
+    std::vector<hkQsTransform> lowResAnimPoseWS{};
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
     hkQsTransform worldFromModel{};
@@ -47,10 +48,3 @@ struct ActiveRagdoll
     bool isInRagdollState = false;
 };
 
-struct ActorData
-{
-    NiPointer<NiAVObject> weaponRoot = nullptr;
-    NiPointer<bhkListShape> combinedShape = nullptr;
-    NiPointer<bhkShape> handShape = nullptr;
-    bhkShape *clonedFromShape = nullptr;
-};

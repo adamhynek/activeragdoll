@@ -105,6 +105,7 @@ void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<v
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
 void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f);
 void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f);
+void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(hkpRigidBody *, int)> f, int waves);
 NiTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale = true);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
 bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);

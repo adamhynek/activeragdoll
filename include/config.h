@@ -43,6 +43,7 @@ namespace Config {
 
         double thrownObjectLingerTime = 5.0;
         double thrownObjectIgnoreHitTime = 0.1;
+        double droppedActorIgnoreCollisionTime = 0.1;
 
         double worldChangedWaitTime = 0.4;
         int minFramesBetweenActorAdds = 2;
@@ -62,7 +63,7 @@ namespace Config {
         float shoveRumbleDuration = 0.15f;
         float shoveAggressionImpact = 2.5f;
         double shoveCooldown = 2.0;
-        double collisionCooldownTime = 0.7;
+        double shoveCollisionCooldownTime = 0.7;
         double shoveWaitForBumpTimeBeforeStagger = 0.05;
         std::vector<UInt32> shoveTopicInfos = {
             0x0006CB2C, // Be careful!
@@ -127,6 +128,18 @@ namespace Config {
         bool ragdollOnGrab = false;
         bool ragdollSmallRacesOnGrab = true;
         float smallRaceHealthThreshold = 6.f;
+        bool ragdollOnTwoHandedYank = true;
+        float twoHandedYankRequiredHandSpeedRoomspace = 1.5f;
+        bool playSoundOnTwoHandedYank = true;
+        bool ragdollOnFootYank = true;
+        bool disableKeepOffsetWhenFootHeld = true;
+        float footYankRequiredStressAmount = 35.f;
+        float yankImpulseDecayExponent = 0.8f;
+        int yankImpulseBoneRadius = 4;
+
+        float yankImpulseHorizontalMultiplier = 1.f;
+        float yankImpulseUpwardsMultiplier = 1.f;
+        float yankImpulseDownwardsMultiplier = 1.f;
 
         bool doKeepOffset = true;
         bool bumpActorIfKeepOffsetFails = true;
@@ -249,6 +262,7 @@ namespace Config {
 
         float powerAttackImpulseMultiplier = 2.f;
         float fatalHitImpulseMultiplier = 0.5f;
+        float ragdolledHitImpulseMultiplier = 0.5f;
 
         float hitImpulseMinStrength = 0.2f;
         float hitImpulseMaxStrength = 1.f;
@@ -323,6 +337,7 @@ namespace Config {
         std::set<std::string, std::less<>> excludeRaces;
         std::set<std::string, std::less<>> aggressionExcludeRaces;
         std::set<std::string, std::less<>> disableConstraintsRaces;
+        std::set<std::string, std::less<>> footNodeNames;
     };
     extern Options options; // global object containing options
 

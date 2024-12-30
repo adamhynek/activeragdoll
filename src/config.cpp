@@ -218,6 +218,7 @@ namespace Config {
 
         if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
         if (!RegisterDouble("thrownObjectIgnoreHitTime", options.thrownObjectIgnoreHitTime)) success = false;
+        if (!RegisterDouble("droppedActorIgnoreCollisionTime", options.droppedActorIgnoreCollisionTime)) success = false;
 
         if (!RegisterDouble("worldChangedWaitTime", options.worldChangedWaitTime)) success = false;
         if (!RegisterInt("minFramesBetweenActorAdds", options.minFramesBetweenActorAdds)) success = false;
@@ -237,7 +238,7 @@ namespace Config {
         if (!RegisterFloat("shoveRumbleDuration", options.shoveRumbleDuration)) success = false;
         if (!RegisterFloat("shoveAggressionImpact", options.shoveAggressionImpact)) success = false;
         if (!RegisterDouble("shoveCooldown", options.shoveCooldown)) success = false;
-        if (!RegisterDouble("collisionCooldownTime", options.collisionCooldownTime)) success = false;
+        if (!RegisterDouble("shoveCollisionCooldownTime", options.shoveCollisionCooldownTime)) success = false;
         if (!RegisterDouble("shoveWaitForBumpTimeBeforeStagger", options.shoveWaitForBumpTimeBeforeStagger)) success = false;
         if (!ReadFormArray("shoveTopicInfos", options.shoveTopicInfos)) success = false;
 
@@ -285,6 +286,18 @@ namespace Config {
         if (!RegisterBool("ragdollOnGrab", options.ragdollOnGrab)) success = false;
         if (!RegisterBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) success = false;
         if (!RegisterFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) success = false;
+        if (!RegisterBool("ragdollOnTwoHandedYank", options.ragdollOnTwoHandedYank)) success = false;
+        if (!RegisterFloat("twoHandedYankRequiredHandSpeedRoomspace", options.twoHandedYankRequiredHandSpeedRoomspace)) success = false;
+        if (!RegisterBool("playSoundOnTwoHandedYank", options.playSoundOnTwoHandedYank)) success = false;
+        if (!RegisterBool("ragdollOnFootYank", options.ragdollOnFootYank)) success = false;
+        if (!RegisterBool("disableKeepOffsetWhenFootHeld", options.disableKeepOffsetWhenFootHeld)) success = false;
+        if (!RegisterFloat("footYankRequiredStressAmount", options.footYankRequiredStressAmount)) success = false;
+        if (!RegisterFloat("yankImpulseDecayExponent", options.yankImpulseDecayExponent)) success = false;
+        if (!RegisterInt("yankImpulseBoneRadius", options.yankImpulseBoneRadius)) success = false;
+
+        if (!RegisterFloat("yankImpulseHorizontalMultiplier", options.yankImpulseHorizontalMultiplier)) success = false;
+        if (!RegisterFloat("yankImpulseUpwardsMultiplier", options.yankImpulseUpwardsMultiplier)) success = false;
+        if (!RegisterFloat("yankImpulseDownwardsMultiplier", options.yankImpulseDownwardsMultiplier)) success = false;
 
         if (!RegisterBool("doKeepOffset", options.doKeepOffset)) success = false;
         if (!RegisterBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) success = false;
@@ -408,6 +421,7 @@ namespace Config {
 
         if (!RegisterFloat("powerAttackImpulseMultiplier", options.powerAttackImpulseMultiplier)) success = false;
         if (!RegisterFloat("fatalHitImpulseMultiplier", options.fatalHitImpulseMultiplier)) success = false;
+        if (!RegisterFloat("ragdolledHitImpulseMultiplier", options.ragdolledHitImpulseMultiplier)) success = false;
 
         if (!RegisterFloat("hitImpulseMinStrength", options.hitImpulseMinStrength)) success = false;
         if (!RegisterFloat("hitImpulseMaxStrength", options.hitImpulseMaxStrength)) success = false;
@@ -482,6 +496,7 @@ namespace Config {
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;
         if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;
         if (!ReadStringSet("disableConstraintsRaces", Config::options.disableConstraintsRaces)) success = false;
+        if (!ReadStringSet("footNodeNames", Config::options.footNodeNames)) success = false;
 
         g_registrationComplete = true;
 
