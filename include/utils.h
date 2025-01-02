@@ -138,9 +138,8 @@ bool HasKeepOffsetInterface(Actor *actor);
 void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue);
 void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo = nullptr);
 inline TESTopic *GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
-TESTopicInfo *GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1 = 0, UInt32 exclude2 = 0);
-TESTopicInfo *GetRandomTopicInfo(std::vector<TESTopicInfo *> &topicInfos);
-std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions);
+TESTopicInfo *GetRandomTopicInfo(const std::vector<TESTopicInfo *> &topicInfos, TESTopicInfo *exclude1 = nullptr, TESTopicInfo *exclude2 = nullptr);
+std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(const std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }

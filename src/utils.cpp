@@ -1242,37 +1242,25 @@ void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *
     ActorProcess_SayTopicInfo(sourceProcess, source, topic, topicInfo, 0, 0, 1, 1);
 }
 
-TESTopicInfo *GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclude1, UInt32 exclude2)
+TESTopicInfo *GetRandomTopicInfo(const std::vector<TESTopicInfo *> &topicInfos, TESTopicInfo *exclude1, TESTopicInfo *exclude2)
 {
-    int numTopics = topicInfoIDs.size();
-    UInt32 formID;
+    int numTopics = topicInfos.size();
+    if (numTopics == 0) return nullptr;
+
+    TESTopicInfo * topicInfo = nullptr;
     int i = 0;
     do {
         int random = (int)(GetRandomNumberInRange(0.f, 0.9999f) * numTopics);
         if (random < 0) random = 0;
         if (random >= numTopics) random = numTopics - 1;
-        formID = topicInfoIDs[random];
+        topicInfo = topicInfos[random];
         ++i;
-    } while ((formID == exclude1 || formID == exclude2) && i < 30);
+    } while ((topicInfo == exclude1 || topicInfo == exclude2) && i < 30);
 
-    if (TESForm *form = LookupFormByID(formID)) {
-        if (TESTopicInfo *topicInfo = DYNAMIC_CAST(form, TESForm, TESTopicInfo)) {
-            return topicInfo;
-        }
-    }
-    return nullptr;
+    return topicInfo;
 }
 
-TESTopicInfo *GetRandomTopicInfo(std::vector<TESTopicInfo *> &topicInfos)
-{
-    int numTopics = topicInfos.size();
-    int random = (int)(GetRandomNumberInRange(0.f, 0.9999f) * numTopics);
-    if (random < 0) random = 0;
-    if (random >= numTopics) random = numTopics - 1;
-    return topicInfos[random];
-}
-
-std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions)
+std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(const std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions)
 {
     std::vector<TESTopicInfo *> validTopicInfos;
     for (UInt32 formID : topicInfoIDs) {

@@ -303,6 +303,7 @@ RelocAddr<_ActorProcess_PlayIdle> ActorProcess_PlayIdle(0x654490);
 RelocAddr<_ActorProcess_SetBumpState> ActorProcess_SetBumpState(0x661A10);
 RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection(0x664C00);
 RelocAddr<_ActorProcess_ResetBumpWaitTimer> ActorProcess_ResetBumpWaitTimer(0x661A50);
+RelocAddr<_Actor_CanBeKnockedDown> Actor_CanBeKnockedDown(0x5EB870);
 RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway(0x686920);
 RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update(0x716120);
 RelocAddr<_Actor_KeepOffsetFromActor> Actor_KeepOffsetFromActor(0x60C1A0);

@@ -701,6 +701,9 @@ extern RelocAddr<_ActorProcess_SetBumpDirection> ActorProcess_SetBumpDirection;
 typedef void(*_ActorProcess_ResetBumpWaitTimer)(ActorProcessManager *_this);
 extern RelocAddr<_ActorProcess_ResetBumpWaitTimer> ActorProcess_ResetBumpWaitTimer;
 
+typedef bool(*_Actor_CanBeKnockedDown)(Actor *_this);
+extern RelocAddr<_Actor_CanBeKnockedDown> Actor_CanBeKnockedDown;
+
 typedef void(*_ActorProcess_PushActorAway)(ActorProcessManager *_this, Actor *actor, NiPoint3 &from, float force);
 extern RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway;
 

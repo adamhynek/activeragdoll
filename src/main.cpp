@@ -66,6 +66,8 @@ BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 vr_src::VRControllerAxis_t g_rightStick;
 vr_src::VRControllerAxis_t g_leftStick;
 
+std::vector<UInt16> g_dialogueSkipConditions = { 0x4D, 0x90, 0x91, 0x120 }; // 4D = GetRandomPercent, 90 = GetTrespassWarningLevel, 91 = IsTrespassing, 120 = GetFriendHit
+
 
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
 struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
@@ -304,14 +306,18 @@ void QueuePrePhysicsJob(Args&&... args)
 }
 
 std::vector<std::unique_ptr<DelayedJob>> g_delayedJobs{};
+std::mutex g_delayedJobsLock{};
 
 void QueueDelayedJob(std::function<void(void)> job, double delay)
 {
+    std::scoped_lock lock(g_delayedJobsLock);
     g_delayedJobs.push_back(std::make_unique<DelayedJob>(job, delay));
 }
 
 void RunDelayedJobs(double now)
 {
+    std::scoped_lock lock(g_delayedJobsLock);
+
     for (int i = 0; i < g_delayedJobs.size(); ++i) {
         DelayedJob *job = g_delayedJobs[i].get();
         if (now >= job->runTime) {
@@ -750,7 +756,7 @@ bool CanRagdoll(Actor *actor)
 
     if (race->data.unk40 >= 2) return false; // race size is >= large
 
-    if (race->data.raceFlags & (1 << 22)) return false; // kNoKnockdowns
+    if (!Actor_CanBeKnockedDown(actor)) return false; // checks stuff like kNoKnockdowns flag
 
     if (Actor_IsGhost(actor)) return false;
 
@@ -2535,8 +2541,8 @@ struct NPCData
     double lastGrabbedTouchedTime = 0.0;
     float accumulatedGrabbedTime = 0.f;
     TESTopic *lastSaidTopic = nullptr;
-    UInt32 lastSaidTopicID = 0;
-    UInt32 secondLastSaidTopicID = 0;
+    TESTopicInfo *lastSaidTopicInfo = nullptr;
+    TESTopicInfo *secondLastSaidTopicInfo = nullptr;
     float lastSaidDialogueDuration = -1.f;
     float lastVoiceTimer = -1.f;
     bool isSpeaking = false;
@@ -2546,8 +2552,8 @@ struct NPCData
         Actor_SayToEx(character, *g_thePlayer, topic, topicInfo);
 
         if (topicInfo) {
-            secondLastSaidTopicID = lastSaidTopicID;
-            lastSaidTopicID = topicInfo->formID;
+            secondLastSaidTopicInfo = lastSaidTopicInfo;
+            lastSaidTopicInfo = topicInfo;
         }
 
         lastSaidTopic = topic;
@@ -2558,7 +2564,8 @@ struct NPCData
         if (Actor_IsInRagdollState(character) || IsSleeping(character)) return;
 
         if (isShoved) {
-            if (TESTopicInfo *topicInfo = GetRandomTopicInfo(Config::options.shoveTopicInfos, lastSaidTopicID, secondLastSaidTopicID)) {
+            std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, character, *g_thePlayer, g_dialogueSkipConditions);
+            if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
                 TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
             }
             dialogueTime = g_currentFrameTime;
@@ -2586,7 +2593,8 @@ struct NPCData
 
         // There are no assigned topics, so use our topic info sets
         std::vector<UInt32> &topicInfoIDs = high ? Config::options.aggressionHighTopicInfos : Config::options.aggressionLowTopicInfos;
-        if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfoIDs, lastSaidTopicID, secondLastSaidTopicID)) {
+        std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(topicInfoIDs, character, *g_thePlayer, g_dialogueSkipConditions);
+        if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
             TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
         }
 
@@ -2618,7 +2626,8 @@ struct NPCData
         {
             // Still do some dialogue when shoved even if it won't grow aggression for them
             if (isShoved && !Actor_IsInRagdollState(character) && !IsSleeping(character)) {
-                if (TESTopicInfo *topicInfo = GetRandomTopicInfo(Config::options.shoveTopicInfos, lastSaidTopicID, secondLastSaidTopicID)) {
+                std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, character, *g_thePlayer, g_dialogueSkipConditions);
+                if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
                     TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
                 }
             }
@@ -3653,8 +3662,7 @@ void PlayRagdollSound(Actor *actor)
     // The reason we DO want to evaluate conditions at all is that certain lines cannot be said by children, etc. and we need to check that.
     // We use the conditions as a filter, after which we choose a random one to play, as opposed to playing an entire topic.
     // Playing a topic could refuse to play a topicinfo if the random percent condition on it failed, even if it's the only otherwise-passing topicinfo in the entire topic.
-    static std::vector<UInt16> skipConditions = { 0x4D, 0x91 }; // 4D = GetRandomPercent, 91 = IsTrespassing
-    std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.ragdollTopicInfos, actor, *g_thePlayer, skipConditions);
+    std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.ragdollTopicInfos, actor, *g_thePlayer, g_dialogueSkipConditions);
     if (topicInfos.empty()) {
         PlayDialogueWithoutActorChecks(Config::options.ragdollSoundFallbackDialogueSubtype, actor, *g_thePlayer);
     }
