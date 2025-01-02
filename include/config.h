@@ -130,12 +130,16 @@ namespace Config {
         float smallRaceHealthThreshold = 6.f;
         bool ragdollOnTwoHandedYank = true;
         float twoHandedYankRequiredHandSpeedRoomspace = 1.5f;
-        bool playSoundOnTwoHandedYank = true;
         bool ragdollOnFootYank = true;
         bool disableKeepOffsetWhenFootHeld = true;
         float footYankRequiredStressAmount = 35.f;
         float yankImpulseDecayExponent = 0.8f;
         int yankImpulseBoneRadius = 4;
+        bool playRagdollSound = true;
+        int ragdollSoundFallbackDialogueSubtype = 33;
+        std::vector<UInt32> ragdollTopicInfos = {
+            0x0006F41E, // Agh!
+        };
 
         float yankImpulseHorizontalMultiplier = 1.f;
         float yankImpulseUpwardsMultiplier = 1.f;

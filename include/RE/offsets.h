@@ -59,6 +59,9 @@ extern RelocPtr<BSAudioManager *> g_audioManager;
 struct ShadowSceneNode : NiNode { /* TODO */ };
 extern RelocPtr<ShadowSceneNode *> g_shadowSceneNode;
 
+struct BGSStoryTeller { /* TODO */ };
+extern RelocPtr<BGSStoryTeller *> g_storyTeller;
+
 extern RelocPtr<TESObjectWEAP *> g_unarmedWeapon;
 
 extern RelocPtr<float> g_minSoundVel;
@@ -393,6 +396,9 @@ extern RelocAddr<_SoundData_SetNode> SoundData_SetNode;
 
 typedef bool(*_SoundData_Play)(SoundData *SoundData);
 extern RelocAddr<_SoundData_Play> SoundData_Play;
+
+typedef bool(*_SoundData_PlayDelayed)(SoundData *SoundData, UInt32 delay);
+extern RelocAddr<_SoundData_PlayDelayed> SoundData_PlayDelayed;
 
 typedef UInt32(*_BSExtraList_GetCount)(BaseExtraList *extraList);
 extern RelocAddr<_BSExtraList_GetCount> BSExtraList_GetCount;
@@ -920,8 +926,44 @@ extern RelocAddr<_sub_140654E10> sub_140654E10;
 typedef void(*_ActorProcess_TriggerDialogue)(ActorProcessManager *_this, Actor *actor, int dialogueType, int dialogueSubtype, Actor *target, UInt64 a6, bool a7, bool a8, bool a9, bool a10);
 extern RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue;
 
-typedef void(*_sub_140664870)(ActorProcessManager *_this, int a2);
-extern RelocAddr<_sub_140664870> sub_140664870;
+typedef TESTopicInfo * (*_BGSStoryTeller_GetTopicInfoForDialogue)(void *_this, int dialogueType, int subType, TESObjectREFR *source, TESObjectREFR *target, UInt64 a6, UInt64 a7);
+extern RelocAddr<_BGSStoryTeller_GetTopicInfoForDialogue> BGSStoryTeller_GetTopicInfoForDialogue;
+
+typedef bool(*_TESTopicInfo_EvaluateConditions)(TESTopicInfo *_this, UInt8 *a2, TESObjectREFR *a_source, TESObjectREFR *a_target);
+extern RelocAddr<_TESTopicInfo_EvaluateConditions> TESTopicInfo_EvaluateConditions;
+
+typedef bool(*_TESCondition_IsTrue)(Condition **_this, ConditionCheckParams &params);
+extern RelocAddr<_TESCondition_IsTrue> TESCondition_IsTrue;
+
+typedef bool(*_TESConditionItem_IsTrue)(Condition *_this, ConditionCheckParams &params);
+extern RelocAddr<_TESConditionItem_IsTrue> TESConditionItem_IsTrue;
+
+typedef DialogueItem *(*_TESTopic_GetDialogueItem)(TESTopic *_this, TESObjectREFR *source, TESObjectREFR *target, TESTopicInfo *topicInfo, TESTopic *a5, UInt64 a6);
+extern RelocAddr<_TESTopic_GetDialogueItem> TESTopic_GetDialogueItem;
+
+typedef void(*_DialogueItem_dtor)(DialogueItem *_this);
+extern RelocAddr<_DialogueItem_dtor> DialogueItem_dtor;
+
+typedef void(*_BSAudioManager_CreateSoundHandleFromResource)(BSAudioManager *_this, SoundData *soundHandle, BSResource__ID *resource, UInt32 flags, int a5);
+extern RelocAddr<_BSAudioManager_CreateSoundHandleFromResource> BSAudioManager_CreateSoundHandleFromResource;
+
+typedef void(*_SoundData_SetDialogueOutputModel)(SoundData *_this, BSISoundOutputModel *model);
+extern RelocAddr<_SoundData_SetDialogueOutputModel> SoundData_SetDialogueOutputModel;
+
+typedef void(*_SoundData_SetSoundCategory)(SoundData *_this, BSISoundCategory *category, UInt32 a3);
+extern RelocAddr<_SoundData_SetSoundCategory> SoundData_SetSoundCategory;
+
+typedef void(*_BSResource__ID_ctor)(BSResource__ID *_this, const char *resourcePath);
+extern RelocAddr<_BSResource__ID_ctor> BSResource__ID_ctor;
+
+typedef char *(*_strip_base_path)(const char *dst, rsize_t maxSize, const char *src, const char *start);
+extern RelocAddr<_strip_base_path> strip_base_path;
+
+typedef NiAVObject *(*_ActorProcess_GetHeadNode)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_GetHeadNode> ActorProcess_GetHeadNode;
+
+typedef void(*_ActorProcess_SetPlayerActionReaction)(ActorProcessManager *_this, int a2);
+extern RelocAddr<_ActorProcess_SetPlayerActionReaction> ActorProcess_SetPlayerActionReaction;
 
 typedef void *(*_sub_1406EE920)(void);
 extern RelocAddr<_sub_1406EE920> sub_1406EE920;

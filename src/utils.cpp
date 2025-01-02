@@ -768,6 +768,166 @@ NiTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokSc
     return rigidBodyLocalTransform;
 }
 
+bool DialogueItem_ResetCurrentResponse(DialogueItem *a1)
+{
+    a1->CurrentResponse_18 = &a1->Responses_8;
+    return a1->Responses_8.Item_0 != nullptr;
+}
+
+DialogueResponse *DialogueItem_GetCurrentResponse(DialogueItem *a1)
+{
+    if (BSSimpleList_DialogueResponse__ *currentResponse = a1->CurrentResponse_18) {
+        return currentResponse->Item_0;
+    }
+    return nullptr;
+}
+
+bool EvaluateConditionsEx(Condition *condition, ConditionCheckParams &params, const std::vector<UInt16> &skipConditions)
+{
+    // Should be the same condition evaluation logic as the base game, but with the ability to skip certain conditions.
+    // The way it works is every condition must be true, unless it is in an OR block. An OR block is a consecutive set of conditions that are ORed together, and the result of the OR block must be true. There is no nesting or anything like that.
+
+    bool isORtrue = false;
+    bool wasOR = false;
+
+    while (condition) {
+        bool isOR = condition->comparisonType & 1; // 1 = OR, 0 = AND
+
+        bool alwaysSucceed = std::find(skipConditions.begin(), skipConditions.end(), condition->functionId) != skipConditions.end();
+
+        if (!wasOR && isOR) {
+            // Entering an OR block
+            bool isTrue = alwaysSucceed || TESConditionItem_IsTrue(condition, params);
+            isORtrue = isTrue;
+        }
+        else if (wasOR && !isOR) {
+            // Exiting an OR block
+            // This condition is still part of the OR block (the last part). So should still evaluate it as part of the block.
+            if (!isORtrue) {
+                // We only need to check the condition if the OR hasn't had a true yet
+                bool isTrue = alwaysSucceed || TESConditionItem_IsTrue(condition, params);
+                isORtrue = isORtrue || isTrue;
+            }
+
+            if (!isORtrue) {
+                // OR block was false, so it doesn't pass
+                return false;
+            }
+        }
+        else if (wasOR && isOR) {
+            // Still in an OR block
+            if (!isORtrue) {
+                // We only need to check the condition if the OR hasn't had a true yet
+                bool isTrue = alwaysSucceed || TESConditionItem_IsTrue(condition, params);
+                isORtrue = isORtrue || isTrue;
+            }
+        }
+        else { // !wasOR && !isOR
+            bool isTrue = alwaysSucceed || TESConditionItem_IsTrue(condition, params);
+            if (!isTrue) {
+                // not in an OR block and condition is false, so it doesn't pass
+                return false;
+            }
+        }
+
+        wasOR = isOR;
+
+        condition = condition->next;
+    }
+
+    // No more conditions. If we ended in an OR block, need to check the outcome of the block.
+    if (wasOR && !isORtrue) {
+        // OR block was false, so it doesn't pass
+        return false;
+    }
+
+    return true;
+}
+
+bool TESTopicInfo_EvaluateConditionsEx(TESTopicInfo *topicInfo, Actor *source, TESObjectREFR *target, const std::vector<UInt16> &skipConditions)
+{
+    if (topicInfo->flags & 0x20) return false; // 0x20 == kDeleted
+
+    ConditionCheckParams params(source, target);
+    TESTopic *topic = (TESTopic *)topicInfo->unk14;
+    if (topic) params.quest = (TESQuest *)topic->unk40;
+
+    bool result = false;
+    if (!params.quest || EvaluateConditionsEx((Condition *)params.quest->unk108, params, skipConditions)) {
+        result = EvaluateConditionsEx(topicInfo->conditions, params, skipConditions);
+    }
+
+    return result;
+}
+
+void PlayTopicInfoWithoutActorChecks(TESTopicInfo *topicInfo, Actor *source, TESObjectREFR *target)
+{
+    if (TESTopic *topic = (TESTopic *)topicInfo->unk14) {
+        if (DialogueItem *dialogueItem = TESTopic_GetDialogueItem(topic, source, target, topicInfo, topic, 0)) {
+            _InterlockedIncrement(&dialogueItem->refCount_0);
+
+            if (DialogueItem_ResetCurrentResponse(dialogueItem)) {
+                if (DialogueResponse *response = DialogueItem_GetCurrentResponse(dialogueItem)) {
+
+                    NiAVObject *sourceNode = source->GetNiNode();
+                    if (ActorProcessManager *actorProcess = source->processManager) {
+                        if (NiAVObject *headNode = ActorProcess_GetHeadNode(actorProcess)) {
+                            sourceNode = headNode;
+                        }
+                    }
+
+                    if (BGSSoundDescriptorForm *sound = response->VoiceSound_30) {
+                        // easy
+                        PlaySoundAtNode(sound, sourceNode, {});
+                    }
+                    else {
+                        const char *soundPath = response->Voice_18.data;
+                        char dst[264];
+                        const char *soundFileRelativePath = strip_base_path(dst, 260, soundPath, "sound\\");
+
+                        bool isPlayer = source == *g_thePlayer;
+
+                        BSResource__ID resourceID;
+                        BSResource__ID_ctor(&resourceID, soundFileRelativePath);
+
+                        // no idea what these flags are
+                        UInt32 flags = 0x10;
+                        if (!isPlayer) flags |= 0x80;
+                        //if (false) flags |= 0x8000; // some condition, not sure what it is
+
+                        SoundData soundHandle;
+                        BSAudioManager_CreateSoundHandleFromResource(*g_audioManager, &soundHandle, &resourceID, flags, isPlayer ? 0x40 : 0x80);
+
+                        if (BGSSoundOutput *soundOutput = GetDefaultObject<BGSSoundOutput>(isPlayer ? 148 : 147)) { // kDialogueOutputModel3D for non-player, kDialogueOutputModel2D for player
+                            SoundData_SetDialogueOutputModel(&soundHandle, &soundOutput->soundOutputModel);
+                        }
+
+                        if (BGSSoundCategory *soundCategory = GetDefaultObject<BGSSoundCategory>(136)) { // kDialogueVoiceCategory
+                            SoundData_SetSoundCategory(&soundHandle, &soundCategory->soundCategory, 1000);
+                        }
+
+                        SoundData_SetNode(&soundHandle, sourceNode);
+
+                        SoundData_Play(&soundHandle);
+                    }
+                }
+            }
+
+            if (_InterlockedExchangeAdd(&dialogueItem->refCount_0, 0xFFFFFFFF) == 1) {
+                DialogueItem_dtor(dialogueItem);
+                Heap_Free(dialogueItem);
+            }
+        }
+    }
+}
+
+void PlayDialogueWithoutActorChecks(int subType, Actor *source, TESObjectREFR *target)
+{
+    if (TESTopicInfo *topicInfo = BGSStoryTeller_GetTopicInfoForDialogue(*g_storyTeller, GetDialogueTypeFromSubtype(subType), subType, source, target, 0, 0)) {
+        PlayTopicInfoWithoutActorChecks(topicInfo, source, target);
+    }
+}
+
 UInt32 PlaySoundAtNode(BGSSoundDescriptorForm *sound, NiAVObject *node, const NiPoint3 &location)
 {
     UInt32 formId = sound->formID;
@@ -1053,7 +1213,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
         ActorProcess_TriggerDialogue(process, actor, 7, 98, bumper, 0, 0, 0, 0, 0);
     }
 
-    sub_140664870(process, 0);
+    ActorProcess_SetPlayerActionReaction(process, 0);
 }
 
 void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo)
@@ -1101,6 +1261,30 @@ TESTopicInfo *GetRandomTopicInfo(std::vector<UInt32> &topicInfoIDs, UInt32 exclu
         }
     }
     return nullptr;
+}
+
+TESTopicInfo *GetRandomTopicInfo(std::vector<TESTopicInfo *> &topicInfos)
+{
+    int numTopics = topicInfos.size();
+    int random = (int)(GetRandomNumberInRange(0.f, 0.9999f) * numTopics);
+    if (random < 0) random = 0;
+    if (random >= numTopics) random = numTopics - 1;
+    return topicInfos[random];
+}
+
+std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions)
+{
+    std::vector<TESTopicInfo *> validTopicInfos;
+    for (UInt32 formID : topicInfoIDs) {
+        if (TESForm *form = LookupFormByID(formID)) {
+            if (TESTopicInfo *topicInfo = DYNAMIC_CAST(form, TESForm, TESTopicInfo)) {
+                if (TESTopicInfo_EvaluateConditionsEx(topicInfo, source, target, skipConditions)) {
+                    validTopicInfos.push_back(topicInfo);
+                }
+            }
+        }
+    }
+    return validTopicInfos;
 }
 
 class IsInFactionVisitor : public Actor::FactionVisitor

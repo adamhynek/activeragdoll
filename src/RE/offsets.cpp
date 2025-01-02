@@ -35,6 +35,8 @@ RelocPtr<BSAudioManager *> g_audioManager(0x30C1D30);
 
 RelocPtr<ShadowSceneNode *> g_shadowSceneNode(0x3423080);
 
+RelocPtr<BGSStoryTeller *> g_storyTeller(0x1F889E0);
+
 RelocPtr<TESObjectWEAP *> g_unarmedWeapon(0x2FC4758);
 
 RelocPtr<float> g_minSoundVel(0x1E94F78); // it's an ini setting
@@ -189,6 +191,7 @@ RelocAddr<_BSAudioManager_InitSoundData> BSAudioManager_InitSoundData(0xC29D20);
 RelocAddr<_SoundData_SetPosition> SoundData_SetPosition(0xC287D0);
 RelocAddr<_SoundData_SetNode> SoundData_SetNode(0xC289C0);
 RelocAddr<_SoundData_Play> SoundData_Play(0xC283E0);
+RelocAddr<_SoundData_PlayDelayed> SoundData_PlayDelayed(0xC28420);
 RelocAddr<_BSExtraList_GetCount> BSExtraList_GetCount(0x123D90);
 RelocAddr<_TESObjectBOOK_LearnSpell> TESObjectBOOK_LearnSpell(0x23B240);
 RelocAddr<_Actor_GetPickupPutdownSound> Actor_GetPickupPutdownSound(0x5D7F90);
@@ -375,7 +378,19 @@ RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle(0x74B340);
 RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle(0x74B3D0);
 RelocAddr<_sub_140654E10> sub_140654E10(0x654E10);
 RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue(0x6580B0);
-RelocAddr<_sub_140664870> sub_140664870(0x664870);
+RelocAddr<_BGSStoryTeller_GetTopicInfoForDialogue> BGSStoryTeller_GetTopicInfoForDialogue(0x4E9470);
+RelocAddr<_TESTopicInfo_EvaluateConditions> TESTopicInfo_EvaluateConditions(0x3A2610);
+RelocAddr<_TESCondition_IsTrue> TESCondition_IsTrue(0x454470);
+RelocAddr<_TESConditionItem_IsTrue> TESConditionItem_IsTrue(0x455010);
+RelocAddr<_TESTopic_GetDialogueItem> TESTopic_GetDialogueItem(0x39F220);
+RelocAddr<_DialogueItem_dtor> DialogueItem_dtor(0x573180);
+RelocAddr<_BSAudioManager_CreateSoundHandleFromResource> BSAudioManager_CreateSoundHandleFromResource(0xC29DB0);
+RelocAddr<_SoundData_SetDialogueOutputModel> SoundData_SetDialogueOutputModel(0xC285F0);
+RelocAddr<_SoundData_SetSoundCategory> SoundData_SetSoundCategory(0xC285A0);
+RelocAddr<_BSResource__ID_ctor> BSResource__ID_ctor(0xC8F4D0);
+RelocAddr<_strip_base_path> strip_base_path(0xC89570);
+RelocAddr<_ActorProcess_GetHeadNode> ActorProcess_GetHeadNode(0x68A550);
+RelocAddr<_ActorProcess_SetPlayerActionReaction> ActorProcess_SetPlayerActionReaction(0x664870);
 RelocAddr<_sub_1406EE920> sub_1406EE920(0x6EE920);
 RelocAddr<_sub_1406EC5C0> sub_1406EC5C0(0x6EC5C0);
 RelocAddr<_TES_GetLandMaterialId> TES_GetLandMaterialId(0x167720);

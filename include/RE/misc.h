@@ -635,6 +635,69 @@ static_assert(offsetof(TriggerEntry, overlappingForms) == 0x28);
 static_assert(offsetof(TriggerEntry, triggerEvents) == 0x38);
 static_assert(offsetof(TriggerEntry, unk58) == 0x58);
 
+struct BSResource__ID
+{
+    UInt32 File_0;
+    char Extension_4[4];
+    UInt32 Directory_8;
+};
+
+struct DialogueResponse
+{
+    BSString ResponseText_0;
+    UInt32 EmotionType_10;
+    SInt32 EmotionValue_14;
+    BSFixedString Voice_18;
+    TESIdleForm *SpeakerIdle_20;
+    TESIdleForm *ListenerIdle_28;
+    BGSSoundDescriptorForm *VoiceSound_30;
+    bool UseEmotion_38;
+    bool SoundLip_39;
+    char _pad_3A[6];
+};
+
+struct BSSimpleList_DialogueResponse__
+{
+    DialogueResponse * Item_0;
+    BSSimpleList_DialogueResponse__ *Next_8;
+};
+
+struct DialogueItem
+{
+    UInt32 refCount_0;
+    char _pad_4[4];
+    BSSimpleList_DialogueResponse__ Responses_8;
+    BSSimpleList_DialogueResponse__ *CurrentResponse_18;
+    TESTopicInfo *TopicInfo_20;
+    TESTopic *Topic_28;
+    TESQuest *Quest_30;
+    Actor *Speaker_38;
+    void *ExtraData_40;
+};
+
+struct ConditionCheckParams
+{
+    constexpr ConditionCheckParams(TESObjectREFR *a_actionRef, TESObjectREFR *a_targetRef) :
+        actionRef(a_actionRef),
+        targetRef(a_targetRef),
+        quest(nullptr),
+        questStartEvent(nullptr),
+        unk20(nullptr),
+        isTrueSoFar(false),
+        packageDataList(nullptr)
+    {
+    }
+
+    TESObjectREFR *actionRef; // 00
+    TESObjectREFR *targetRef; // 08
+    TESQuest *quest; // 10
+    void *questStartEvent; // 18
+    void *unk20; // 20
+    bool isTrueSoFar; // 28
+    void *packageDataList; // 30
+};
+static_assert(sizeof(ConditionCheckParams) == 0x38);
+
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, SInt32 &a_out); // 11
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, bool &a_out); // 12

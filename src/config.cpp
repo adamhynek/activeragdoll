@@ -288,12 +288,14 @@ namespace Config {
         if (!RegisterFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) success = false;
         if (!RegisterBool("ragdollOnTwoHandedYank", options.ragdollOnTwoHandedYank)) success = false;
         if (!RegisterFloat("twoHandedYankRequiredHandSpeedRoomspace", options.twoHandedYankRequiredHandSpeedRoomspace)) success = false;
-        if (!RegisterBool("playSoundOnTwoHandedYank", options.playSoundOnTwoHandedYank)) success = false;
+        if (!RegisterBool("playRagdollSound", options.playRagdollSound)) success = false;
         if (!RegisterBool("ragdollOnFootYank", options.ragdollOnFootYank)) success = false;
         if (!RegisterBool("disableKeepOffsetWhenFootHeld", options.disableKeepOffsetWhenFootHeld)) success = false;
         if (!RegisterFloat("footYankRequiredStressAmount", options.footYankRequiredStressAmount)) success = false;
         if (!RegisterFloat("yankImpulseDecayExponent", options.yankImpulseDecayExponent)) success = false;
         if (!RegisterInt("yankImpulseBoneRadius", options.yankImpulseBoneRadius)) success = false;
+        if (!RegisterInt("ragdollSoundFallbackDialogueSubtype", options.ragdollSoundFallbackDialogueSubtype)) success = false;
+        if (!ReadFormArray("ragdollTopicInfos", options.ragdollTopicInfos)) success = false;
 
         if (!RegisterFloat("yankImpulseHorizontalMultiplier", options.yankImpulseHorizontalMultiplier)) success = false;
         if (!RegisterFloat("yankImpulseUpwardsMultiplier", options.yankImpulseUpwardsMultiplier)) success = false;

@@ -3646,6 +3646,26 @@ void OnHiggsDrop(bool isLeft, TESObjectREFR *droppedRefr)
 }
 
 
+void PlayRagdollSound(Actor *actor)
+{
+    // Why do some complicated stuff here like evaluate a subset of conditions on a set of topic infos, instead of just playing a dialogue category like kHit?
+    // Because kHit for example, has voice lines like "That's all you've got?!" which is not appropriate here.
+    // The reason we DO want to evaluate conditions at all is that certain lines cannot be said by children, etc. and we need to check that.
+    // We use the conditions as a filter, after which we choose a random one to play, as opposed to playing an entire topic.
+    // Playing a topic could refuse to play a topicinfo if the random percent condition on it failed, even if it's the only otherwise-passing topicinfo in the entire topic.
+    static std::vector<UInt16> skipConditions = { 0x4D, 0x91 }; // 4D = GetRandomPercent, 91 = IsTrespassing
+    std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.ragdollTopicInfos, actor, *g_thePlayer, skipConditions);
+    if (topicInfos.empty()) {
+        PlayDialogueWithoutActorChecks(Config::options.ragdollSoundFallbackDialogueSubtype, actor, *g_thePlayer);
+    }
+    else {
+        if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos)) {
+            PlayTopicInfoWithoutActorChecks(topicInfo, actor, *g_thePlayer);
+        }
+    }
+}
+
+
 _ProcessHavokHitJobs ProcessHavokHitJobs_Original = 0;
 void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 {
@@ -4045,13 +4065,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
                                 ApplyYankImpulse(world, actor, wasHeldRight ? g_prevRightHeldObject : g_prevLeftHeldObject, velocity); // TODO: Don't use prev objects, can be freed
 
-                                if (Config::options.playSoundOnTwoHandedYank) {
-                                    if (BGSSoundDescriptorForm *telekinesisThrowSound = GetDefaultObject<BGSSoundDescriptorForm>(188)) {
-                                        PlaySoundAtNode(telekinesisThrowSound, player->GetNiNode(), {});
-                                    }
-                                    //ActorProcess_TriggerDialogue(actor->processManager, actor, 3, 33, *g_thePlayer, 0, 0, 0, 0, 0); // TODO: This doesn't work. It plays the sound once they finish getting up from ragdolling, not when they're ragdolled.
-                                }
-
                                 g_shovedActors[actor] = g_currentFrameTime; // Prevent shoving right when letting go. This needs to be before the NPC state update.
                             }
                         }
@@ -4065,6 +4078,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
             if (doRagdoll) {
                 if (ActorProcessManager *process = actor->processManager) {
+                    if (Config::options.playRagdollSound) {
+                        PlayRagdollSound(actor);
+                    }
                     ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
                 }
             }
