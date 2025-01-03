@@ -199,12 +199,12 @@ struct DelayedJob : GenericJob
 
 struct PointImpulseJob : GenericJob
 {
-    hkpRigidBody *rigidBody{};
+    bhkRigidBody *rigidBody{};
     NiPoint3 point{};
     NiPoint3 impulse{};
     UInt32 refrHandle{};
 
-    PointImpulseJob(hkpRigidBody *rigidBody, const NiPoint3 &point, const NiPoint3 &impulse, UInt32 refrHandle) :
+    PointImpulseJob(bhkRigidBody *rigidBody, const NiPoint3 &point, const NiPoint3 &impulse, UInt32 refrHandle) :
         rigidBody(rigidBody), point(point), impulse(impulse), refrHandle(refrHandle) {}
 
     virtual void Run() override
@@ -213,9 +213,9 @@ struct PointImpulseJob : GenericJob
         if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(refrHandle, refr)) {
             NiPointer<NiNode> root = refr->GetNiNode();
             if (root && FindRigidBody(root, rigidBody)) {
-                if (IsMoveableEntity(rigidBody)) {
-                    hkpEntity_activate(rigidBody);
-                    rigidBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
+                if (IsMoveableEntity(rigidBody->hkBody)) {
+                    hkpEntity_activate(rigidBody->hkBody);
+                    rigidBody->hkBody->m_motion.applyPointImpulse(NiPointToHkVector(impulse), NiPointToHkVector(point));
                     //_MESSAGE("Applied point impulse %.2f", VectorLength(impulse));
                 }
             }
@@ -225,11 +225,11 @@ struct PointImpulseJob : GenericJob
 
 struct LinearImpulseJob : GenericJob
 {
-    hkpRigidBody *rigidBody{};
+    bhkRigidBody *rigidBody{};
     NiPoint3 impulse{};
     UInt32 refrHandle{};
 
-    LinearImpulseJob(hkpRigidBody *rigidBody, const NiPoint3 &impulse, UInt32 refrHandle) :
+    LinearImpulseJob(bhkRigidBody *rigidBody, const NiPoint3 &impulse, UInt32 refrHandle) :
         rigidBody(rigidBody), impulse(impulse), refrHandle(refrHandle) {}
 
     virtual void Run() override
@@ -238,9 +238,9 @@ struct LinearImpulseJob : GenericJob
         if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(refrHandle, refr)) {
             NiPointer<NiNode> root = refr->GetNiNode();
             if (root && FindRigidBody(root, rigidBody)) {
-                if (IsMoveableEntity(rigidBody)) {
-                    hkpEntity_activate(rigidBody);
-                    rigidBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
+                if (IsMoveableEntity(rigidBody->hkBody)) {
+                    hkpEntity_activate(rigidBody->hkBody);
+                    rigidBody->hkBody->m_motion.applyLinearImpulse(NiPointToHkVector(impulse));
                     //_MESSAGE("Applied linear impulse %.2f", VectorLength(impulse));
                 }
             }
@@ -341,11 +341,13 @@ struct ControllerTrackingData
     std::deque<NiPoint3> positionsRoomspace{ 50, NiPoint3() };
     NiPoint2 angularVelocity;
 
-    NiPoint3 GetMaxVelocity(const std::deque<NiPoint3> &velocities)
+    NiPoint3 GetMaxVelocity(const std::deque<NiPoint3> &velocities, int numFrames)
     {
+        int size = min(numFrames, velocities.size());
+
         float largestSpeed = -1;
         int largestIndex = -1;
-        for (int i = 0; i < velocities.size(); i++) {
+        for (int i = 0; i < size; i++) {
             const NiPoint3 &velocity = velocities[i];
             float speed = VectorLength(velocity);
             if (speed > largestSpeed) {
@@ -358,7 +360,7 @@ struct ControllerTrackingData
             // Max is the first value
             return velocities[0];
         }
-        else if (largestIndex == velocities.size() - 1) {
+        else if (largestIndex == size - 1) {
             // Max is the last value
             return velocities[largestIndex];
         }
@@ -370,7 +372,7 @@ struct ControllerTrackingData
 
     NiPoint3 GetMaxRecentVelocity()
     {
-        return GetMaxVelocity(velocities);
+        return GetMaxVelocity(velocities, 5);
     }
 
     NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
@@ -479,16 +481,16 @@ bhkRigidBody *g_rightHand = nullptr;
 bhkRigidBody *g_leftHand = nullptr;
 bhkRigidBody *g_rightWeapon = nullptr;
 bhkRigidBody *g_leftWeapon = nullptr;
-bhkRigidBody *g_rightHeldObject = nullptr;
-bhkRigidBody *g_leftHeldObject = nullptr;
+bhkRigidBody *g_rightHeldRigidBody = nullptr;
+bhkRigidBody *g_leftHeldRigidBody = nullptr;
 TESObjectREFR *g_rightHeldRefr = nullptr;
 TESObjectREFR *g_leftHeldRefr = nullptr;
 UInt16 g_rightHeldActorCollisionGroup = 0;
 UInt16 g_leftHeldActorCollisionGroup = 0;
 UInt32 g_higgsCollisionLayer = 56;
 
-bhkRigidBody *g_prevRightHeldObject = nullptr;
-bhkRigidBody *g_prevLeftHeldObject = nullptr;
+bhkRigidBody *g_prevRightHeldRigidBody = nullptr;
+bhkRigidBody *g_prevLeftHeldRigidBody = nullptr;
 TESObjectREFR *g_prevRightHeldRefr = nullptr;
 TESObjectREFR *g_prevLeftHeldRefr = nullptr;
 
@@ -500,7 +502,7 @@ inline bool IsLeftRigidBody(hkpRigidBody *rigidBody)
 {
     bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
     if (!wrapper) return false;
-    return wrapper == g_leftHand || wrapper == g_leftWeapon || wrapper == g_leftHeldObject;
+    return wrapper == g_leftHand || wrapper == g_leftWeapon || wrapper == g_leftHeldRigidBody;
 }
 
 inline bool IsPlayerWeaponRigidBody(hkpRigidBody *rigidBody)
@@ -521,7 +523,7 @@ inline bool IsHeldRigidBody(hkpRigidBody *rigidBody)
 {
     bhkRigidBody *wrapper = (bhkRigidBody *)rigidBody->m_userData;
     if (!wrapper) return false;
-    return wrapper == g_leftHeldObject || wrapper == g_rightHeldObject;
+    return wrapper == g_leftHeldRigidBody || wrapper == g_rightHeldRigidBody;
 }
 
 inline bool IsHiggsRigidBody(hkpRigidBody *rigidBody)
@@ -587,6 +589,8 @@ struct BumpRequest
 std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
 std::unordered_map<Actor *, double> g_shovedActors{};
+
+std::unordered_map<Actor *, double> g_footYankedActors{};
 
 std::mutex g_shoveTimesLock;
 struct ShoveData
@@ -660,6 +664,23 @@ void UpdateTemporaryIgnoredActors()
 }
 
 
+NiPointer<NiAVObject> GetGrabbedNode(Actor *actor, bool isLeft)
+{
+    TESObjectREFR *heldRefr = !isLeft ? g_rightHeldRefr : g_leftHeldRefr;
+    if (heldRefr == actor) {
+        if (bhkRigidBody *heldRigidBody = isLeft ? g_leftHeldRigidBody : g_rightHeldRigidBody) {
+            if (NiPointer<NiNode> root = actor->GetNiNode()) {
+                if (NiPointer<bhkRigidBody> rigidBody = FindRigidBody(root, heldRigidBody)) { // make sure it's still there to be safe
+                    if (NiPointer<NiAVObject> heldNode = GetNodeFromCollidable(rigidBody->hkBody->getCollidable())) {
+                        return heldNode;
+                    }
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
 bool ShouldKeepOffset(Actor *actor)
 {
     if (!Config::options.doKeepOffset) return false;
@@ -669,16 +690,11 @@ bool ShouldKeepOffset(Actor *actor)
     if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
     if (Config::options.disableKeepOffsetWhenFootHeld) {
-        for (int i = 0; i < 2; ++i) {
-            TESObjectREFR *heldRefr = i == 0 ? g_rightHeldRefr : g_leftHeldRefr;
-            if (heldRefr == actor) {
-                if (bhkRigidBody *heldRigidBody = i == 0 ? g_rightHeldObject : g_leftHeldObject) {
-                    if (NiAVObject *heldNode = GetNodeFromCollidable(heldRigidBody->hkBody->getCollidable())) {
-                        if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
-                            // Holding foot -> don't keep offset
-                            return false;
-                        }
-                    }
+        for (int isLeft = 0; isLeft < 2; ++isLeft) {
+            if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
+                    // Holding foot -> don't keep offset
+                    return false;
                 }
             }
         }
@@ -770,27 +786,34 @@ bool IsAnimal(TESRace *race)
     return race->keyword.HasKeyword(g_keyword_actorTypeAnimal);
 }
 
-bool ShouldRagdollOnGrab(Actor *actor)
+enum class ForceRagdollType
 {
-    if (!CanRagdoll(actor)) return false;
+    None,
+    RagdollOnGrab,
+    FootYank,
+    RightHandedYank,
+    LeftHandedYank,
+    TwoHandedYank,
+    KeepOffset,
+};
+ForceRagdollType ShouldRagdollOnGrabOrFootYank(Actor *actor)
+{
+    if (!CanRagdoll(actor)) return ForceRagdollType::None;
 
     TESRace *race = actor->race;
-    if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return true; // small race
+    if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return ForceRagdollType::RagdollOnGrab; // small race
     
     float health = actor->actorValueOwner.GetCurrent(24);
-    if (health < Config::options.smallRaceHealthThreshold) return true;
+    if (health < Config::options.smallRaceHealthThreshold) return ForceRagdollType::RagdollOnGrab;
 
     if (Config::options.ragdollOnFootYank && !IsAnimal(race)) {
         for (int isLeft = 0; isLeft < 2; ++isLeft) {
-            TESObjectREFR *heldRefr = !isLeft ? g_rightHeldRefr : g_leftHeldRefr;
-            if (heldRefr == actor) {
-                if (bhkRigidBody *heldRigidBody = !isLeft ? g_rightHeldObject : g_leftHeldObject) {
-                    if (NiAVObject *heldNode = GetNodeFromCollidable(heldRigidBody->hkBody->getCollidable())) {
-                        if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
-                            if (std::optional<float> stress = GetBoneDisplacement(actor, heldRigidBody->hkBody, isLeft)) {
-                                if (*stress > Config::options.footYankRequiredStressAmount) {
-                                    return true;
-                                }
+            if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
+                    if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(heldNode)) {
+                        if (std::optional<float> stress = GetBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
+                            if (*stress > Config::options.footYankRequiredStressAmount) {
+                                return ForceRagdollType::FootYank;
                             }
                         }
                     }
@@ -799,7 +822,63 @@ bool ShouldRagdollOnGrab(Actor *actor)
         }
     }
 
-    return false;
+    return ForceRagdollType::None;
+}
+
+
+struct LetGoHandData
+{
+    NiPoint3 velocity;
+    TESObjectREFR * refr;
+    bhkRigidBody * rigidBody;
+    double time;
+};
+LetGoHandData g_letGoHandData[2]{};
+
+ForceRagdollType GetDesiredForceRagdollType(Actor *actor, bool isHeld)
+{
+    bool wasHeldRight = actor == g_prevRightHeldRefr;
+    bool wasHeldLeft = actor == g_prevLeftHeldRefr;
+    bool wasHeld = wasHeldRight || wasHeldLeft;
+
+    if (isHeld) {
+        if (!Actor_IsInRagdollState(actor)) {
+            ForceRagdollType ragdollType = ShouldRagdollOnGrabOrFootYank(actor);
+            if (ragdollType != ForceRagdollType::None) {
+                return ragdollType;
+            }
+            else if (ShouldKeepOffset(actor)) {
+                return ForceRagdollType::KeepOffset;
+            }
+        }
+    }
+    else if (wasHeld) {
+        if (!Actor_IsInRagdollState(actor) && CanRagdoll(actor)) {
+            if (Config::options.ragdollOnYank && !IsAnimal(actor->race)) {
+                auto [rightVelocity, rightDroppedRefr, rightDroppedRigidBody, rightLetGoTime] = g_letGoHandData[0];
+                auto [leftVelocity, leftDroppedRefr, leftDroppedRigidBody, leftLetGoTime] = g_letGoHandData[1];
+
+                if (rightDroppedRefr == actor && leftDroppedRefr == actor && g_currentFrameTime - rightLetGoTime < Config::options.yankTwoHandedTimeWindow && g_currentFrameTime - leftLetGoTime < Config::options.yankTwoHandedTimeWindow) {
+                    // ADD UP hand velocity for the impulse
+                    // Take MAX velocity to check the threshold (so you still need at least one hand above the threshold, but for impulse you can get up to 2x the normal impulse)
+                    NiPoint3 yankVelocity = VectorLength(rightVelocity) >= VectorLength(leftVelocity) ? rightVelocity : leftVelocity;
+                    if (VectorLength(yankVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
+                        return ForceRagdollType::TwoHandedYank;
+                    }
+                }
+                else if (!Config::options.requireTwoHandsToYank) {
+                    if (wasHeldRight && VectorLength(rightVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
+                        return ForceRagdollType::RightHandedYank;
+                    }
+                    else if (wasHeldLeft && VectorLength(leftVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
+                        return ForceRagdollType::LeftHandedYank;
+                    }
+                }
+            }
+        }
+    }
+
+    return ForceRagdollType::None;
 }
 
 
@@ -856,6 +935,7 @@ struct SwingHandler
 
         if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
             // Out of stamina after the swing
+            Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
             if (ActorProcessManager *process = player->processManager) {
                 float regenRate = Actor_GetActorValueRegenRate(player, 26);
                 ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
@@ -884,6 +964,7 @@ struct SwingHandler
                 // Now do a regular attack (overwrites the attack data too)
                 PlayerControls_SendAction(PlayerControls::GetSingleton(), GetAttackActionId(isOffhand), 2);
             }
+            Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
             FlashHudMenuMeter(26);
             return false;
         }
@@ -1295,31 +1376,43 @@ NiPoint3 CalculateHitImpulse(hkpRigidBody *rigidBody, const NiPoint3 &hitVelocit
     return impulse;
 }
 
-void ApplyHitImpulse(bhkWorld *world, Actor *actor, hkpRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
+void ApplyHitImpulse(bhkWorld *world, Actor *actor, bhkRigidBody *rigidBody, const NiPoint3 &hitVelocity, const NiPoint3 &position, float impulseMult)
 {
     UInt32 targetHandle = GetOrCreateRefrHandle(actor);
 
-    // Apply a point impulse at the hit location to the body we actually hit
-    QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody, hitVelocity, impulseMult), targetHandle);
-    std::unordered_set<hkpRigidBody *> visitedBodies{ rigidBody };
-
-    // Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
-    ForEachRagdollDriver(actor, [world, rigidBody, hitVelocity, impulseMult, targetHandle, &visitedBodies](hkbRagdollDriver *driver) {
-        // No deadlock here as the BSAnimationGraphManager update lock has already been acquired
+    {
         BSReadLocker lock(&world->worldLock);
-        ForEachAdjacentBody(driver, rigidBody, [&visitedBodies, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-            if (!visitedBodies.insert(adjacentBody).second) return;
-            QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult1, targetHandle);
-            ForEachAdjacentBody(driver, adjacentBody, [&visitedBodies, driver, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-                if (!visitedBodies.insert(adjacentBody).second) return;
-                QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult2, targetHandle);
-                ForEachAdjacentBody(driver, adjacentBody, [&visitedBodies, hitVelocity, impulseMult, targetHandle](hkpRigidBody *adjacentBody) {
-                    if (!visitedBodies.insert(adjacentBody).second) return;
-                    QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody, hitVelocity, impulseMult) * Config::options.hitImpulseDecayMult3, targetHandle);
-                });
-            });
-        });
-    });
+
+        // Need to be safe and make sure the rigidBody is actually here
+        NiPointer<NiNode> root = actor->GetNiNode();
+        if (root && !FindRigidBody(root, rigidBody)) {
+            return;
+        }
+
+        // Apply a point impulse at the hit location to the body we actually hit
+        QueuePrePhysicsJob<PointImpulseJob>(rigidBody, position, CalculateHitImpulse(rigidBody->hkBody, hitVelocity, impulseMult), targetHandle);
+
+        // Apply linear impulse at the center of mass to all bodies within 2 ragdoll constraints
+        ForEachAdjacentBody(root, rigidBody,
+            [hitVelocity, impulseMult, targetHandle](bhkRigidBody *adjacentBody, int wave) {
+                float impulseDecayMult;
+                if (wave == 0) {
+                    return; // Skip the first wave, as we already applied a POINT impulse to the hit body
+                }
+                else if (wave == 1) {
+                    impulseDecayMult = Config::options.hitImpulseDecayMult1;
+                }
+                else if (wave == 2) {
+                    impulseDecayMult = Config::options.hitImpulseDecayMult2;
+                }
+                else {
+                    impulseDecayMult = Config::options.hitImpulseDecayMult3;
+                }
+                QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, CalculateHitImpulse(adjacentBody->hkBody, hitVelocity, impulseMult) * impulseDecayMult, targetHandle);
+            },
+            3
+        );
+    }
 }
 
 NiPoint3 CalculateYankImpulse(hkpRigidBody *rigidBody, const NiPoint3 &velocity)
@@ -1340,9 +1433,15 @@ void ApplyYankImpulse(bhkWorld *world, Actor *actor, bhkRigidBody *rigidBody, co
     {
         BSReadLocker lock(&world->worldLock);
 
-        ForEachAdjacentBody(actor->GetNiNode(), rigidBody,
-            [velocity, targetHandle](hkpRigidBody *adjacentBody, int wave) {
-                NiPoint3 impulse = CalculateYankImpulse(adjacentBody, velocity);
+        // Need to be safe and make sure the rigidBody is actually here
+        NiPointer<NiNode> root = actor->GetNiNode();
+        if (root && !FindRigidBody(root, rigidBody)) {
+            return;
+        }
+
+        ForEachAdjacentBody(root, rigidBody,
+            [velocity, targetHandle](bhkRigidBody *adjacentBody, int wave) {
+                NiPoint3 impulse = CalculateYankImpulse(adjacentBody->hkBody, velocity);
                 impulse *= powf(Config::options.yankImpulseDecayExponent, wave);
                 QueuePrePhysicsJob<LinearImpulseJob>(adjacentBody, impulse, targetHandle);
             },
@@ -1468,7 +1567,7 @@ struct DoActorHitTask : TaskDelegate
                             else if (Actor_IsInRagdollState(hitChar)) {
                                 impulseMult *= Config::options.ragdolledHitImpulseMultiplier;
                             }
-                            ApplyHitImpulse(world, hitChar, rigidBody->hkBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
+                            ApplyHitImpulse(world, hitChar, rigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
                         }
                     }
                 }
@@ -1598,22 +1697,21 @@ struct PotentiallyConvertBipedObjectToDeadBipTask : TaskDelegate
         if (!actor) return;
 
         NiPointer<NiNode> root = refr->GetNiNode();
-        hkpRigidBody *body = rigidBody->hkBody;
-        if (!root || !body || !FindRigidBody(root, body)) return;
+        if (!root || !FindRigidBody(root, rigidBody)) return;
 
         bool isRagdollRigidBody = false;
         // This is a task because we acquire the animation graph manager lock in here, which can cause a deadlock in some cases
-        ForEachRagdollDriver(actor, [this, body, &isRagdollRigidBody](hkbRagdollDriver *driver) {
+        ForEachRagdollDriver(actor, [this, &isRagdollRigidBody](hkbRagdollDriver *driver) {
             if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-                if (ragdoll->m_rigidBodies.indexOf(body) >= 0) {
+                if (ragdoll->m_rigidBodies.indexOf(rigidBody->hkBody) >= 0) {
                     isRagdollRigidBody = true;
                 }
             }
         });
         if (isRagdollRigidBody) return;
 
-        body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
-        body->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
+        rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo &= ~(0x7f); // zero out layer
+        rigidBody->hkBody->getCollidableRw()->getBroadPhaseHandle()->m_collisionFilterInfo |= (BGSCollisionLayer::kCollisionLayer_DeadBip & 0x7f); // set layer to the same as a dead ragdoll
         bhkWorldObject_UpdateCollisionFilter(rigidBody);
     }
 
@@ -2480,11 +2578,11 @@ void PrePhysicsStepCallback(void *world)
 
     {
         // Set lingering rigidbodies while we hold them
-        if (g_rightHeldObject) {
-            g_higgsLingeringRigidBodies[g_rightHeldObject] = g_currentFrameTime;
+        if (g_rightHeldRigidBody) {
+            g_higgsLingeringRigidBodies[g_rightHeldRigidBody] = g_currentFrameTime;
         }
-        if (g_leftHeldObject) {
-            g_higgsLingeringRigidBodies[g_leftHeldObject] = g_currentFrameTime;
+        if (g_leftHeldRigidBody) {
+            g_higgsLingeringRigidBodies[g_leftHeldRigidBody] = g_currentFrameTime;
         }
 
         // Clear out old dropped / thrown rigidbodies
@@ -2611,7 +2709,7 @@ struct NPCData
         }
     }
 
-    void StateUpdate(Character *character, bool isShoved)
+    void StateUpdate(Character *character, bool isShoved, bool wasJustRagdolled)
     {
         if (character->IsDead(1)) return;
         if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
@@ -2650,11 +2748,6 @@ struct NPCData
 
         float deltaTime = *g_deltaTime;
 
-        bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-        bool isTouchedRight = g_physicsListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
-        bool isTouchedLeft = g_physicsListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
-        bool isInteractedWith = isGrabbed || isTouchedLeft || isTouchedRight || isShoved;
-
         PlayerCharacter *player = *g_thePlayer;
 
         // These two are to not do aggression if they are in... certain scenes...
@@ -2665,10 +2758,24 @@ struct NPCData
         bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && (!Config::options.dontDoAggressionWhileMenusAreOpen || !g_isMenuOpen);
         bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
 
-        bool isAggressivelyInteractedWith = isInteractedWith && canPlayerAggress && !isSpecial && !isCalmed;
+        bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
+        bool isTouchedRight = g_physicsListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
+        bool isTouchedLeft = g_physicsListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
+        bool isInteractedWith = isGrabbed || isTouchedLeft || isTouchedRight;
 
-        if (isAggressivelyInteractedWith) {
-            accumulatedGrabbedTime += isShoved ? Config::options.shoveAggressionImpact : deltaTime;
+        bool isAggressivelyInteractedWith = (isInteractedWith && canPlayerAggress) || isShoved || wasJustRagdolled;
+        bool accumulateAggression = isAggressivelyInteractedWith && !isSpecial && !isCalmed;
+
+        if (accumulateAggression) {
+            if (wasJustRagdolled) {
+                accumulatedGrabbedTime += Config::options.ragdollAggressionImpact;
+            }
+            else if (isShoved) {
+                accumulatedGrabbedTime += Config::options.shoveAggressionImpact;
+            }
+            else {
+                accumulatedGrabbedTime += deltaTime;
+            }
             lastGrabbedTouchedTime = g_currentFrameTime;
         }
         else if (g_currentFrameTime - lastGrabbedTouchedTime >= Config::options.aggressionStopDelay) {
@@ -2697,7 +2804,7 @@ struct NPCData
             else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeHigh) {
                 state = State::VeryMiffed;
             }
-            else if (isAggressivelyInteractedWith) {
+            else if (accumulateAggression) {
                 // Constantly try to say something
                 TryTriggerDialogue(character, false, isShoved);
                 if (ShouldBumpActor(character) && !IsActorUsingFurniture(character)) {
@@ -2720,7 +2827,7 @@ struct NPCData
                     state = State::Assaulted;
                 }
             }
-            else if (isAggressivelyInteractedWith) {
+            else if (accumulateAggression) {
                 // Constantly try to say something
                 TryTriggerDialogue(character, true, isShoved);
                 if (ShouldBumpActor(character)) {
@@ -2755,7 +2862,7 @@ struct NPCData
 
 std::unordered_map<Actor *, NPCData> g_npcs{};
 
-void TryUpdateNPCState(Actor *actor, bool isShoved)
+void TryUpdateNPCState(Actor *actor, bool isShoved, bool wasJustRagdolled)
 {
     if (!Config::options.doAggression) return;
 
@@ -2771,7 +2878,7 @@ void TryUpdateNPCState(Actor *actor, bool isShoved)
     }
     else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
         NPCData &data = it->second;
-        data.StateUpdate(character, isShoved);
+        data.StateUpdate(character, isShoved, wasJustRagdolled);
     }
 }
 
@@ -3470,11 +3577,49 @@ void UpdateSpeedReductionAndStaminaDrain()
             FlashHudMenuMeter(26);
 
             if (Config::options.playSoundOnGrabStaminaDepletion) {
+                Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
                 if (BGSSoundDescriptorForm *shoutFailSound = GetDefaultObject<BGSSoundDescriptorForm>(129)) {
                     PlaySoundAtNode(shoutFailSound, player->GetNiNode(), {});
                 }
             }
         }
+    }
+}
+
+bool TryStaminaAction(float staminaCost)
+{
+    PlayerCharacter *player = *g_thePlayer;
+    bool isPlayerGodMode = get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget);
+
+    float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
+    if (isPlayerGodMode || staminaBeforeHit > 0.f || staminaCost <= 0.f) {
+        // Costs no stamina, or we have enough stamina
+
+        if (!isPlayerGodMode) {
+            DamageAV(player, 26, -staminaCost);
+
+            if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
+                // Out of stamina after the action
+                if (ActorProcessManager *process = player->processManager) {
+                    float regenRate = Actor_GetActorValueRegenRate(player, 26);
+                    ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
+                }
+                Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
+                FlashHudMenuMeter(26);
+            }
+        }
+
+        return true;
+    }
+    else {
+        // Not enough stamina
+        if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
+            PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
+        }
+        Actor_TriggerMiscDialogue(player, 100, false); // kOutofBreath
+        FlashHudMenuMeter(26);
+
+        return false;
     }
 }
 
@@ -3512,45 +3657,15 @@ bool UpdateActorShove(Actor *actor)
         if (controllerData.avgSpeed > Config::options.shoveSpeedThreshold) {
             if (g_physicsListener.handCollidedRefs[isLeft].count(actor) && ShouldShoveActor(actor)) {
                 if (!g_shovedActors.count(actor)) {
-                    bool isPlayerGodMode = get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget);
-
-                    float staminaCost = Config::options.shoveStaminaCost;
-                    float staminaBeforeHit = player->actorValueOwner.GetCurrent(26);
-                    if (isPlayerGodMode || staminaBeforeHit > 0.f || staminaCost <= 0.f) {
-                        // Shove costs no stamina, or we have enough stamina
-
-                        if (!isPlayerGodMode) {
-                            DamageAV(player, 26, -staminaCost);
-
-                            if (player->actorValueOwner.GetCurrent(26) <= 0.f) {
-                                // Out of stamina after the shove
-                                if (ActorProcessManager *process = player->processManager) {
-                                    float regenRate = Actor_GetActorValueRegenRate(player, 26);
-                                    ActorProcess_UpdateRegenDelay(process, 26, (staminaCost - staminaBeforeHit) / regenRate);
-                                    FlashHudMenuMeter(26);
-                                }
-                            }
-                        }
-
+                    if (TryStaminaAction(Config::options.shoveStaminaCost)) {
                         NiPoint3 shoveDirection = VectorNormalized(controllerData.avgVelocity);
                         QueueBumpActor(actor, shoveDirection, true, false, false, false);
 
-                        if (Config::options.playShovePhysicsSound) {
-                            if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
-                                if (NiPointer<NiAVObject> handNode = GetFirstPersonHandNode(isLeft)) {
-                                    PlayPhysicsSound(rigidBody->hkBody->getCollidableRw(), handNode->m_worldTransform.pos, true);
-                                }
+                        if (NiPointer<bhkRigidBody> rigidBody = GetFirstRigidBody(GetTorsoNode(actor))) {
+                            if (NiPointer<NiAVObject> handNode = GetFirstPersonHandNode(isLeft)) {
+                                PlayPhysicsSound(rigidBody->hkBody->getCollidableRw(), handNode->m_worldTransform.pos, true);
                             }
                         }
-                    }
-                    else {
-                        // Not enough stamina
-                        if (Config::options.playSoundOnShoveNoStamina) {
-                            if (BGSSoundDescriptorForm *magicFailSound = GetDefaultObject<BGSSoundDescriptorForm>(128)) {
-                                PlaySoundAtNode(magicFailSound, player->GetNiNode(), {});
-                            }
-                        }
-                        FlashHudMenuMeter(26);
                     }
 
                     PlayRumble(!isLeft, Config::options.shoveRumbleIntensity, Config::options.shoveRumbleDuration);
@@ -3611,6 +3726,7 @@ void ResetObjects()
     g_shoveData.clear();
     g_shoveAnimTimes.clear();
     g_shovedActors.clear();
+    g_footYankedActors.clear();
     g_physicsListener = PhysicsListener{};
 }
 
@@ -3642,16 +3758,9 @@ void PreVrikPreHiggsCallback()
 NiTransform g_initialGrabTransforms[2]{};
 NiTransform g_initialHeldWeaponLocalTransforms[2]{};
 
-NiPoint3 g_maxHandVelocityWhenLetGo[2]{};
-
 void OnHiggsGrab(bool isLeft, TESObjectREFR *grabbedRefr)
 {
     g_initialGrabTransforms[isLeft] = g_higgsInterface->GetGrabTransform(isLeft);
-}
-
-void OnHiggsDrop(bool isLeft, TESObjectREFR *droppedRefr)
-{
-    g_maxHandVelocityWhenLetGo[isLeft] = g_controllerData[isLeft].GetMaxRecentVelocity();
 }
 
 
@@ -3670,6 +3779,143 @@ void PlayRagdollSound(Actor *actor)
         if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos)) {
             PlayTopicInfoWithoutActorChecks(topicInfo, actor, *g_thePlayer);
         }
+    }
+}
+
+void RagdollActor(Actor *actor)
+{
+    if (ActorProcessManager *process = actor->processManager) {
+        if (Config::options.playRagdollSound) {
+            PlayRagdollSound(actor);
+        }
+        ActorProcess_PushActorAway(process, actor, (*g_thePlayer)->pos, 0.f);
+    }
+}
+
+void UpdateKeepOffset(Actor *actor, bool keepOffset)
+{
+    if (keepOffset) {
+        if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
+            // Wasn't grabbed before
+            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+            g_keepOffsetActors[actor] = { g_currentFrameTime, false };
+        }
+        else {
+            // Already in the set, so check if it actually succeeded at first
+            KeepOffsetData &data = it->second;
+
+            if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
+                if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
+                    // Retry
+
+                    if (Config::options.bumpActorIfKeepOffsetFails) {
+                        // Try to get them unstuck by bumping them
+                        QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
+                    }
+
+                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+                    data.lastAttemptTime = g_currentFrameTime;
+                }
+            }
+            else {
+                if (!data.success) {
+                    // To be sure, do a single additional attempt once we know the interface exists
+                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
+                    data.success = true;
+                }
+                else { // KeepOffset interface exists and has succeeded
+                    ForEachRagdollDriver(actor, [actor](hkbRagdollDriver *driver) {
+                        if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                            NiPoint3 offset = { 0.f, 0.f, 0.f };
+                            /*
+                            NiPoint3 rootOffsetXY = ragdoll->rootOffset;
+                            rootOffsetXY.z = 0.f;
+                            if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
+                                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                                NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
+                                offset = InverseTransform(refrTransform) * offsetWS;
+                            }
+                            */
+
+                            NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+                            if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
+                                // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+                                offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+                            }
+
+                            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
+                            UInt32 playerHandle = *g_playerHandle;
+                            g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
+                            //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
+                        }
+                        });
+                }
+            }
+        }
+    }
+    else {
+        if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
+            g_taskInterface->AddTask(ClearKeepOffsetTask::Create(GetOrCreateRefrHandle(actor)));
+            g_keepOffsetActors.erase(actor);
+        }
+    }
+}
+
+void UpdateHiggsInfo(bhkWorld *world)
+{
+    NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
+    NiPointer<bhkRigidBody> leftHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
+    g_rightHand = rightHand;
+    g_leftHand = leftHand;
+
+    NiPointer<bhkRigidBody> rightWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
+    NiPointer<bhkRigidBody> leftWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
+    g_rightWeapon = rightWeapon;
+    g_leftWeapon = leftWeapon;
+
+    if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+        rightWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+        bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightWeapon);
+    }
+    if (leftWeapon && leftWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+        leftWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+        bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftWeapon);
+    }
+
+    if (rightHand && rightHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+        rightHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+        bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightHand);
+    }
+    if (leftHand && leftHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
+        leftHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
+        bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftHand);
+    }
+
+    if (rightHand) {
+        g_higgsCollisionLayer = GetCollisionLayer(rightHand->hkBody);
+    }
+
+    g_prevRightHeldRigidBody = g_rightHeldRigidBody;
+    g_prevLeftHeldRigidBody = g_leftHeldRigidBody;
+
+    g_rightHeldRigidBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
+    g_leftHeldRigidBody = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
+
+    g_prevRightHeldRefr = g_rightHeldRefr;
+    g_prevLeftHeldRefr = g_leftHeldRefr;
+
+    g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
+    g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
+
+    g_currentGrabTransforms[0] = g_higgsInterface->GetGrabTransform(false);
+    g_currentGrabTransforms[1] = g_higgsInterface->GetGrabTransform(true);
+
+    // Check if we let go of something
+    if (!g_rightHeldRigidBody && g_prevRightHeldRigidBody) {
+        g_letGoHandData[0] = { g_controllerData[0].GetMaxRecentVelocity(), g_prevRightHeldRefr, g_prevRightHeldRigidBody, g_currentFrameTime };
+    }
+    if (!g_leftHeldRigidBody && g_prevLeftHeldRigidBody) {
+        g_letGoHandData[1] = { g_controllerData[1].GetMaxRecentVelocity(), g_prevLeftHeldRefr, g_prevLeftHeldRigidBody, g_currentFrameTime };
     }
 }
 
@@ -3830,7 +4076,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     // Shrink the two rings of the charcontroller shape by moving the rings' vertices inwards
                     for (int i : {
                         1, 3, 4, 5, 7, 11, 13, 16, // top ring
-                            0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
+                        0, 2, 6, 10, 12, 14, 15, 17 // bottom ring
                     }) {
                         NiPoint3 vert = HkVectorToNiPoint(verts[i]);
                         NiPoint3 newVert = vert;
@@ -3905,56 +4151,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
         }
     }
 
-    { // Update higgs info
-        NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
-        NiPointer<bhkRigidBody> leftHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(true);
-        g_rightHand = rightHand;
-        g_leftHand = leftHand;
-
-        NiPointer<bhkRigidBody> rightWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(false);
-        NiPointer<bhkRigidBody> leftWeapon = (bhkRigidBody *)g_higgsInterface->GetWeaponRigidBody(true);
-        g_rightWeapon = rightWeapon;
-        g_leftWeapon = leftWeapon;
-
-        // TODO: We don't make held objects keyframed_reporting, so those can't do hits on statics
-        if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-            rightWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-            bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightWeapon);
-        }
-        if (leftWeapon && leftWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-            leftWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-            bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftWeapon);
-        }
-
-        if (rightHand && rightHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-            rightHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-            bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightHand);
-        }
-        if (leftHand && leftHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-            leftHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-            bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftHand);
-        }
-
-        if (rightHand) {
-            g_higgsCollisionLayer = GetCollisionLayer(rightHand->hkBody);
-        }
-
-        g_prevRightHeldObject = g_rightHeldObject;
-        g_prevLeftHeldObject = g_leftHeldObject;
-
-        g_rightHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(false);
-        g_leftHeldObject = (bhkRigidBody *)g_higgsInterface->GetGrabbedRigidBody(true);
-
-        g_prevRightHeldRefr = g_rightHeldRefr;
-        g_prevLeftHeldRefr = g_leftHeldRefr;
-
-        g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
-        g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
-
-        g_currentGrabTransforms[0] = g_higgsInterface->GetGrabTransform(false);
-        g_currentGrabTransforms[1] = g_higgsInterface->GetGrabTransform(true);
-    }
-
+    UpdateHiggsInfo(world);
     UpdateHiggsDrop();
 
     // Do this after we've updated higgs things
@@ -3983,6 +4180,16 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             auto [actor, shovedTime] = *it;
             if ((g_currentFrameTime - shovedTime) > Config::options.shoveCooldown)
                 it = g_shovedActors.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    { // Clear out old foot yank actors
+        for (auto it = g_footYankedActors.begin(); it != g_footYankedActors.end();) {
+            auto [actor, shovedTime] = *it;
+            if ((g_currentFrameTime - shovedTime) > Config::options.footYankCooldown)
+                it = g_footYankedActors.erase(it);
             else
                 ++it;
         }
@@ -4030,134 +4237,56 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool isHeldLeft = actor == g_leftHeldRefr;
             bool isHeldRight = actor == g_rightHeldRefr;
             bool isHeld = isHeldLeft || isHeldRight;
-            bool wasHeld = actor == g_prevRightHeldRefr || actor == g_prevLeftHeldRefr;
 
-            bool doRagdoll = false;
-            bool keepOffset = false;
+            ForceRagdollType desiredForceRagdollType = GetDesiredForceRagdollType(actor, isHeld);
 
-            if (isHeld) {
-                if (!Actor_IsInRagdollState(actor)) {
-                    if (ShouldRagdollOnGrab(actor)) {
-                        doRagdoll = true;
-                        keepOffset = false;
-                    }
-                    else if (ShouldKeepOffset(actor)) {
-                        keepOffset = true;
-                        doRagdoll = false;
-                    }
-                }
-
-                // When an npc is grabbed, disable collision with them
-                if (isHeldRight) {
-                    rightHeldCollisionGroup = collisionGroup; // ignore collision with player capsule
-                    g_physicsListener.IgnoreCollisionForSeconds(false, actor, Config::options.droppedActorIgnoreCollisionTime); // ignore collision with hands/weapons
-                }
-                if (isHeldLeft) {
-                    leftHeldCollisionGroup = collisionGroup;
-                    g_physicsListener.IgnoreCollisionForSeconds(true, actor, Config::options.droppedActorIgnoreCollisionTime);
-                }
+            // When an npc is grabbed, disable collision with them
+            if (isHeldRight) {
+                rightHeldCollisionGroup = collisionGroup; // ignore collision with player capsule
+                g_physicsListener.IgnoreCollisionForSeconds(false, actor, Config::options.droppedActorIgnoreCollisionTime); // ignore collision with hands/weapons
             }
-            else if (wasHeld) {
-                if (!Actor_IsInRagdollState(actor) && CanRagdoll(actor)) {
-                    bool wasHeldRight = actor == g_prevRightHeldRefr;
-                    bool wasHeldLeft = actor == g_prevLeftHeldRefr;
-                    if (wasHeldRight && wasHeldLeft) {
+            if (isHeldLeft) {
+                leftHeldCollisionGroup = collisionGroup;
+                g_physicsListener.IgnoreCollisionForSeconds(true, actor, Config::options.droppedActorIgnoreCollisionTime);
+            }
 
-                    }
-                    else {
-                        if (Config::options.ragdollOnTwoHandedYank && !IsAnimal(actor->race)) {
-                            NiPoint3 velocity = g_maxHandVelocityWhenLetGo[wasHeldRight ? 0 : 1];
-                            if (VectorLength(velocity) > Config::options.twoHandedYankRequiredHandSpeedRoomspace) {
-                                doRagdoll = true;
-                                keepOffset = false;
+            bool didRagdoll = false;
+            if (desiredForceRagdollType == ForceRagdollType::RagdollOnGrab) {
+                RagdollActor(actor);
+                didRagdoll = true;
+            }
+            else if (desiredForceRagdollType == ForceRagdollType::FootYank) {
+                if (!g_footYankedActors.count(actor)) {
+                    g_footYankedActors[actor] = g_currentFrameTime;
 
-                                ApplyYankImpulse(world, actor, wasHeldRight ? g_prevRightHeldObject : g_prevLeftHeldObject, velocity); // TODO: Don't use prev objects, can be freed
-
-                                g_shovedActors[actor] = g_currentFrameTime; // Prevent shoving right when letting go. This needs to be before the NPC state update.
-                            }
-                        }
+                    if (TryStaminaAction(Config::options.yankStaminaCost)) {
+                        RagdollActor(actor);
+                        didRagdoll = true;
                     }
                 }
             }
+            else if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::LeftHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+                if (TryStaminaAction(Config::options.yankStaminaCost)) {
+                    if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+                        ApplyYankImpulse(world, actor, g_letGoHandData[0].rigidBody, g_letGoHandData[0].velocity);
+                    }
+                    if (desiredForceRagdollType == ForceRagdollType::LeftHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+                        ApplyYankImpulse(world, actor, g_letGoHandData[1].rigidBody, g_letGoHandData[1].velocity);
+                    }
+
+                    g_shovedActors[actor] = g_currentFrameTime; // Prevent shoving right when letting go. This needs to be before UpdateActorShove.
+
+                    RagdollActor(actor);
+                    didRagdoll = true;
+                }
+            }
+
+            UpdateKeepOffset(actor, desiredForceRagdollType == ForceRagdollType::KeepOffset);
+
 
             bool didShove = UpdateActorShove(actor);
 
-            TryUpdateNPCState(actor, didShove);
-
-            if (doRagdoll) {
-                if (ActorProcessManager *process = actor->processManager) {
-                    if (Config::options.playRagdollSound) {
-                        PlayRagdollSound(actor);
-                    }
-                    ActorProcess_PushActorAway(process, actor, player->pos, 0.f);
-                }
-            }
-
-            if (keepOffset) {
-                if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
-                    // Wasn't grabbed before
-                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                    g_keepOffsetActors[actor] = { g_currentFrameTime, false };
-                }
-                else {
-                    // Already in the set, so check if it actually succeeded at first
-                    KeepOffsetData &data = it->second;
-
-                    if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
-                        if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
-                            // Retry
-
-                            if (Config::options.bumpActorIfKeepOffsetFails) {
-                                // Try to get them unstuck by bumping them
-                                QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
-                            }
-
-                            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                            data.lastAttemptTime = g_currentFrameTime;
-                        }
-                    }
-                    else {
-                        if (!data.success) {
-                            // To be sure, do a single additional attempt once we know the interface exists
-                            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                            data.success = true;
-                        }
-                        else { // KeepOffset interface exists and has succeeded
-                            ForEachRagdollDriver(actor, [actor, player](hkbRagdollDriver *driver) {
-                                if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                                    NiPoint3 offset = { 0.f, 0.f, 0.f };
-                                    /*
-                                    NiPoint3 rootOffsetXY = ragdoll->rootOffset;
-                                    rootOffsetXY.z = 0.f;
-                                    if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
-                                        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                                        NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
-                                        offset = InverseTransform(refrTransform) * offsetWS;
-                                    }
-                                    */
-
-                                    NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                                    if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
-                                        // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
-                                    }
-
-                                    UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-                                    UInt32 playerHandle = *g_playerHandle;
-                                    g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
-                                    //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-            else {
-                if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
-                    g_taskInterface->AddTask(ClearKeepOffsetTask::Create(GetOrCreateRefrHandle(actor)));
-                    g_keepOffsetActors.erase(actor);
-                }
-            }
+            TryUpdateNPCState(actor, didShove, didRagdoll);
 
 
             bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
@@ -4243,173 +4372,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                             }
                         }
                     }
-
-                    /*
-                                        {
-                                            bool isDead = actor->IsDead(1);
-
-                                            {
-                                                if (BipedModel *biped = actor->GetBipedSmall()) {
-                                                    if (Biped *bipedData = biped->bipedData) {
-                                                        // TODO: This doesn't handle weapons equipped in the offhand. We want to include those, but likely ignore shields.
-                                                        // Shield / offhand is index 9.
-
-                                                        UInt8 drawState = actor->actorState.flags08 >> 5 & 0x7;
-                                                        bool isWeaponDrawn = drawState == 3;
-                                                        bool shouldAddToWorld = isWeaponDrawn || isDead;
-
-                                                        for (int i = 32; i < 42; i++) {
-                                                            if (NiPointer<NiAVObject> geomNode = bipedData->unk10[i].object) {
-                                                                if (shouldAddToWorld) {
-                                                                    actorData->weaponRoot = geomNode;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-
-                                                if (NiPointer<NiAVObject> weaponRoot = actorData->weaponRoot) {
-                                                    if (NiPointer<bhkRigidBody> weaponBody = GetRigidBody(weaponRoot)) {
-                                                        bool isWeaponValid = false;
-
-                                                        if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
-                                                            if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
-                                                                if (IsRagdollHandRigidBody(handBody->hkBody)) {
-                                                                    if (bhkShape *handShapeWrapper = (bhkShape *)handBody->hkBody->m_collidable.m_shape->m_userData) {
-                                                                        if (bhkShape *weaponShapeWrapper = (bhkShape *)weaponBody->hkBody->m_collidable.m_shape->m_userData) {
-                                                                            isWeaponValid = true;
-
-                                                                            if (weaponShapeWrapper != actorData->clonedFromShape) {
-                                                                                NiCloningProcess cloningProcess = NiCloningProcess();
-
-                                                                                _MESSAGE("clone");
-
-                                                                                if (bhkRigidBodyT *rigidBodyT = DYNAMIC_CAST(weaponBody, bhkRigidBody, bhkRigidBodyT)) {
-                                                                                    // TODO: Handle this - probably the best thing to do is just apply the bhkRigidBodyT transform to the transform shape directly
-                                                                                    _MESSAGE("bhkRigidBodyT");
-                                                                                }
-
-                                                                                // The weapon local transform actually changes during play, so we need to change the transform (or re-create the transform shape) whenever the weapon node local transform changes too much.
-
-                                                                                bhkShape *clonedShape = (bhkShape *)NiObject_Clone(weaponShapeWrapper, &cloningProcess);
-                                                                                bhkTransformShape *transformShapeWrapper = CreatebhkTransformShape();
-                                                                                hkpTransformShape *transformShape = hkAllocReferencedObject<hkpTransformShape>();
-
-                                                                                NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
-                                                                                hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
-
-                                                                                hkpTransformShape_ctor(transformShape, clonedShape->shape, transform);
-                                                                                transformShapeWrapper->shape = transformShape;
-                                                                                hkReferencedObject_removeReference(transformShape);
-                                                                                transformShape->m_userData = (hkUlong)transformShapeWrapper;
-
-                                                                                transformShapeWrapper->materialId = clonedShape->materialId;
-
-                                                                                // Create a list shape with both the original hand shape and the cloned weapon shape - this way we can easily toggle off the weapon shape when they die/sheathe.
-                                                                                // TODO: We need to restore just the original hand node when the actor is killed or drops the weapon.
-
-                                                                                if (!actorData->handShape) {
-                                                                                    actorData->handShape = handShapeWrapper;
-                                                                                }
-
-                                                                                bhkListShape *listShape = (bhkListShape *)Heap_Allocate(sizeof(bhkListShape));
-
-                                                                                {
-                                                                                    bhkListShapeCinfo cinfo{};
-
-                                                                                    cinfo.shapes.pushBack(actorData->handShape->shape); // add the original hand shape
-                                                                                    cinfo.shapes.pushBack(transformShape); // add the new weapon shape
-
-                                                                                    bhkListShape_ctor(listShape, &cinfo);
-                                                                                }
-
-                                                                                {
-                                                                                    BSWriteLocker lock(&world->worldLock);
-
-                                                                                    handBody->RemoveFromCurrentWorld();
-
-                                                                                    handShapeWrapper->DecRef();
-                                                                                    handBody->hkBody->setShape(listShape->shape); // Could this be causing crashes? We do lock the world here, but perhaps that's getting queued for later and not done on the spot?
-                                                                                    listShape->IncRef();
-
-                                                                                    bhkWorld_AddEntity(world, handBody->hkBody);
-                                                                                }
-
-                                                                                actorData->combinedShape = listShape;
-
-                                                                                actorData->clonedFromShape = weaponShapeWrapper;
-                                                                            }
-
-                                                                            if (actorData->combinedShape) {
-                                                                                hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-                                                                                if (hkpTransformShape *shape = DYNAMIC_CAST(listShape->getChildShapeInl(1), hkpShape, hkpTransformShape)) {
-                                                                                    NiTransform weaponLocalTransform = weaponRoot->m_parent->m_localTransform;
-                                                                                    hkTransform transform = NiTransformTohkTransform(weaponLocalTransform);
-
-                                                                                    // This is not recommended as collision agents may have cached data for this shape assuming the previous transform. But, it's kind of the best we can do.
-                                                                                    hkpTransformShape_setTransform(shape, transform);
-
-                                                                                    if (g_rightHeldObject == handBody) {
-                                                                                        if (g_rightHeldObject != g_prevRightHeldObject) {
-                                                                                            g_initialHeldWeaponLocalTransforms[false] = weaponLocalTransform;
-                                                                                        }
-
-                                                                                        // Keep Constant: hand in the space of the weapon
-                                                                                        // hand in space of body = weapon in space of body * hand in space of weapon
-                                                                                        // initial hand in space of weapon = inverse(initial weapon in space of body) * initial hand in space of body
-                                                                                        // final hand in space of weapon = inverse(final weapon in space of body) * (final hand in space of body)
-                                                                                        // => inverse(initial weapon in space of body) * initial hand in space of body = inverse(final weapon in space of body) * final hand in space of body
-                                                                                        // => final hand in space of body = final weapon in space of body * inverse(initial weapon in space of body) * initial hand in space of body
-
-                                                                                        NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[false]);
-                                                                                        NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[false]) * initialBodyToHand;
-                                                                                        g_higgsInterface->SetGrabTransform(false, InverseTransform(newBodyToHand));
-                                                                                    }
-
-                                                                                    if (g_leftHeldObject == handBody) {
-                                                                                        if (g_leftHeldObject != g_prevLeftHeldObject) {
-                                                                                            g_initialHeldWeaponLocalTransforms[true] = weaponLocalTransform;
-                                                                                        }
-
-                                                                                        NiTransform initialBodyToHand = InverseTransform(g_initialGrabTransforms[true]);
-                                                                                        NiTransform newBodyToHand = weaponLocalTransform * InverseTransform(g_initialHeldWeaponLocalTransforms[true]) * initialBodyToHand;
-                                                                                        g_higgsInterface->SetGrabTransform(true, InverseTransform(newBodyToHand));
-                                                                                    }
-                                                                                }
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-
-                                                        if (!isWeaponValid || isDead) {
-                                                            // The weapon is not in the hand (not drawn, etc.), or the actor is dead
-
-                                                            if (actorData->combinedShape) {
-                                                                hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-                                                                // Disable the child shape which is the weapon shape (keep the hand shape active)
-                                                                if (listShape->isChildEnabled(1)) {
-                                                                    hkpListShape_disableChild(listShape, 1);
-                                                                }
-                                                            }
-                                                        }
-                                                        else {
-                                                            if (actorData->combinedShape) {
-                                                                hkpListShape *listShape = (hkpListShape *)actorData->combinedShape->shape.val();
-                                                                // Enable the child shape which is the weapon shape
-                                                                if (!listShape->isChildEnabled(1)) {
-                                                                    hkpListShape_enableChild(listShape, 1);
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                    */
-
-
                 }
             }
             else if (shouldBeInactive) {
@@ -6571,7 +6533,6 @@ extern "C" {
                     g_higgsInterface->AddPrePhysicsStepCallback(PrePhysicsStepCallback);
                     g_higgsInterface->AddPreVrikPreHiggsCallback(PreVrikPreHiggsCallback);
                     g_higgsInterface->AddGrabbedCallback(OnHiggsGrab);
-                    g_higgsInterface->AddDroppedCallback(OnHiggsDrop);
 
                     UInt64 bitfield = g_higgsInterface->GetHiggsLayerBitfield();
                     bitfield |= ((UInt64)1 << BGSCollisionLayer::kCollisionLayer_Biped); // add collision with ragdoll of live characters

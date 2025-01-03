@@ -229,8 +229,6 @@ namespace Config {
         if (!RegisterBool("enableActorShove", options.enableActorShove)) success = false;
         if (!RegisterBool("disableShoveWhileWeaponsDrawn", options.disableShoveWhileWeaponsDrawn)) success = false;
         if (!RegisterBool("enableShoveFromFurniture", options.enableShoveFromFurniture)) success = false;
-        if (!RegisterBool("playShovePhysicsSound", options.playShovePhysicsSound)) success = false;
-        if (!RegisterBool("playSoundOnShoveNoStamina", options.playSoundOnShoveNoStamina)) success = false;
         if (!RegisterFloat("shoveStaggerMagnitude", options.shoveStaggerMagnitude)) success = false;
         if (!RegisterFloat("shoveStaminaCost", options.shoveStaminaCost)) success = false;
         if (!RegisterFloat("shoveSpeedThreshold", options.shoveSpeedThreshold)) success = false;
@@ -286,11 +284,16 @@ namespace Config {
         if (!RegisterBool("ragdollOnGrab", options.ragdollOnGrab)) success = false;
         if (!RegisterBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) success = false;
         if (!RegisterFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) success = false;
-        if (!RegisterBool("ragdollOnTwoHandedYank", options.ragdollOnTwoHandedYank)) success = false;
-        if (!RegisterFloat("twoHandedYankRequiredHandSpeedRoomspace", options.twoHandedYankRequiredHandSpeedRoomspace)) success = false;
+        if (!RegisterBool("ragdollOnYank", options.ragdollOnYank)) success = false;
+        if (!RegisterBool("requireTwoHandsToYank", options.requireTwoHandsToYank)) success = false;
+        if (!RegisterFloat("ragdollAggressionImpact", options.ragdollAggressionImpact)) success = false;
+        if (!RegisterFloat("yankRequiredHandSpeedRoomspace", options.yankRequiredHandSpeedRoomspace)) success = false;
         if (!RegisterBool("playRagdollSound", options.playRagdollSound)) success = false;
         if (!RegisterBool("ragdollOnFootYank", options.ragdollOnFootYank)) success = false;
+        if (!RegisterFloat("yankStaminaCost", options.yankStaminaCost)) success = false;
+        if (!RegisterDouble("yankTwoHandedTimeWindow", options.yankTwoHandedTimeWindow)) success = false;
         if (!RegisterBool("disableKeepOffsetWhenFootHeld", options.disableKeepOffsetWhenFootHeld)) success = false;
+        if (!RegisterDouble("footYankCooldown", options.footYankCooldown)) success = false;
         if (!RegisterFloat("footYankRequiredStressAmount", options.footYankRequiredStressAmount)) success = false;
         if (!RegisterFloat("yankImpulseDecayExponent", options.yankImpulseDecayExponent)) success = false;
         if (!RegisterInt("yankImpulseBoneRadius", options.yankImpulseBoneRadius)) success = false;

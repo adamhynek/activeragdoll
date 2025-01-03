@@ -96,16 +96,15 @@ inline bool CanWeaponStab(TESObjectWEAP *weapon) {
 
 inline NiPointer<NiAVObject> GetWandNode(bool isLeft) { return isLeft ? (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_LeftWandNode] : (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_RightWandNode]; }
 
-bhkCollisionObject *GetCollisionObject(NiAVObject *obj);
+NiPointer<bhkCollisionObject> GetCollisionObject(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj);
 NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root);
-bool FindRigidBody(NiAVObject *root, hkpRigidBody *query);
+NiPointer<bhkRigidBody> FindRigidBody(NiAVObject *root, bhkRigidBody *query);
 NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignoreSelf = false);
 void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f);
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
 void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f);
-void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f);
-void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(hkpRigidBody *, int)> f, int waves);
+void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(bhkRigidBody *, int)> f, int waves);
 NiTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale = true);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
 bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);

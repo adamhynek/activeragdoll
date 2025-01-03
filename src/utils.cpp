@@ -445,23 +445,26 @@ void PrintToFile(std::string entry, std::string filename)
     file.close();
 }
 
-bhkCollisionObject *GetCollisionObject(NiAVObject *obj)
+NiPointer<bhkCollisionObject> GetCollisionObject(NiAVObject *obj)
 {
     if (!obj->unk040) return nullptr;
 
-    auto niCollObj = ((NiCollisionObject *)obj->unk040);
-    auto collObj = DYNAMIC_CAST(niCollObj, NiCollisionObject, bhkCollisionObject);
-    return collObj;
+    if (NiPointer<NiCollisionObject> niCollObj = (NiCollisionObject *)obj->unk040) {
+        if (NiPointer<bhkCollisionObject> collObj = DYNAMIC_CAST(niCollObj, NiCollisionObject, bhkCollisionObject)) {
+            return collObj;
+        }
+    }
+
+    return nullptr;
 }
 
 NiPointer<bhkRigidBody> GetRigidBody(NiAVObject *obj)
 {
-    auto collObj = GetCollisionObject(obj);
-    if (collObj) {
-        NiPointer<bhkWorldObject> worldObj = collObj->body;
-        auto rigidBody = DYNAMIC_CAST(worldObj, bhkWorldObject, bhkRigidBody);
-        if (rigidBody) {
-            return rigidBody;
+    if (NiPointer<bhkCollisionObject> collObj = GetCollisionObject(obj)) {
+        if (NiPointer<bhkWorldObject> worldObj = collObj->body) {
+            if (NiPointer<bhkRigidBody> rigidBody = DYNAMIC_CAST(worldObj, bhkWorldObject, bhkRigidBody)) {
+                return rigidBody;
+            }
         }
     }
 
@@ -474,8 +477,7 @@ bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target)
         return true;
     }
 
-    NiNode *node = haystack->GetAsNiNode();
-    if (node) {
+    if (NiNode *node = haystack->GetAsNiNode()) {
         for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
             NiAVObject *child = node->m_children.m_data[i];
             if (child) {
@@ -615,18 +617,18 @@ NiPointer<bhkRigidBody> GetFirstRigidBody(NiAVObject *root)
     return nullptr;
 }
 
-bool FindRigidBody(NiAVObject *root, hkpRigidBody *query)
+NiPointer<bhkRigidBody> FindRigidBody(NiAVObject *root, bhkRigidBody *query)
 {
     NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root);
-    if (rigidBody && rigidBody->hkBody == query) {
-        return true;
+    if (rigidBody && rigidBody == query) {
+        return rigidBody;
     }
 
     if (NiNode *node = root->GetAsNiNode()) {
         for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
             if (NiAVObject *child = node->m_children.m_data[i]) {
-                if (FindRigidBody(child, query)) {
-                    return true;
+                if (NiPointer<bhkRigidBody> rb = FindRigidBody(child, query)) {
+                    return rb;
                 }
             }
         }
@@ -680,22 +682,6 @@ void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<
     }
 }
 
-void ForEachAdjacentBody(hkbRagdollDriver *driver, hkpRigidBody *body, std::function<void(hkpRigidBody *)> f) {
-    if (!body || !driver || !driver->ragdoll) return;
-
-    for (hkpConstraintInstance *constraint : driver->ragdoll->m_constraints) {
-        bool isConstraintEnabled; hkpConstraintInstance_isEnabled(constraint, &isConstraintEnabled);
-        if (!isConstraintEnabled) continue;
-
-        if (constraint->getRigidBodyA() == body) {
-            f(constraint->getRigidBodyB());
-        }
-        else if (constraint->getRigidBodyB() == body) {
-            f(constraint->getRigidBodyA());
-        }
-    }
-};
-
 void CollectAllConstraints(NiAVObject *root, std::vector<NiPointer<bhkConstraint>> &out)
 {
     if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root)) {
@@ -716,13 +702,15 @@ void CollectAllConstraints(NiAVObject *root, std::vector<NiPointer<bhkConstraint
     }
 }
 
-void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(hkpRigidBody *, int)> f, int waves) {
+void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(bhkRigidBody *, int)> f, int waves) {
+    if (!root || !body) return;
+
     std::vector<NiPointer<bhkConstraint>> constraints{};
     CollectAllConstraints(root, constraints);
 
     std::set<NiPointer<bhkRigidBody>> connectedComponent{};
     connectedComponent.insert(body);
-    f(body->hkBody, 0);
+    f(body, 0);
 
     for (int i = 1; i <= waves; i++) {
         std::set<NiPointer<bhkRigidBody>> currentConnectedComponent = connectedComponent; // copy
@@ -748,10 +736,10 @@ void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<voi
                 }
 
                 if (!isAInSet) {
-                    f(rigidBodyA->hkBody, i);
+                    f(rigidBodyA, i);
                 }
                 if (!isBInSet) {
-                    f(rigidBodyB->hkBody, i);
+                    f(rigidBodyB, i);
                 }
             }
         }

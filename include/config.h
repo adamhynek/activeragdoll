@@ -54,8 +54,6 @@ namespace Config {
         bool enableActorShove = true;
         bool disableShoveWhileWeaponsDrawn = true;
         bool enableShoveFromFurniture = true;
-        bool playShovePhysicsSound = true;
-        bool playSoundOnShoveNoStamina = true;
         float shoveStaggerMagnitude = 0.25f;
         float shoveStaminaCost = 40.f;
         float shoveSpeedThreshold = 2.5f;
@@ -128,10 +126,15 @@ namespace Config {
         bool ragdollOnGrab = false;
         bool ragdollSmallRacesOnGrab = true;
         float smallRaceHealthThreshold = 6.f;
-        bool ragdollOnTwoHandedYank = true;
-        float twoHandedYankRequiredHandSpeedRoomspace = 1.5f;
+        float ragdollAggressionImpact = 10.f;
+        bool ragdollOnYank = true;
+        bool requireTwoHandsToYank = false;
+        float yankRequiredHandSpeedRoomspace = 1.5f;
         bool ragdollOnFootYank = true;
+        float yankStaminaCost = 40.f;
+        double yankTwoHandedTimeWindow = 0.2;
         bool disableKeepOffsetWhenFootHeld = true;
+        double footYankCooldown = 2.0;
         float footYankRequiredStressAmount = 35.f;
         float yankImpulseDecayExponent = 0.8f;
         int yankImpulseBoneRadius = 4;
