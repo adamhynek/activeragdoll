@@ -132,6 +132,7 @@ namespace Config {
         float yankRequiredHandSpeedRoomspace = 1.5f;
         bool ragdollOnFootYank = true;
         float yankStaminaCost = 40.f;
+        float footYankStaminaCost = 40.f;
         double yankTwoHandedTimeWindow = 0.2;
         bool disableKeepOffsetWhenFootHeld = true;
         double footYankCooldown = 2.0;

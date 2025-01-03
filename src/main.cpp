@@ -4259,7 +4259,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 if (!g_footYankedActors.count(actor)) {
                     g_footYankedActors[actor] = g_currentFrameTime;
 
-                    if (TryStaminaAction(Config::options.yankStaminaCost)) {
+                    if (TryStaminaAction(Config::options.footYankStaminaCost)) {
                         RagdollActor(actor);
                         didRagdoll = true;
                     }
