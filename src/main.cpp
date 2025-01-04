@@ -4266,7 +4266,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }
             else if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::LeftHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
-                if (TryStaminaAction(Config::options.yankStaminaCost)) {
+                float staminaCost = Actor_IsHostileToActor(actor, player) ? Config::options.yankHostileStaminaCost : Config::options.yankStaminaCost;
+                if (TryStaminaAction(staminaCost)) {
                     if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
                         ApplyYankImpulse(world, actor, g_letGoHandData[0].rigidBody, g_letGoHandData[0].velocity);
                     }

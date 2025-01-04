@@ -291,6 +291,7 @@ namespace Config {
         if (!RegisterBool("playRagdollSound", options.playRagdollSound)) success = false;
         if (!RegisterBool("ragdollOnFootYank", options.ragdollOnFootYank)) success = false;
         if (!RegisterFloat("yankStaminaCost", options.yankStaminaCost)) success = false;
+        if (!RegisterFloat("yankHostileStaminaCost", options.yankHostileStaminaCost)) success = false;
         if (!RegisterFloat("footYankStaminaCost", options.footYankStaminaCost)) success = false;
         if (!RegisterDouble("yankTwoHandedTimeWindow", options.yankTwoHandedTimeWindow)) success = false;
         if (!RegisterBool("disableKeepOffsetWhenFootHeld", options.disableKeepOffsetWhenFootHeld)) success = false;
