@@ -3291,8 +3291,8 @@ void RemoveActorFromWorldIfActiveFromProcessTransition(Actor *actor)
     _MESSAGE("%d Remove Active Actor %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-        get_vfunc<_Actor_DetachHavok>(actor, 0x65)(actor);
         DisableOrEnableSyncOnUpdate(actor, false); // this is also necessary not only to enable sync on update, but to prevent the game from calling AddHavok() during MoveHavok() for bhkBlendCollisionObject s.
+        get_vfunc<_Actor_DetachHavok>(actor, 0x65)(actor);
 
         CleanupActiveRagdollTracking(actor);
         CleanupActiveGroupTracking(collisionGroup);
@@ -3307,8 +3307,17 @@ void RemoveActorFromWorldIfActive(Actor *actor)
     bool isActiveActor = g_activeActors.count(actor);
     bool isAddedToWorld = IsAddedToWorld(actor);
 
+    UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
+    UInt16 collisionGroup = filterInfo >> 16;
+
+    bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
+
     if (isAddedToWorld && isActiveActor) {
         RemoveRagdollFromWorld(actor);
+        CleanupActiveGroupTracking(collisionGroup);
+    }
+    else if (isHittableCharController) {
+        g_hittableCharControllerGroups.erase(collisionGroup);
     }
 }
 
@@ -4300,6 +4309,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool isProcessedActor = isActiveActor || isHittableCharController;
             bool isAddableToWorld = IsAddableToWorld(actor);
 
+            //isAddableToWorld = isAddableToWorld && (*g_currentFrameCounter % 1000) > 500;
+
             bool isAllowedToAddToWorld = *g_currentFrameCounter - g_lastActorAddedToWorldFrame > Config::options.minFramesBetweenActorAdds;
 
             if (shouldBeActive) {
@@ -4317,7 +4328,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     if (isActiveActor) {
                         // Someone in range went from having a ragdoll or not being excluded, to not having a ragdoll or being excluded
                         RemoveRagdollFromWorld(actor);
-                        g_activeBipedGroups.erase(collisionGroup);
+                        CleanupActiveGroupTracking(collisionGroup);
                         isActiveActor = false;
                     }
 
@@ -5567,8 +5578,6 @@ static RelocPtr<_hkp3AxisSweep_removeObjectBatch> hkp3AxisSweep_removeObjectBatc
 
 static RelocPtr<_bhkWorld_dtor> bhkWorld_dtor_vtbl(0x1823978);
 
-static RelocPtr<_Actor_DetachHavok> Actor_DetachHavok_vtbl(0x16D7108);
-static RelocPtr<_Actor_DetachHavok> Actor_MoveHavok_vtbl(0x16D7210);
 static RelocPtr<_Actor_MoveToHigh> Actor_MoveToHigh_vtbl(0x16D7578);
 
 _Actor_MoveToHigh g_Actor_MoveToMiddleHigh_Original = nullptr;
@@ -5580,7 +5589,7 @@ void Actor_MoveToMiddleHigh_Hook(Actor *actor)
     _MESSAGE("%d MoveToMiddleHigh %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
+    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToMiddleHigh_Original(actor);
 }
@@ -5594,7 +5603,7 @@ void Actor_MoveToMiddleLow_Hook(Actor *actor)
     _MESSAGE("%d MoveToMiddleLow %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
+    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToMiddleLow_Original(actor);
 }
@@ -5608,7 +5617,7 @@ void Actor_MoveToLow_Hook(Actor *actor)
     _MESSAGE("%d MoveToLow %s", *g_currentFrameCounter, name->name);
 #endif // _DEBUG
 
-    RemoveActorFromWorldIfActiveFromProcessTransition(actor);
+    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
 
     return g_Actor_MoveToLow_Original(actor);
 }
@@ -5628,6 +5637,30 @@ void Actor_SetPosition_Hook(Actor *actor, const NiPoint3 &pos, bool setCharContr
     }
 
     g_Actor_SetPosition_Original(actor, pos, setCharControllerToo);
+}
+
+_Actor_DetachHavok g_Actor_DetachHavok_Original = nullptr;
+static RelocPtr<_Actor_DetachHavok> Actor_DetachHavok_vtbl(0x16D7108);
+void Actor_DetachHavok_Hook(Actor *actor)
+{
+#ifdef _DEBUG
+    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+    _MESSAGE("%d DetachHavok %s", *g_currentFrameCounter, name->name);
+#endif // _DEBUG
+
+    g_Actor_DetachHavok_Original(actor);
+}
+
+_Actor_MoveHavok g_Actor_MoveHavok_Original = nullptr;
+static RelocPtr<_Actor_DetachHavok> Actor_MoveHavok_vtbl(0x16D7210);
+void Actor_MoveHavok_Hook(Actor *actor)
+{
+//#ifdef _DEBUG
+//    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+//    _MESSAGE("%d MoveHavok %s", *g_currentFrameCounter, name->name);
+//#endif // _DEBUG
+
+    g_Actor_MoveHavok_Original(actor);
 }
 
 _Actor_IsRagdollMovingSlowEnoughToGetUp Actor_IsRagdollMovingSlowEnoughToGetUp_Original = 0;
@@ -6480,6 +6513,31 @@ void PlayerCharacter_UpdateAnimation_Hook(Actor *_this, float deltaTime)
     g_originalPCUpdateAnimation(_this, deltaTime);
 }
 
+class CellAttachDetachHandler : public BSTEventSink<TESCellAttachDetachEvent> {
+public:
+    virtual EventResult	ReceiveEvent(TESCellAttachDetachEvent *evn, EventDispatcher<TESCellAttachDetachEvent> *dispatcher)
+    {
+        bool attached = evn->attached;
+        TESObjectREFR *refr = evn->reference;
+
+        if (attached) return EventResult::kEvent_Continue; // We only care about detached
+
+        // TODO: We really probably need a lock around this set
+        if (g_activeActors.count((Actor*)refr)) {
+            TESFullName *fullName = DYNAMIC_CAST(refr->baseForm, TESForm, TESFullName);
+            _MESSAGE("%d %s %s", *g_currentFrameCounter, fullName->name.data, attached ? "attached" : "detached");
+
+            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+                RemoveActorFromWorldIfActive(actor);
+                //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
+            }
+        }
+
+        return EventResult::kEvent_Continue;
+    }
+};
+CellAttachDetachHandler g_cellAttachDetachHandler;
+
 
 extern "C" {
     void OnDataLoaded()
@@ -6495,6 +6553,15 @@ extern "C" {
 
         if (MenuManager *menuManager = MenuManager::GetSingleton()) {
             menuManager->MenuOpenCloseEventDispatcher()->AddEventSink(&MenuChecker::menuEvent);
+        }
+
+        EventDispatcherList *eventDispatcherList = GetEventDispatcherList();
+        if (eventDispatcherList) {
+            eventDispatcherList->unk1B8.AddEventSink(&g_cellAttachDetachHandler);
+        }
+        else {
+            ShowErrorBoxAndTerminate("Failed to get event dispatcher list");
+            return;
         }
 
         _MESSAGE("Successfully loaded all forms");
@@ -6668,6 +6735,16 @@ extern "C" {
         {
             g_Actor_SetPosition_Original = *Actor_SetPosition_vtbl;
             SafeWrite64(Actor_SetPosition_vtbl.GetUIntPtr(), uintptr_t(Actor_SetPosition_Hook));
+        }
+
+        {
+            g_Actor_DetachHavok_Original = *Actor_DetachHavok_vtbl;
+            SafeWrite64(Actor_DetachHavok_vtbl.GetUIntPtr(), uintptr_t(Actor_DetachHavok_Hook));
+        }
+
+        {
+            g_Actor_MoveHavok_Original = *Actor_MoveHavok_vtbl;
+            SafeWrite64(Actor_MoveHavok_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveHavok_Hook));
         }
 
         g_timer.Start();

@@ -717,5 +717,6 @@ typedef bool(*_AttackHandler_Handle)(void *_this, Actor *actor);
 typedef void(*_Actor_MoveToHigh)(Actor *actor);
 typedef void(*_Actor_SetPosition)(Actor *actor, const NiPoint3 &position, bool setCharControllerToo);
 typedef void(*_Actor_DetachHavok)(Actor *actor);
+typedef void(*_Actor_MoveHavok)(Actor *actor);
 typedef void (*_bhkWorld_dtor)(bhkWorld *);
 
