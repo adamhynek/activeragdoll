@@ -10,6 +10,7 @@
 #include <atomic>
 #include <set>
 #include <deque>
+#include <shared_mutex>
 
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
@@ -258,6 +259,15 @@ std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driv
     return it->second;
 }
 
+std::shared_mutex g_activeActorsLock{};
+std::unordered_set<Actor *> g_activeActors{};
+
+bool IsActiveActor(TESObjectREFR *refr)
+{
+    std::shared_lock lock(g_activeActorsLock);
+    return g_activeActors.find((Actor *)refr) != g_activeActors.end();
+}
+
 
 void UpdateCollisionFilterOnAllBones(Actor *actor)
 {
@@ -469,7 +479,6 @@ struct ControllerTrackingData
 };
 ControllerTrackingData g_controllerData[2]; // one for each hand
 
-std::unordered_set<Actor *> g_activeActors{};
 std::unordered_set<UInt16> g_activeBipedGroups{};
 std::unordered_set<UInt16> g_noPlayerCharControllerCollideGroups{};
 std::unordered_set<UInt16> g_hittableCharControllerGroups{};
@@ -1925,7 +1934,7 @@ struct PhysicsListener :
                 if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(charControllerCollidable)) {
                     if (refr->formType == kFormType_Character) {
                         if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                            if (g_activeActors.count(actor)) {
+                            if (IsActiveActor(actor)) {
                                 // We'll let the clutter object collide with the biped instead
                                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                                 return;
@@ -1950,7 +1959,7 @@ struct PhysicsListener :
                     Actor *actor = DYNAMIC_CAST(bipedRefr, TESObjectREFR, Actor);
                     hkpRigidBody *hittingBody = isABiped ? rigidBodyB : rigidBodyA;
 
-                    if (Config::options.disableBipedClutterCollisionWithNonMoveableObjects && !IsMoveableEntity(hittingBody) && !IsHiggsRigidBody(hittingBody) && g_activeActors.count(actor)) {
+                    if (Config::options.disableBipedClutterCollisionWithNonMoveableObjects && !IsMoveableEntity(hittingBody) && !IsHiggsRigidBody(hittingBody) && IsActiveActor(actor)) {
                         evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                         return;
                     }
@@ -3210,7 +3219,11 @@ void CleanupActiveRagdollTracking(Actor *actor)
                         }
                     }
                     g_activeRagdolls.erase(driver);
-                    g_activeActors.erase(actor);
+
+                    {
+                        std::unique_lock lock(g_activeActorsLock);
+                        g_activeActors.erase(actor);
+                    }
                 }
             }
         }
@@ -3271,40 +3284,9 @@ void DisableOrEnableSyncOnUpdate(Actor *actor, bool disableElseEnable)
     }
 }
 
-void RemoveActorFromWorldIfActiveFromProcessTransition(Actor *actor)
-{
-    // Why is this its own function? Why not use RemoveRagdollFromWorld()?
-    // This is called from MoveToX() functions, and it needs to happen at the time they are called.
-    // At similar times, DetachHavok() gets called by the game, which removes the rigidbodies individually.
-    // RemoveRagdollFromWorld() removes them in a batch, and if that happens at a similar time to DetachHavok(), it will crash.
-
-    bool isActiveActor = g_activeActors.count(actor);
-
-    UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
-    UInt16 collisionGroup = filterInfo >> 16;
-
-    bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
-
-    if (isActiveActor) {
-#ifdef _DEBUG
-    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-    _MESSAGE("%d Remove Active Actor %s", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
-
-        DisableOrEnableSyncOnUpdate(actor, false); // this is also necessary not only to enable sync on update, but to prevent the game from calling AddHavok() during MoveHavok() for bhkBlendCollisionObject s.
-        get_vfunc<_Actor_DetachHavok>(actor, 0x65)(actor);
-
-        CleanupActiveRagdollTracking(actor);
-        CleanupActiveGroupTracking(collisionGroup);
-    }
-    else if (isHittableCharController) {
-        g_hittableCharControllerGroups.erase(collisionGroup);
-    }
-}
-
 void RemoveActorFromWorldIfActive(Actor *actor)
 {
-    bool isActiveActor = g_activeActors.count(actor);
+    bool isActiveActor = IsActiveActor(actor);
     bool isAddedToWorld = IsAddedToWorld(actor);
 
     UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
@@ -3313,6 +3295,12 @@ void RemoveActorFromWorldIfActive(Actor *actor)
     bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
 
     if (isAddedToWorld && isActiveActor) {
+
+#ifdef _DEBUG
+        TESFullName *fullName = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
+        _MESSAGE("%d %s detached", *g_currentFrameCounter, fullName->name.data);
+#endif // _DEBUG
+
         RemoveRagdollFromWorld(actor);
         CleanupActiveGroupTracking(collisionGroup);
     }
@@ -3720,8 +3708,12 @@ void ResetObjects()
         }
     }
 
+    {
+        std::unique_lock lock(g_activeActorsLock);
+        g_activeActors.clear();
+    }
+
     g_npcs.clear();
-    g_activeActors.clear();
     g_activeRagdolls.clear();
     g_activeBipedGroups.clear();
     g_noPlayerCharControllerCollideGroups.clear();
@@ -4305,7 +4297,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool shouldBeInactive = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
             bool isAddedToWorld = IsAddedToWorld(actor);
-            bool isActiveActor = g_activeActors.count(actor);
+            bool isActiveActor = IsActiveActor(actor);
             bool isProcessedActor = isActiveActor || isHittableCharController;
             bool isAddableToWorld = IsAddableToWorld(actor);
 
@@ -5225,7 +5217,7 @@ void PostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hkbGen
 
 void PreCullActorsHook(Actor *actor)
 {
-    if (!g_activeActors.count(actor)) return; // let the game decide
+    if (!IsActiveActor(actor)) return; // let the game decide
 
     UInt32 cullState = 7; // do not cull this actor
 
@@ -5237,7 +5229,7 @@ _BShkbAnimationGraph_UpdateAnimation BShkbAnimationGraph_UpdateAnimation_Origina
 void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
 {
     Actor *actor = _this->holder;
-    if (a3 && actor && g_activeActors.count(actor)) { // a3 is null if the graph is not active
+    if (a3 && actor && IsActiveActor(actor)) { // a3 is null if the graph is not active
         updateData->unk2A = true; // forces animation update (hkbGenerator::generate()) without skipping frames
     }
 
@@ -5248,7 +5240,7 @@ _Actor_GetHit Actor_TakePhysicsDamage_Original = 0;
 void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
 {
     // We do our own physics damage for active actors, so don't have the game do its as well
-    if (g_activeActors.count(_this)) return;
+    if (IsActiveActor(_this)) return;
     Actor_TakePhysicsDamage_Original(_this, hitData);
 }
 
@@ -5256,7 +5248,7 @@ _Actor_EndHavokHit Actor_KillEndHavokHit_Original = 0;
 void Actor_KillEndHavokHit_Hook(HavokHitJobs *havokHitJobs, Actor *_this)
 {
     // The actor is dying so undo anything we've done to it
-    if (g_activeActors.count(_this)) {
+    if (IsActiveActor(_this)) {
         if (Config::options.disableGravityForActiveRagdolls) {
             EnableGravity(_this);
         }
@@ -5322,7 +5314,7 @@ struct RemoveNonRagdollRigidBodiesFromWorldTask : TaskDelegate
 void ActorProcess_ExitFurniture_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *root)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(root);
-    if (g_activeActors.count(static_cast<Actor *>(refr))) {
+    if (IsActiveActor(refr)) {
         UInt32 handle = GetOrCreateRefrHandle(refr);
         g_taskInterface->AddTask(RemoveNonRagdollRigidBodiesFromWorldTask::Create(handle));
         return;
@@ -5333,7 +5325,7 @@ void ActorProcess_ExitFurniture_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVO
 
 void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manager, bool *a2, Actor *actor)
 {
-    if (g_activeActors.count(actor)) {
+    if (IsActiveActor(actor)) {
         if (Config::options.disableConstraintMotorsOnFurnitureExit) {
             ForEachRagdollDriver(manager, [](hkbRagdollDriver *driver) {
                 if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
@@ -5349,7 +5341,7 @@ void ActorProcess_ExitFurniture_ResetRagdoll_Hook(BSAnimationGraphManager *manag
 
 void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager, UInt64 *a2, Actor *actor)
 {
-    if (g_activeActors.count(actor)) {
+    if (IsActiveActor(actor)) {
         // We don't want to run RemoveNonRagdollRigidBodiesFromWorld immediately since the stuff is still yet to be added by AddHavok by a task.
         // So we need to make sure we run RemoveNonRagdollRigidBodiesFromWorld at least 1 frame later than the next task queue run.
         UInt32 handle = GetOrCreateRefrHandle(actor);
@@ -5573,55 +5565,6 @@ bool AttackStopHandler_Handle_Hook(void *_this, Actor *actor)
     return g_originalAttackStopHandlerHandle(_this, actor);
 }
 
-static RelocPtr<_hkp3AxisSweep_removeObject> hkp3AxisSweep_removeObject_vtbl(0x17D25B8);
-static RelocPtr<_hkp3AxisSweep_removeObjectBatch> hkp3AxisSweep_removeObjectBatch_vtbl(0x17D25C0);
-
-static RelocPtr<_bhkWorld_dtor> bhkWorld_dtor_vtbl(0x1823978);
-
-static RelocPtr<_Actor_MoveToHigh> Actor_MoveToHigh_vtbl(0x16D7578);
-
-_Actor_MoveToHigh g_Actor_MoveToMiddleHigh_Original = nullptr;
-static RelocPtr<_Actor_MoveToHigh> Actor_MoveToMiddleHigh_vtbl(0x16D7590);
-void Actor_MoveToMiddleHigh_Hook(Actor *actor)
-{
-#ifdef _DEBUG
-    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-    _MESSAGE("%d MoveToMiddleHigh %s", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
-
-    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
-
-    return g_Actor_MoveToMiddleHigh_Original(actor);
-}
-
-_Actor_MoveToHigh g_Actor_MoveToMiddleLow_Original = nullptr;
-static RelocPtr<_Actor_MoveToHigh> Actor_MoveToMiddleLow_vtbl(0x16D7588);
-void Actor_MoveToMiddleLow_Hook(Actor *actor)
-{
-#ifdef _DEBUG
-    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-    _MESSAGE("%d MoveToMiddleLow %s", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
-
-    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
-
-    return g_Actor_MoveToMiddleLow_Original(actor);
-}
-
-_Actor_MoveToHigh g_Actor_MoveToLow_Original = nullptr;
-static RelocPtr<_Actor_MoveToHigh> Actor_MoveToLow_vtbl(0x16D7580);
-void Actor_MoveToLow_Hook(Actor *actor)
-{
-#ifdef _DEBUG
-    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-    _MESSAGE("%d MoveToLow %s", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
-
-    //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
-
-    return g_Actor_MoveToLow_Original(actor);
-}
-
 _Actor_SetPosition g_Actor_SetPosition_Original = nullptr;
 static RelocPtr<_Actor_SetPosition> Actor_SetPosition_vtbl(0x16D7338);
 void Actor_SetPosition_Hook(Actor *actor, const NiPoint3 &pos, bool setCharControllerToo)
@@ -5637,30 +5580,6 @@ void Actor_SetPosition_Hook(Actor *actor, const NiPoint3 &pos, bool setCharContr
     }
 
     g_Actor_SetPosition_Original(actor, pos, setCharControllerToo);
-}
-
-_Actor_DetachHavok g_Actor_DetachHavok_Original = nullptr;
-static RelocPtr<_Actor_DetachHavok> Actor_DetachHavok_vtbl(0x16D7108);
-void Actor_DetachHavok_Hook(Actor *actor)
-{
-#ifdef _DEBUG
-    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-    _MESSAGE("%d DetachHavok %s", *g_currentFrameCounter, name->name);
-#endif // _DEBUG
-
-    g_Actor_DetachHavok_Original(actor);
-}
-
-_Actor_MoveHavok g_Actor_MoveHavok_Original = nullptr;
-static RelocPtr<_Actor_DetachHavok> Actor_MoveHavok_vtbl(0x16D7210);
-void Actor_MoveHavok_Hook(Actor *actor)
-{
-//#ifdef _DEBUG
-//    TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName);
-//    _MESSAGE("%d MoveHavok %s", *g_currentFrameCounter, name->name);
-//#endif // _DEBUG
-
-    g_Actor_MoveHavok_Original(actor);
 }
 
 _Actor_IsRagdollMovingSlowEnoughToGetUp Actor_IsRagdollMovingSlowEnoughToGetUp_Original = 0;
@@ -5708,7 +5627,7 @@ void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager,
             Actor *actor = graph.ptr->holder;
             if (!actor) continue;
 
-            if (g_activeActors.count(actor)) {
+            if (IsActiveActor(actor)) {
                 *result = true; // act as if we successfully removed the ragdoll from the world
                 return;
             }
@@ -5722,7 +5641,7 @@ _NiNode_SetMotionTypeDownwards GetUpEnd_NiNode_SetMotionTypeDownwards_Original =
 void GetUpEnd_NiNode_SetMotionTypeKeyframed_Hook(NiNode *node, UInt32 motionType, bool a3, bool a4, UInt32 a5)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(node);
-    if (refr && g_activeActors.count(static_cast<Actor *>(refr))) return;
+    if (refr && IsActiveActor(refr)) return;
 
     GetUpEnd_NiNode_SetMotionTypeDownwards_Original(node, motionType, a3, a4, a5);
 }
@@ -5731,7 +5650,7 @@ _BSTaskPool_QueueRemoveCollisionFromWorld GetUpEndHandler_Handle_RemoveCollision
 void GetUpEndHandler_Handle_RemoveCollision_Hook(BSTaskPool *taskPool, NiAVObject *node)
 {
     TESObjectREFR *refr = NiAVObject_GetOwner(node);
-    if (refr && g_activeActors.count(static_cast<Actor *>(refr))) {
+    if (refr && IsActiveActor(refr)) {
         UInt32 handle = GetOrCreateRefrHandle(refr);
         g_taskInterface->AddTask(RemoveNonRagdollRigidBodiesFromWorldTask::Create(handle));
         return;
@@ -6522,14 +6441,9 @@ public:
 
         if (attached) return EventResult::kEvent_Continue; // We only care about detached
 
-        // TODO: We really probably need a lock around this set
-        if (g_activeActors.count((Actor*)refr)) {
-            TESFullName *fullName = DYNAMIC_CAST(refr->baseForm, TESForm, TESFullName);
-            _MESSAGE("%d %s %s", *g_currentFrameCounter, fullName->name.data, attached ? "attached" : "detached");
-
+        if (refr->formType == kFormType_Character) {
             if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
                 RemoveActorFromWorldIfActive(actor);
-                //RemoveActorFromWorldIfActiveFromProcessTransition(actor);
             }
         }
 
@@ -6721,30 +6635,9 @@ extern "C" {
         g_originalAttackStopHandlerHandle = *AttackStopHandler_Handle_vtbl;
         SafeWrite64(AttackStopHandler_Handle_vtbl.GetUIntPtr(), uintptr_t(AttackStopHandler_Handle_Hook));
 
-        if (Config::options.removeRagdollWhenExitingHighProcess) {
-            g_Actor_MoveToLow_Original = *Actor_MoveToLow_vtbl;
-            SafeWrite64(Actor_MoveToLow_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToLow_Hook));
-
-            g_Actor_MoveToMiddleHigh_Original = *Actor_MoveToMiddleHigh_vtbl;
-            SafeWrite64(Actor_MoveToMiddleHigh_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToMiddleHigh_Hook));
-
-            g_Actor_MoveToMiddleLow_Original = *Actor_MoveToMiddleLow_vtbl;
-            SafeWrite64(Actor_MoveToMiddleLow_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveToMiddleLow_Hook));
-        }
-
         {
             g_Actor_SetPosition_Original = *Actor_SetPosition_vtbl;
             SafeWrite64(Actor_SetPosition_vtbl.GetUIntPtr(), uintptr_t(Actor_SetPosition_Hook));
-        }
-
-        {
-            g_Actor_DetachHavok_Original = *Actor_DetachHavok_vtbl;
-            SafeWrite64(Actor_DetachHavok_vtbl.GetUIntPtr(), uintptr_t(Actor_DetachHavok_Hook));
-        }
-
-        {
-            g_Actor_MoveHavok_Original = *Actor_MoveHavok_vtbl;
-            SafeWrite64(Actor_MoveHavok_vtbl.GetUIntPtr(), uintptr_t(Actor_MoveHavok_Hook));
         }
 
         g_timer.Start();
