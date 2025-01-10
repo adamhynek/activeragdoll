@@ -4301,8 +4301,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool isProcessedActor = isActiveActor || isHittableCharController;
             bool isAddableToWorld = IsAddableToWorld(actor);
 
-            //isAddableToWorld = isAddableToWorld && (*g_currentFrameCounter % 1000) > 500;
-
             bool isAllowedToAddToWorld = *g_currentFrameCounter - g_lastActorAddedToWorldFrame > Config::options.minFramesBetweenActorAdds;
 
             if (shouldBeActive) {
