@@ -47,14 +47,12 @@ namespace HiggsPluginAPI {
         // (no currently held object, not pulling anything or have an object locked in for pulling (i.e. trigger/grip held on a selected object)
         virtual bool IsHandInGrabbableState(bool isLeft) = 0;
 
-        // Disable and enable grabbing, selecting, pulling, etc. for each hand. Every disable should be accompanied by a later enable.
-        // Multiple mods can disable at once, and the hand is only re-enabled once all mods have called enable.
+        // Disable and enable grabbing, selecting, pulling, etc. for each hand.
         virtual void DisableHand(bool isLeft) = 0;
         virtual void EnableHand(bool isLeft) = 0;
         virtual bool IsDisabled(bool isLeft) = 0;
 
         // Disable and enable collision for the weapon held in each hand.
-        // Multiple mods can disable at once, and the collision is only re-enabled once all mods have called enable.
         virtual void DisableWeaponCollision(bool isLeft) = 0;
         virtual void EnableWeaponCollision(bool isLeft) = 0;
         virtual bool IsWeaponCollisionDisabled(bool isLeft) = 0;
@@ -114,15 +112,19 @@ namespace HiggsPluginAPI {
         virtual void AddPostVrikPreHiggsCallback(NoArgCallback callback) = 0;
         virtual void AddPostVrikPostHiggsCallback(NoArgCallback callback) = 0;
 
-        // Read or modify any of higgs's numeric ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
-        // Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
-        virtual bool GetSettingDouble(const std::string_view &name, double &out) = 0;
-        virtual bool SetSettingDouble(const std::string &name, double val) = 0;
+        // Deprecated functions for getting/setting ini settings. Use GetSettingDouble/SetSettingDouble instead.
+        virtual bool Deprecated1(const std::string_view &name, double &out) = 0;
+        virtual bool Deprecated2(const std::string &name, double val) = 0;
 
         // Get/set the transform of the current grabbed object in the space of the hand that grabs it, i.e. the hand-to-grabbed-node transform.
         // This is the transform the grabbed node is driven/set to, as well as the transform the hand is set from when in physics-grab mode.
         virtual NiTransform GetGrabTransform(bool isLeft) = 0;
         virtual void SetGrabTransform(bool isLeft, const NiTransform &transform) = 0;
+
+        // Read or modify any of higgs's numeric ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
+        // Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
+        virtual bool GetSettingDouble(const char *name, double &out) = 0;
+        virtual bool SetSettingDouble(const char *name, double val) = 0;
     };
 }
 
