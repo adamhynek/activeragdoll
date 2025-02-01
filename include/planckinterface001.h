@@ -40,10 +40,9 @@ namespace PlanckPluginAPI {
         // Gets the PLANCK build number
         virtual unsigned int GetBuildNumber() = 0;
 
-        // Read or modify any of planck's numeric ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
-        // Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
-        virtual bool GetSettingDouble(const std::string_view &name, double &out) = 0;
-        virtual bool SetSettingDouble(const std::string &name, double val) = 0;
+        // Deprecated functions for getting/setting ini settings. Use GetSettingDouble/SetSettingDouble instead.
+        virtual bool Deprecated1(const std::string_view &name, double &out) = 0;
+        virtual bool Deprecated2(const std::string &name, double val) = 0;
 
         // These actors will not be physically animated, and pretty much entirely excluded from planck's interaction and hit detection.
         // They will behave the same way as actors that do not have a ragdoll (such as wisps), and will revert to registering hits when their character controller is hit instead of their ragdoll.
@@ -70,6 +69,11 @@ namespace PlanckPluginAPI {
 
         // The current hit event being dispatched. Can be used to check if the dispatched event is a planck hit event. This is ONLY valid while executing a hit event.
         virtual TESHitEvent *GetCurrentHitEvent() = 0;
+
+        // Read or modify any of higgs's numeric ini settings. Returns true if the option exists and is gotten/set, and false otherwise.
+        // Only some settings will have an effect if modified, depending on if they are read at startup, when loading / switching cells, or at the time that they are actually required.
+        virtual bool GetSettingDouble(const char *name, double &out) = 0;
+        virtual bool SetSettingDouble(const char *name, double val) = 0;
     };
 }
 

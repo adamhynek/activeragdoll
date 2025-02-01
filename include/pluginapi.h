@@ -20,8 +20,11 @@ namespace PlanckPluginAPI {
     {
         virtual unsigned int GetBuildNumber();
 
-        virtual bool GetSettingDouble(const std::string_view &name, double &out);
-        virtual bool SetSettingDouble(const std::string &name, double val);
+        virtual bool Deprecated1(const std::string_view & name, double &out);
+        virtual bool Deprecated2(const std::string & name, double val);
+
+        virtual bool GetSettingDouble(const char *name, double &out);
+        virtual bool SetSettingDouble(const char *name, double val);
 
         virtual void AddIgnoredActor(Actor *actor);
         virtual void RemoveIgnoredActor(Actor *actor);

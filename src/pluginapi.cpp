@@ -40,11 +40,19 @@ unsigned int PlanckInterface001::GetBuildNumber() {
     return planckBuildNumber;
 }
 
-bool PlanckInterface001::GetSettingDouble(const std::string_view &name, double &out) {
+bool PlanckInterface001::Deprecated1(const std::string_view &name, double &out) {
     return Config::GetSettingDouble(name, out);
 }
 
-bool PlanckInterface001::SetSettingDouble(const std::string &name, double val) {
+bool PlanckInterface001::Deprecated2(const std::string &name, double val) {
+    return Config::SetSettingDouble(name, val);
+}
+
+bool PlanckInterface001::GetSettingDouble(const char *name, double &out) {
+    return Config::GetSettingDouble(name, out);
+}
+
+bool PlanckInterface001::SetSettingDouble(const char *name, double val) {
     return Config::SetSettingDouble(name, val);
 }
 
