@@ -707,8 +707,11 @@ extern RelocAddr<_Actor_CanBeKnockedDown> Actor_CanBeKnockedDown;
 typedef void(*_Actor_GetCurrentSpeedData)(Actor *_this, BGSMovementType__MaxSpeeds &a2);
 extern RelocAddr<_Actor_GetCurrentSpeedData> Actor_GetCurrentSpeedData;
 
-typedef float(*_ActorState_GetSpeedFromMovementMagnitude)(ActorState *_this, float a_magnitude);
-extern RelocAddr<_ActorState_GetSpeedFromMovementMagnitude> ActorState_GetSpeedFromMovementMagnitude;
+typedef float(*_ActorState_DenormalizeSpeed)(ActorState *_this, float a_magnitude);
+extern RelocAddr<_ActorState_DenormalizeSpeed> ActorState_DenormalizeSpeed;
+
+typedef float(*_ActorState_NormalizeSpeed)(ActorState *_this, float a_magnitude);
+extern RelocAddr<_ActorState_NormalizeSpeed> ActorState_NormalizeSpeed;
 
 typedef void(*_ActorProcess_SetMovementSpeed)(ActorProcessManager *_this, float speed);
 extern RelocAddr<_ActorProcess_SetMovementSpeed> ActorProcess_SetMovementSpeed;

@@ -824,6 +824,7 @@ std::optional<NiPoint3> GetHandBoneDisplacement(Actor *actor, const hkpRigidBody
 
 NiPoint3 GetTotalDisplacement(Actor *actor)
 {
+    // Get average of all bone displacements between anim pose and ragdoll pose. Each bone's contribution is weighted by its mass
     NiPoint3 displacement = NiPoint3();
     ForEachRagdollDriver(actor, [&displacement](hkbRagdollDriver *driver) -> void {
         if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
@@ -831,13 +832,6 @@ NiPoint3 GetTotalDisplacement(Actor *actor)
                 if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
 
                     float totalMass = 0.f;
-                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
-                        hkpRigidBody *body = ragdoll->m_rigidBodies[i];
-                        float massInv = body->getMassInv();
-                        if (massInv > 0.f) {
-                            totalMass += 1.f / massInv;
-                        }
-                    }
 
                     for (int i = 0; i < ragdoll->getNumBones(); ++i) {
                         hkpRigidBody *body = ragdoll->m_rigidBodies[i];
@@ -850,6 +844,8 @@ NiPoint3 GetTotalDisplacement(Actor *actor)
                             // TODO: Handle rotation too somehow
                             NiPoint3 offset = rbPose.pos - animPose.pos;
                             displacement += offset * mass;
+
+                            totalMass += mass;
                         }
                     }
 
@@ -3944,7 +3940,7 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
             // Already in the set, so check if it actually succeeded at first
             KeepOffsetData &data = it->second;
 
-            if (GetMovementController(actor) && HasKeepOffsetInterface(actor)) {
+            if (MovementControllerNPC *controller = GetMovementController(actor); controller && controller->movementMotionDrivenControl.IsMotionDriven()) {
                 ForEachRagdollDriver(actor, [actor, &data](hkbRagdollDriver *driver) {
                     if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
                         NiPoint3 offset = { 0.f, 0.f, 0.f };
@@ -3972,7 +3968,8 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
 
                                     NiPoint3 displacement = GetTotalDisplacement(actor);
                                     NiPoint3 displacementXY = { displacement.x, displacement.y, 0.f };
-                                    offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
+                                    //offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
+                                    offsetWS = displacementXY;
                                 }
                             }
                         }
@@ -4060,7 +4057,8 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         }
 
 
-                        offset = refrTransform.rot.Transpose() * avgOffsetWS;
+                        //offset = refrTransform.rot.Transpose() * avgOffsetWS;
+                        offset = avgOffsetWS;
                         PrintToFile(std::to_string(VectorLength(avgOffsetWS)), "offset.txt");
                         //PrintVector(avgOffsetWS);
                         //PrintVector(offset);
@@ -4076,6 +4074,8 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         if (!data.isActive) {
                             offset = { 0.f, 0.f, 0.f };
                         }
+
+                        offset *= Config::options.keepOffsetDirectionMultiplier;
 
                         {
                             NiTransform t;
@@ -6556,7 +6556,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
     NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
-    NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+    //NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+    NiPoint3 offset = playerOffsetXY;
 
     NiPoint3 forward = ForwardVector(refrTransform.rot);
     NiPoint3 right = RightVector(refrTransform.rot);
@@ -6599,12 +6600,11 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     it->second.moveAmounts.pop_back();
     it->second.moveAmounts.push_front(moveAmt);
     //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
-    NiPoint3 targetMoveAmt = moveAmt;
 
     {
         NiTransform t;
         t.pos = refrTransform.pos;
-        NiPoint3 vec = (refrTransform.rot * targetMoveAmt) * 50.f;
+        NiPoint3 vec = (refrTransform.rot * moveAmt) * 50.f;
         t.pos += (vec * 0.5f);
         t.pos.z += 50.f;
         t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
@@ -6613,8 +6613,18 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
     }
 
-    float speed = VectorLength(targetMoveAmt);
-    NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(targetMoveAmt));
+    NiPoint3 moveAmtFromPlayerMovement = moveAmt;
+
+
+
+    NiPoint3 moveAmtFromRagdollInfluence = data.offset;
+
+
+
+    NiPoint3 finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+
+    float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
+    NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(finalMoveAmt));
 
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
     PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
@@ -6631,8 +6641,9 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         movementController->movementPlannerDirectControl.SetTargetDirection(direction);
     }
     // TODO: Handle rotation properly like keepoffset would do
-    NiPoint3 rotSpeed{};
-    movementController->movementPlannerDirectControl.SetTargetAngle(rotSpeed);
+    //NiPoint3 targetAngle{};
+    NiPoint3 targetAngle = actor->rot + data.offsetAngle;
+    movementController->movementPlannerDirectControl.SetTargetAngle(targetAngle);
 
     data.prevSpeed = speed;
     data.prevDirection = direction;
