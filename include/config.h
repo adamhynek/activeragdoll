@@ -123,9 +123,12 @@ namespace Config {
         float grabbedActorStaminaCostHealthInfluence = 0.8f;
         int grabbedstaminaDrainMaxRelationshipRank = 1; // Friend
 
+        float maxHealthToConsiderActorAsSmall = 6.f;
+        std::set<std::string, std::less<>> smallIgnoreRaces;
+
         bool ragdollOnGrab = false;
         bool ragdollSmallRacesOnGrab = true;
-        float smallRaceHealthThreshold = 6.f;
+        float ragdollHealthThreshold = 5.f;
         float ragdollAggressionImpact = 10.f;
         bool ragdollOnYank = true;
         bool requireTwoHandsToYank = false;
@@ -151,10 +154,24 @@ namespace Config {
         float yankImpulseDownwardsMultiplier = 1.f;
 
         bool doKeepOffset = true;
-        bool bumpActorIfKeepOffsetFails = true;
+        bool forceMotionDrivenDuringKeepOffset = true;
         float keepOffsetMinAngleDifference = 0.25f;
         float keepOffsetAngleDifferenceMultiplier = 0.8f;
-        double keepOffsetRetryInterval = 1.0;
+        float keepOffsetDirectionMultiplier = 1.f;
+        float keepOffsetPlayerDirectionMultiplier = 1.f;
+        float keepOffsetCatchUpRadius = 150.f;
+        float keepOffsetFollowRadius = 50.f;
+        float keepOffsetMovingCatchUpRadius = 150.f;
+        float keepOffsetMovingFollowRadius = 50.f;
+        float keepOffsetPlayerSmoothingTime = 0.1f;
+        float keepOffsetActorSmoothingTime = 0.1f;
+        float keepOffsetSpeedReductionInActorDirectionPlayer = 0.5f;
+        float keepOffsetSpeedReductionInActorDirectionActor = 0.5f;
+        float keepOffsetStartThreshold = 10.f;
+        float keepOffsetStopThreshold = 5.f;
+        double keepOffsetDirectionLerpOutTime = 0.1;
+        float keepOffsetSpeedCalcSmoothingTime = 0.3f;
+        float keepOffsetMovementDirectionChangeSpeed = 0.1f;
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
         float collisionDamageMinMassPlayerInflicted = 6.f;
@@ -197,6 +214,8 @@ namespace Config {
         float ragdollSoundVel = 1000.f;
 
         float playerVsBipedInteractionImpulseMultiplier = 0.f;
+        bool dontCollidePlayerWithSmallRaces = true;
+        int dontPushPlayerMaxRaceSize = 1;
 
         bool stopRagdollNonSelfCollisionForCloseActors = true;
         float closeActorMinDistance = 2.f;
@@ -347,6 +366,18 @@ namespace Config {
         std::set<std::string, std::less<>> aggressionExcludeRaces;
         std::set<std::string, std::less<>> disableConstraintsRaces;
         std::set<std::string, std::less<>> footNodeNames;
+
+        float dummyFloat0 = 0.f;
+        float dummyFloat1 = 0.f;
+        float dummyFloat2 = 0.f;
+        float dummyFloat3 = 0.f;
+        float dummyFloat4 = 0.f;
+
+        int dummyInt0 = 0;
+        int dummyInt1 = 0;
+        int dummyInt2 = 0;
+        int dummyInt3 = 0;
+        int dummyInt4 = 0;
     };
     extern Options options; // global object containing options
 

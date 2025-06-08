@@ -26,10 +26,12 @@ namespace Config {
     std::map<std::string, bool *, std::less<>> boolMap{};
     bool g_registrationComplete = false;
 
-    bool ReadFloat(const std::string &name, float &val)
+    bool ReadFloat(const std::string &name, float &val, bool isImportant=true)
     {
         if (!GetConfigOptionFloat("Settings", name.c_str(), &val)) {
-            _WARNING("Failed to read float config option: %s", name.c_str());
+            if (isImportant) {
+                _WARNING("Failed to read float config option: %s", name.c_str());
+            }
             return false;
         }
 
@@ -56,10 +58,12 @@ namespace Config {
         return true;
     }
 
-    bool ReadInt(const std::string &name, int &val)
+    bool ReadInt(const std::string &name, int &val, bool isImportant=true)
     {
         if (!GetConfigOptionInt("Settings", name.c_str(), &val)) {
-            _WARNING("Failed to read int config option: %s", name.c_str());
+            if (isImportant) {
+                _WARNING("Failed to read int config option: %s", name.c_str());
+            }
             return false;
         }
 
@@ -116,10 +120,10 @@ namespace Config {
         return true;
     }
 
-    bool RegisterFloat(const std::string &name, float &val)
+    bool RegisterFloat(const std::string &name, float &val, bool isImportant=true)
     {
         if (!g_registrationComplete) floatMap[name] = &val;
-        return ReadFloat(name, val);
+        return ReadFloat(name, val, isImportant);
     }
 
     bool RegisterDouble(const std::string &name, double &val)
@@ -128,10 +132,10 @@ namespace Config {
         return ReadDouble(name, val);
     }
 
-    bool RegisterInt(const std::string &name, int &val)
+    bool RegisterInt(const std::string &name, int &val, bool isImportant=true)
     {
         if (!g_registrationComplete) intMap[name] = &val;
-        return ReadInt(name, val);
+        return ReadInt(name, val, isImportant);
     }
 
     bool RegisterBool(const std::string &name, bool &val)
@@ -281,9 +285,12 @@ namespace Config {
         if (!RegisterFloat("grabbedActorStaminaCostHealthInfluence", options.grabbedActorStaminaCostHealthInfluence)) success = false;
         if (!RegisterInt("grabbedstaminaDrainMaxRelationshipRank", options.grabbedstaminaDrainMaxRelationshipRank)) success = false;
 
+        if (!RegisterFloat("maxHealthToConsiderActorAsSmall", options.maxHealthToConsiderActorAsSmall)) success = false;
+        if (!ReadStringSet("smallIgnoreRaces", options.smallIgnoreRaces)) success = false;
+
         if (!RegisterBool("ragdollOnGrab", options.ragdollOnGrab)) success = false;
         if (!RegisterBool("ragdollSmallRacesOnGrab", options.ragdollSmallRacesOnGrab)) success = false;
-        if (!RegisterFloat("smallRaceHealthThreshold", options.smallRaceHealthThreshold)) success = false;
+        if (!RegisterFloat("ragdollHealthThreshold", options.ragdollHealthThreshold)) success = false;
         if (!RegisterBool("ragdollOnYank", options.ragdollOnYank)) success = false;
         if (!RegisterBool("requireTwoHandsToYank", options.requireTwoHandsToYank)) success = false;
         if (!RegisterFloat("ragdollAggressionImpact", options.ragdollAggressionImpact)) success = false;
@@ -307,10 +314,24 @@ namespace Config {
         if (!RegisterFloat("yankImpulseDownwardsMultiplier", options.yankImpulseDownwardsMultiplier)) success = false;
 
         if (!RegisterBool("doKeepOffset", options.doKeepOffset)) success = false;
-        if (!RegisterBool("bumpActorIfKeepOffsetFails", options.bumpActorIfKeepOffsetFails)) success = false;
+        if (!RegisterBool("forceMotionDrivenDuringKeepOffset", options.forceMotionDrivenDuringKeepOffset)) success = false;
         if (!RegisterFloat("keepOffsetMinAngleDifference", options.keepOffsetMinAngleDifference)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
-        if (!RegisterDouble("keepOffsetRetryInterval ", options.keepOffsetRetryInterval)) success = false;
+        if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
+        if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
+        if (!RegisterFloat("keepOffsetCatchUpRadius", options.keepOffsetCatchUpRadius)) success = false;
+        if (!RegisterFloat("keepOffsetFollowRadius", options.keepOffsetFollowRadius)) success = false;
+        if (!RegisterFloat("keepOffsetMovingCatchUpRadius", options.keepOffsetMovingCatchUpRadius)) success = false;
+        if (!RegisterFloat("keepOffsetMovingFollowRadius", options.keepOffsetMovingFollowRadius)) success = false;
+        if (!RegisterFloat("keepOffsetPlayerSmoothingTime", options.keepOffsetPlayerSmoothingTime)) success = false;
+        if (!RegisterFloat("keepOffsetActorSmoothingTime", options.keepOffsetActorSmoothingTime)) success = false;
+        if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionPlayer", options.keepOffsetSpeedReductionInActorDirectionPlayer)) success = false;
+        if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionActor", options.keepOffsetSpeedReductionInActorDirectionActor)) success = false;
+        if (!RegisterFloat("keepOffsetStartThreshold", options.keepOffsetStartThreshold)) success = false;
+        if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
+        if (!RegisterDouble("keepOffsetDirectionLerpOutTime", options.keepOffsetDirectionLerpOutTime)) success = false;
+        if (!RegisterFloat("keepOffsetSpeedCalcSmoothingTime", options.keepOffsetSpeedCalcSmoothingTime)) success = false;
+        if (!RegisterFloat("keepOffsetMovementDirectionChangeSpeed", options.keepOffsetMovementDirectionChangeSpeed)) success = false;
 
         if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;
         if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;
@@ -353,6 +374,8 @@ namespace Config {
         if (!RegisterFloat("ragdollSoundVel", options.ragdollSoundVel)) success = false;
 
         if (!RegisterFloat("playerVsBipedInteractionImpulseMultiplier", options.playerVsBipedInteractionImpulseMultiplier)) success = false;
+        if (!RegisterBool("dontCollidePlayerWithSmallRaces", options.dontCollidePlayerWithSmallRaces)) success = false;
+        if (!RegisterInt("dontPushPlayerMaxRaceSize", options.dontPushPlayerMaxRaceSize)) success = false;
 
         if (!RegisterBool("stopRagdollNonSelfCollisionForCloseActors", options.stopRagdollNonSelfCollisionForCloseActors)) success = false;
         if (!RegisterFloat("closeActorMinDistance", options.closeActorMinDistance)) success = false;
@@ -504,6 +527,18 @@ namespace Config {
         if (!ReadStringSet("aggressionExcludeRaces", Config::options.aggressionExcludeRaces)) success = false;
         if (!ReadStringSet("disableConstraintsRaces", Config::options.disableConstraintsRaces)) success = false;
         if (!ReadStringSet("footNodeNames", Config::options.footNodeNames)) success = false;
+
+        RegisterFloat("dummyFloat0", options.dummyFloat0, false);
+        RegisterFloat("dummyFloat1", options.dummyFloat1, false);
+        RegisterFloat("dummyFloat2", options.dummyFloat2, false);
+        RegisterFloat("dummyFloat3", options.dummyFloat3, false);
+        RegisterFloat("dummyFloat4", options.dummyFloat4, false);
+
+        RegisterInt("dummyInt0", options.dummyInt0, false);
+        RegisterInt("dummyInt1", options.dummyInt1, false);
+        RegisterInt("dummyInt2", options.dummyInt2, false);
+        RegisterInt("dummyInt3", options.dummyInt3, false);
+        RegisterInt("dummyInt4", options.dummyInt4, false);
 
         g_registrationComplete = true;
 

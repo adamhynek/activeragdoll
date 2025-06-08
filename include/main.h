@@ -48,3 +48,12 @@ struct ActiveRagdoll
     bool isInRagdollState = false;
 };
 
+struct DebugTransform
+{
+    NiTransform transform;
+    NiColorA color;
+};
+void RegisterDebugTransform(const std::string_view &name, const DebugTransform &transform);
+void UnregisterDebugTransform(const std::string_view &name);
+void DebugDraw();
+

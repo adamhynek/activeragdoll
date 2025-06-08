@@ -37,6 +37,9 @@
     <ClCompile Include="src\papyrusapi.cpp">
       <Filter>src</Filter>
     </ClCompile>
+    <ClCompile Include="src\draw.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\RE\offsets.h">
@@ -85,6 +88,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="include\papyrusapi.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="include\draw.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>

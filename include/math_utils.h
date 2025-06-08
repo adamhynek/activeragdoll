@@ -101,6 +101,9 @@ inline NiTransform InverseTransform(const NiTransform &t) { NiTransform inverse;
 inline NiPoint3 RightVector(const NiMatrix33 &r) { return { r.data[0][0], r.data[1][0], r.data[2][0] }; }
 inline NiPoint3 ForwardVector(const NiMatrix33 &r) { return { r.data[0][1], r.data[1][1], r.data[2][1] }; }
 inline NiPoint3 UpVector(const NiMatrix33 &r) { return { r.data[0][2], r.data[1][2], r.data[2][2] }; }
+inline void SetRightVector(NiMatrix33 &r, const NiPoint3 &v) { r.data[0][0] = v.x; r.data[1][0] = v.y; r.data[2][0] = v.z; }
+inline void SetForwardVector(NiMatrix33 &r, const NiPoint3 &v) { r.data[0][1] = v.x; r.data[1][1] = v.y; r.data[2][1] = v.z; }
+inline void SetUpVector(NiMatrix33 &r, const NiPoint3 &v) { r.data[0][2] = v.x; r.data[1][2] = v.y; r.data[2][2] = v.z; }
 NiQuaternion QuaternionIdentity();
 NiQuaternion QuaternionNormalized(const NiQuaternion &q);
 NiQuaternion QuaternionMultiply(const NiQuaternion &qa, const NiQuaternion &qb);
@@ -117,6 +120,7 @@ NiPoint3 QuadraticFromPoints(const NiPoint2 &p1, const NiPoint2 &p2, const NiPoi
 std::optional<NiTransform> AdvanceTransform(const NiTransform &currentTransform, const NiTransform &targetTransform, float posSpeed, float rotSpeed);
 float AdvanceFloat(float a, float b, float speed, float *deltaOut);
 NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoint3 *deltaOut);
+NiMatrix33 AdvanceRotation(const NiMatrix33 &a, const NiMatrix33 &b, float speed, NiMatrix33 *deltaOut = nullptr);
 inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
 inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }

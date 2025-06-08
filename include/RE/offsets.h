@@ -704,6 +704,33 @@ extern RelocAddr<_ActorProcess_ResetBumpWaitTimer> ActorProcess_ResetBumpWaitTim
 typedef bool(*_Actor_CanBeKnockedDown)(Actor *_this);
 extern RelocAddr<_Actor_CanBeKnockedDown> Actor_CanBeKnockedDown;
 
+typedef void(*_Actor_GetCurrentSpeedData)(Actor *_this, BGSMovementType__MaxSpeeds &a2);
+extern RelocAddr<_Actor_GetCurrentSpeedData> Actor_GetCurrentSpeedData;
+
+typedef float(*_ActorState_GetSpeedFromMovementMagnitude)(ActorState *_this, float a_magnitude);
+extern RelocAddr<_ActorState_GetSpeedFromMovementMagnitude> ActorState_GetSpeedFromMovementMagnitude;
+
+typedef void(*_ActorProcess_SetMovementSpeed)(ActorProcessManager *_this, float speed);
+extern RelocAddr<_ActorProcess_SetMovementSpeed> ActorProcess_SetMovementSpeed;
+
+typedef float(*_ActorProcess_GetMovementSpeed)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_GetMovementSpeed> ActorProcess_GetMovementSpeed;
+
+typedef void(*_ActorProcess_SetMovementDirectionEulerZ)(ActorProcessManager *_this, float a2);
+extern RelocAddr<_ActorProcess_SetMovementDirectionEulerZ> ActorProcess_SetMovementDirectionEulerZ;
+
+typedef void(*_ActorProcess_SetMovementDirectionEulerX)(ActorProcessManager *_this, float a2);
+extern RelocAddr<_ActorProcess_SetMovementDirectionEulerX> ActorProcess_SetMovementDirectionEulerX;
+
+typedef void(*_ActorProcess_SetMovementDirectionEulerY)(ActorProcessManager *_this, float a2);
+extern RelocAddr<_ActorProcess_SetMovementDirectionEulerY> ActorProcess_SetMovementDirectionEulerY;
+
+typedef NiPoint3 & (*_ActorProcess_GetMovementDirectionEuler)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_GetMovementDirectionEuler> ActorProcess_GetMovementDirectionEuler;
+
+typedef float(*_ActorProcess_GetRotationSpeedZ)(ActorProcessManager *_this);
+extern RelocAddr<_ActorProcess_GetRotationSpeedZ> ActorProcess_GetRotationSpeedZ;
+
 typedef void(*_ActorProcess_PushActorAway)(ActorProcessManager *_this, Actor *actor, NiPoint3 &from, float force);
 extern RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway;
 

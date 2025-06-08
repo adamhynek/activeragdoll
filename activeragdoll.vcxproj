@@ -83,7 +83,7 @@
       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>%(AdditionalDependencies);winmm.lib</AdditionalDependencies>
+      <AdditionalDependencies>%(AdditionalDependencies);winmm.lib;d3dcompiler.lib</AdditionalDependencies>
       <OutputFile>C:\Program Files (x86)\Steam\steamapps\common\SkyrimVR\Data\SKSE\Plugins\$(TargetName)$(TargetExt)</OutputFile>
     </Link>
     <PreBuildEvent>
@@ -162,6 +162,7 @@
   <ItemGroup>
     <ClCompile Include="src\blender.cpp" />
     <ClCompile Include="src\config.cpp" />
+    <ClCompile Include="src\draw.cpp" />
     <ClCompile Include="src\higgsinterface001.cpp" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\math_utils.cpp" />
@@ -176,6 +177,7 @@
   <ItemGroup>
     <ClInclude Include="include\blender.h" />
     <ClInclude Include="include\config.h" />
+    <ClInclude Include="include\draw.h" />
     <ClInclude Include="include\havok_ref_ptr.h" />
     <ClInclude Include="include\higgsinterface001.h" />
     <ClInclude Include="include\main.h" />

@@ -511,6 +511,26 @@ NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoin
     return b;
 }
 
+NiMatrix33 AdvanceRotation(const NiMatrix33 &a, const NiMatrix33 &b, float speed, NiMatrix33 *deltaOut)
+{
+    NiQuaternion quatA = MatrixToQuaternion(a);
+    NiQuaternion quatB = MatrixToQuaternion(b);
+
+    float deltaAngle = speed * 0.0174533f * *g_deltaTime;
+    float quatAngle = QuaternionAngle(quatA, quatB);
+    if (deltaAngle < quatAngle) {
+        // update rotation
+        double slerpAmount = deltaAngle / quatAngle;
+        NiQuaternion newQuat = slerp(quatA, quatB, slerpAmount);
+        newQuat = QuaternionNormalized(newQuat);
+        if (deltaOut) *deltaOut = QuaternionToMatrix(newQuat);
+        return QuaternionToMatrix(newQuat);
+    }
+
+    if (deltaOut) *deltaOut = b;
+    return b;
+}
+
 namespace MathUtils
 {
     Result GetClosestPointOnTriangle(const NiPoint3 &point, const Triangle &triangle, uintptr_t vertices, UInt8 vertexStride, UInt32 vertexPosOffset)

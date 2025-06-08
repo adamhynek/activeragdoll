@@ -408,13 +408,55 @@ static_assert(offsetof(MovementControllerAI, interfaces) == 0x48);
 static_assert(offsetof(MovementControllerAI, interfacesLock) == 0x108);
 static_assert(sizeof(MovementControllerAI) == 0x120);
 
+struct IMovementMotionDrivenControl : IMovementInterface
+{
+    ~IMovementMotionDrivenControl() override;  // 00
+
+    // add
+    virtual void Unk_01(void);  // 01
+    virtual void Unk_02(void);  // 02
+    virtual void SetAnimationDriven(void);  // 03
+    virtual void SetMotionDriven(void);  // 04
+    virtual void SetAllowRotation(void);  // 05
+    virtual bool IsMotionDriven(void);  // 06
+    virtual bool IsAnimationDriven(void);  // 07
+    virtual bool IsAllowRotation(void);  // 08
+};
+
+struct IMovementDirectControl : IMovementInterface
+{
+    ~IMovementDirectControl() override;  // 00
+
+    // add
+    virtual void SetDirectControl();
+    virtual void SetMovementDirection(const NiPoint3 &direction);
+    virtual void SetMovementSpeed(float speed);
+    virtual void SetMovementRotationSpeed(const NiPoint3 &rotSpeed);
+    virtual void RampToMovementDirection(const NiPoint3 &direction, float a2);
+    virtual void RampToMovementSpeed(float speed, float a2);
+    virtual void RampToRotationSpeed(const NiPoint3 &rotSpeed, float a2);
+    virtual void ClearDirectControl();
+};
+
+struct IMovementPlannerDirectControl : IMovementInterface
+{
+    ~IMovementPlannerDirectControl() override;  // 00
+
+    // add
+    virtual void SetPlannerDirectControl();
+    virtual void SetTargetDirection(const NiPoint3 &direction);
+    virtual void SetTargetSpeed(float speed);
+    virtual void SetTargetAngle(const NiPoint3 &angle);
+    virtual void ClearPlannerDirectControl();
+};
+
 struct MovementControllerNPC : MovementControllerAI
 {
     IMovementInterface movementMessageInterface; // 120
-    IMovementInterface movementMotionDrivenControl; // 128
+    IMovementMotionDrivenControl movementMotionDrivenControl; // 128
     IMovementInterface movementSelectIdle; // 130
-    IMovementInterface movementDirectControl; // 138
-    IMovementInterface movementPlannerDirectControl; // 140
+    IMovementDirectControl movementDirectControl; // 138
+    IMovementPlannerDirectControl movementPlannerDirectControl; // 140
     IMovementInterface animationSetCallbackFunctor; // 148
     UInt64 movementMessageLock; // 150
     tArray<MovementMessageActorCollision *> movementMessages; // 158
@@ -634,6 +676,31 @@ struct TriggerEntry : NiRefObject
 static_assert(offsetof(TriggerEntry, overlappingForms) == 0x28);
 static_assert(offsetof(TriggerEntry, triggerEvents) == 0x38);
 static_assert(offsetof(TriggerEntry, unk58) == 0x58);
+
+struct BGSMovementType__MaxSpeeds
+{
+    enum class SPEED_DIRECTION : UInt32
+    {
+        kLeft = 0,
+        kRight = 1,
+        kForward = 2,
+        kBack = 3,
+        kRotations = 4,
+
+        kTotal = 5
+    };
+
+    enum class WalkRun : UInt32
+    {
+        kWalk = 0,
+        kRun = 1,
+
+        kTotal = 2
+    };
+
+    float Speeds[5][2]; // 00
+    float RotateWhileMovingRun; // 28
+};
 
 struct BSResource__ID
 {

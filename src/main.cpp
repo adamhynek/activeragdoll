@@ -16,6 +16,7 @@
 #include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
 #include <Common/Base/Types/Geometry/hkStridedVertices.h>
 #include <Physics/Dynamics/Constraint/Bilateral/BallAndSocket/hkpBallAndSocketConstraintData.h>
+#include <Physics/ConstraintSolver/Simplex/hkpSimplexSolver.h>
 
 #include "xbyak/xbyak.h"
 #include "common/IDebugLog.h"  // IDebugLog
@@ -50,6 +51,7 @@
 #include "menu_checker.h"
 #include "pluginapi.h"
 #include "papyrusapi.h"
+#include "draw.h"
 
 
 // SKSE globals
@@ -68,6 +70,9 @@ vr_src::VRControllerAxis_t g_rightStick;
 vr_src::VRControllerAxis_t g_leftStick;
 
 std::vector<UInt16> g_dialogueSkipConditions = { 0x4D, 0x90, 0x91, 0x120 }; // 4D = GetRandomPercent, 90 = GetTrespassWarningLevel, 91 = IsTrespassing, 120 = GetFriendHit
+
+NiPoint3 g_prevPlayerPos{};
+NiPoint3 g_playerPosDelta{};
 
 
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
@@ -714,10 +719,26 @@ bool ShouldKeepOffset(Actor *actor)
 
 struct KeepOffsetData
 {
-    double lastAttemptTime = 0.0;
-    bool success = false;
+    UInt32 target;
+    NiPoint3 offset;
+    NiPoint3 offsetAngle;
+    float catchUpRadius;
+    float followRadius;
+    NiPoint3 endMovementDirection;
+    double endMovementTime = 0.0;
+    std::deque<NiPoint3> moveAmounts{ 500, NiPoint3() };
+    std::deque<NiPoint3> offsets{ 500, NiPoint3() };
+    bool isActive = false;
+    float prevSpeed = 0.f;
+    NiPoint3 prevDirection{};
+    float advanceSpeed = 0.f;
+    int numZeroSpeedFrames = 0;
 };
+std::mutex g_keepOffsetActorsLock;
 std::unordered_map<Actor *, KeepOffsetData> g_keepOffsetActors{};
+
+NiTransform g_rawHandTransforms[2]{};
+
 
 std::optional<float> GetStress(Actor *actor, const hkpRigidBody *desiredBody)
 {
@@ -741,9 +762,9 @@ std::optional<float> GetStress(Actor *actor, const hkpRigidBody *desiredBody)
     return stress;
 }
 
-std::optional<float> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
+std::optional<NiPoint3> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
 {
-    std::optional<float> displacement = std::nullopt;
+    std::optional<NiPoint3> displacement = std::nullopt;
     ForEachRagdollDriver(actor, [desiredBody, isLeft, &displacement](hkbRagdollDriver *driver) -> void {
         if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
             if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
@@ -759,8 +780,7 @@ std::optional<float> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desir
                             NiTransform handOnAnimPose = animPose * nodeToHand;
                             NiTransform handOnRbPose = rbPose * nodeToHand;
 
-                            NiPoint3 delta = handOnAnimPose.pos - handOnRbPose.pos;
-                            displacement = VectorLength(delta);
+                            displacement = handOnRbPose.pos - handOnAnimPose.pos;
                             return;
                         }
                     }
@@ -771,6 +791,77 @@ std::optional<float> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desir
 
     return displacement;
 }
+
+std::optional<NiPoint3> GetHandBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
+{
+    std::optional<NiPoint3> displacement = std::nullopt;
+    ForEachRagdollDriver(actor, [desiredBody, isLeft, &displacement](hkbRagdollDriver *driver) -> void {
+        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
+                            NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                            NiTransform nodeToHand = InverseTransform(handToNode);
+
+                            NiTransform animPose = hkQsTransformToNiTransform(activeRagdoll->lowResAnimPoseWS[i]);
+                            //NiTransform rbPose = hkTransformToNiTransform(desiredBody->getTransform(), animPose.scale);
+
+                            NiTransform handOnAnimPose = animPose * nodeToHand;
+                            //NiTransform handOnRbPose = rbPose * nodeToHand;
+
+                            displacement = g_rawHandTransforms[isLeft].pos - handOnAnimPose.pos;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        });
+
+    return displacement;
+}
+
+NiPoint3 GetTotalDisplacement(Actor *actor)
+{
+    NiPoint3 displacement = NiPoint3();
+    ForEachRagdollDriver(actor, [&displacement](hkbRagdollDriver *driver) -> void {
+        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+
+                    float totalMass = 0.f;
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        hkpRigidBody *body = ragdoll->m_rigidBodies[i];
+                        float massInv = body->getMassInv();
+                        if (massInv > 0.f) {
+                            totalMass += 1.f / massInv;
+                        }
+                    }
+
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        hkpRigidBody *body = ragdoll->m_rigidBodies[i];
+                        float massInv = body->getMassInv();
+                        if (massInv > 0.f) {
+                            float mass = 1.f / massInv;
+                            NiTransform animPose = hkQsTransformToNiTransform(activeRagdoll->lowResAnimPoseWS[i]);
+                            NiTransform rbPose = hkTransformToNiTransform(body->getTransform(), animPose.scale);
+
+                            // TODO: Handle rotation too somehow
+                            NiPoint3 offset = rbPose.pos - animPose.pos;
+                            displacement += offset * mass;
+                        }
+                    }
+
+                    displacement /= totalMass;
+                }
+            }
+        }
+    });
+
+    return displacement;
+}
+
 
 bool CanRagdoll(Actor *actor)
 {
@@ -795,6 +886,19 @@ bool IsAnimal(TESRace *race)
     return race->keyword.HasKeyword(g_keyword_actorTypeAnimal);
 }
 
+bool IsSmall(Actor *actor)
+{
+    TESRace *race = actor->race;
+    if (!race) return false;
+
+    float maxHealth = actor->actorValueOwner.GetMaximum(24);
+    if (maxHealth < Config::options.maxHealthToConsiderActorAsSmall) return true;
+
+    if (Config::options.smallIgnoreRaces.count(race->editorId.c_str())) return false;
+
+    return (race->data.unk40 == 0); // small race
+}
+
 enum class ForceRagdollType
 {
     None,
@@ -810,18 +914,18 @@ ForceRagdollType ShouldRagdollOnGrabOrFootYank(Actor *actor)
     if (!CanRagdoll(actor)) return ForceRagdollType::None;
 
     TESRace *race = actor->race;
-    if (Config::options.ragdollSmallRacesOnGrab && race->data.unk40 == 0) return ForceRagdollType::RagdollOnGrab; // small race
-    
+    if (Config::options.ragdollSmallRacesOnGrab && IsSmall(actor)) return ForceRagdollType::RagdollOnGrab; // small race
+
     float health = actor->actorValueOwner.GetCurrent(24);
-    if (health < Config::options.smallRaceHealthThreshold) return ForceRagdollType::RagdollOnGrab;
+    if (health < Config::options.ragdollHealthThreshold) return ForceRagdollType::RagdollOnGrab;
 
     if (Config::options.ragdollOnFootYank && !IsAnimal(race)) {
         for (int isLeft = 0; isLeft < 2; ++isLeft) {
             if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
                 if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
                     if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(heldNode)) {
-                        if (std::optional<float> stress = GetBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
-                            if (*stress > Config::options.footYankRequiredStressAmount) {
+                        if (std::optional<NiPoint3> stress = GetBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
+                            if (VectorLength(*stress) > Config::options.footYankRequiredStressAmount) {
                                 return ForceRagdollType::FootYank;
                             }
                         }
@@ -2431,7 +2535,48 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
         collisionHandler->HandleCharacterCollision(playerController, controller);
     }
 
-    bhkCharProxyController *proxy = nullptr; // for reference purposes only, do not dereference
+    // Called before the simplex solver is called.
+    // The manifold is passed so the user can retrieve body information if necessary
+    // This allows the user to override of add any information stored in the plane equations passed to the simplex solver.
+    virtual void processConstraintsCallback(const hkpCharacterProxy *proxy, const hkArray<hkpRootCdPoint> &manifold, hkpSimplexSolverInput &input)
+    {
+        int i = 0;
+        for (i = 0; i < manifold.getSize(); i++) {
+            hkpRigidBody *rigidBody = hkpGetRigidBody(manifold[i].m_rootCollidableB);
+
+            if (rigidBody && IsMoveableEntity(rigidBody)) {
+                UInt32 layer = GetCollisionLayer(rigidBody);
+                bool isBiped = layer == BGSCollisionLayer::kCollisionLayer_Biped || layer == BGSCollisionLayer::kCollisionLayer_BipedNoCC;
+
+                // TODO: When you have seomeone held, zero plane instead of ignoring the collision?
+
+                if (isBiped) {
+
+                    if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
+                        if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+                            if (TESRace *race = actor->race) {
+                                if (race->data.unk40 > Config::options.dontPushPlayerMaxRaceSize) { // race size
+                                    continue;
+                                }
+                            }
+
+                            hkpSurfaceConstraintInfo &surface = input.m_constraints[i];
+                            surface.m_velocity.setZero4();
+                        }
+                    }
+                }
+            }
+        }
+
+        //while (i < input.m_numConstraints)
+        //{
+        //    hkpSurfaceConstraintInfo &surface = input.m_constraints[i];
+        //    surface.m_velocity.setZero4();
+        //    i++;
+        //}
+    }
+
+    bhkCharProxyController *playerProxy = nullptr; // for reference purposes only, do not dereference
 };
 PlayerCharacterProxyListener g_characterProxyListener{};
 
@@ -2538,11 +2683,11 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
     if (otherGroup != g_playerCollisionGroup) {
         if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
             // Collide with the biped unless we want to explicitly ignore them
-            if (!Config::options.enablePlayerBipedCollision ||
-                (g_rightHeldActorCollisionGroup && otherGroup == g_rightHeldActorCollisionGroup) ||
-                (g_leftHeldActorCollisionGroup && otherGroup == g_leftHeldActorCollisionGroup)) {
-                return CollisionFilterComparisonResult::Ignore;
-            }
+            //if (!Config::options.enablePlayerBipedCollision ||
+            //    (g_rightHeldActorCollisionGroup && otherGroup == g_rightHeldActorCollisionGroup) ||
+            //    (g_leftHeldActorCollisionGroup && otherGroup == g_leftHeldActorCollisionGroup)) {
+            //    return CollisionFilterComparisonResult::Ignore;
+            //}
 
             if (!g_activeBipedGroups.count(otherGroup)) {
                 // Disable collision with biped objects that are not actors
@@ -3344,40 +3489,12 @@ void EnableGravity(Actor *actor)
     }
 }
 
-struct KeepOffsetTask : TaskDelegate
+class BSAnimationGraphEvent
 {
-    static KeepOffsetTask *Create(UInt32 source, UInt32 target, NiPoint3 &offset = NiPoint3(), NiPoint3 &offsetAngle = NiPoint3(), float catchUpRadius = 150.f, float followRadius = 50.f) {
-        KeepOffsetTask *cmd = new KeepOffsetTask;
-        if (cmd) {
-            cmd->source = source;
-            cmd->target = target;
-            cmd->offset = offset;
-            cmd->offsetAngle = offsetAngle;
-            cmd->catchUpRadius = catchUpRadius;
-            cmd->followRadius = followRadius;
-        }
-        return cmd;
-    }
-
-    virtual void Run() {
-        NiPointer<TESObjectREFR> refr;
-        if (LookupREFRByHandle(source, refr)) {
-            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                Actor_KeepOffsetFromActor(actor, target, offset, offsetAngle, catchUpRadius, followRadius);
-            }
-        }
-    }
-
-    virtual void Dispose() {
-        delete this;
-    }
-
-    UInt32 source;
-    UInt32 target;
-    NiPoint3 offset;
-    NiPoint3 offsetAngle;
-    float catchUpRadius;
-    float followRadius;
+public:
+    BSFixedString Tag_0;
+    TESObjectREFR *Holder_8 = nullptr;
+    BSFixedString Payload_10;
 };
 
 struct ClearKeepOffsetTask : TaskDelegate
@@ -3394,7 +3511,13 @@ struct ClearKeepOffsetTask : TaskDelegate
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(source, refr)) {
             if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                Actor_ClearKeepOffsetFromActor(actor);
+                //Actor_ClearKeepOffsetFromActor(actor);
+
+                MovementControllerNPC *movementController = GetMovementController(actor);
+                if (!movementController) return;
+
+                movementController->movementPlannerDirectControl.ClearPlannerDirectControl();
+
                 Actor_EvaluatePackage(actor, false, false);
             }
         }
@@ -3691,26 +3814,14 @@ void ResetObjects()
     _MESSAGE("%d Reset objects", *g_currentFrameCounter);
 #endif // _DEBUG
 
-    if (Config::options.removeActiveActorsOnLoad) {
-        if (AIProcessManager *processManager = *g_aiProcessManager) {
-            for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
-                UInt32 actorHandle = processManager->actorsHigh[i];
-                NiPointer<TESObjectREFR> refr;
-                if (LookupREFRByHandle(actorHandle, refr) && refr != *g_thePlayer) {
-                    Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor);
-                    if (!actor || !actor->GetNiNode()) {
-                        continue;
-                    }
-
-                    RemoveActorFromWorldIfActive(actor);
-                }
-            }
-        }
-    }
-
     {
         std::unique_lock lock(g_activeActorsLock);
         g_activeActors.clear();
+    }
+
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+        g_keepOffsetActors.clear();
     }
 
     g_npcs.clear();
@@ -3722,7 +3833,6 @@ void ResetObjects()
     g_higgsLingeringRigidBodies.clear();
     g_higgsLingeringRefrs[0].clear();
     g_higgsLingeringRefrs[1].clear();
-    g_keepOffsetActors.clear();
     g_bumpActors.clear();
     g_shoveData.clear();
     g_shoveAnimTimes.clear();
@@ -3753,6 +3863,9 @@ void PreVrikPreHiggsCallback()
         controllerData.positionsRoomspace.pop_back();
         controllerData.positionsRoomspace.push_front(wandPositionRoomspace);
         controllerData.ComputeAngularVelocity();
+
+        NiAVObjectPtr handNode = GetFirstPersonHandNode(isLeft);
+        g_rawHandTransforms[isLeft] = handNode->m_worldTransform;
     }
 }
 
@@ -3793,69 +3906,214 @@ void RagdollActor(Actor *actor)
     }
 }
 
+
+std::deque<NiPoint3> g_prevPlayerPositions{ 100, NiPoint3() };
+
+NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
+{
+    NiPoint3 averageVector = NiPoint3();
+
+    int i = 0;
+    for (NiPoint3 &vector : vectors) {
+        averageVector += vector;
+        if (++i >= numFrames) {
+            break;
+        }
+    }
+
+    return averageVector / i;
+}
+
+int GetNumSmoothingFrames(float smoothingTime)
+{
+    return round(smoothingTime / *g_secondsSinceLastFrame_Unmultiplied);
+}
+
+
 void UpdateKeepOffset(Actor *actor, bool keepOffset)
 {
+    std::scoped_lock lock(g_keepOffsetActorsLock);
+
     if (keepOffset) {
         if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
             // Wasn't grabbed before
-            g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-            g_keepOffsetActors[actor] = { g_currentFrameTime, false };
+            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
+            g_keepOffsetActors[actor] = { actorHandle, NiPoint3(), NiPoint3(), Config::options.keepOffsetCatchUpRadius, Config::options.keepOffsetFollowRadius };
         }
         else {
             // Already in the set, so check if it actually succeeded at first
             KeepOffsetData &data = it->second;
 
-            if (GetMovementController(actor) && !HasKeepOffsetInterface(actor)) {
-                if (g_currentFrameTime - data.lastAttemptTime > Config::options.keepOffsetRetryInterval) {
-                    // Retry
+            if (GetMovementController(actor) && HasKeepOffsetInterface(actor)) {
+                ForEachRagdollDriver(actor, [actor, &data](hkbRagdollDriver *driver) {
+                    if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                        NiPoint3 offset = { 0.f, 0.f, 0.f };
 
-                    if (Config::options.bumpActorIfKeepOffsetFails) {
-                        // Try to get them unstuck by bumping them
-                        QueueBumpActor(actor, { 0.f, 0.f, 0.f }, 0.f, false, false, false, false);
-                    }
+                        //NiPoint3 rootOffsetXY = ragdoll->rootOffset;
+                        //rootOffsetXY.z = 0.f;
+                        //if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
 
-                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                    data.lastAttemptTime = g_currentFrameTime;
-                }
-            }
-            else {
-                if (!data.success) {
-                    // To be sure, do a single additional attempt once we know the interface exists
-                    g_taskInterface->AddTask(KeepOffsetTask::Create(GetOrCreateRefrHandle(actor), *g_playerHandle));
-                    data.success = true;
-                }
-                else { // KeepOffset interface exists and has succeeded
-                    ForEachRagdollDriver(actor, [actor](hkbRagdollDriver *driver) {
-                        if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                            NiPoint3 offset = { 0.f, 0.f, 0.f };
-                            /*
-                            NiPoint3 rootOffsetXY = ragdoll->rootOffset;
-                            rootOffsetXY.z = 0.f;
-                            if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
-                                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                                NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
-                                offset = InverseTransform(refrTransform) * offsetWS;
+                        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+
+                        // TODO: A real fallback direction
+                        NiPoint3 direction = VectorNormalized(actor->pos - (*g_thePlayer)->pos);
+                        direction.z = 0.f;
+                        NiPoint3 offsetWS = direction * Config::options.keepOffsetDirectionMultiplier;
+
+                        // TODO: What if left AND right are held?
+                        for (int isLeft = 0; isLeft < 2; ++isLeft) {
+                            if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                                if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(heldNode)) {
+                                    // TODO: This is actually a bad metric to use for the direction we want them to move in. Something that conveys intent more clearly would be better. Maybe offset of your actual hand (i.e. wand) from the bone instead?
+                                    //if (std::optional<NiPoint3> displacement = GetHandBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
+                                    //    NiPoint3 displacementXY = { displacement->x, displacement->y, 0.f };
+                                    //    offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
+                                    //}
+
+                                    NiPoint3 displacement = GetTotalDisplacement(actor);
+                                    NiPoint3 displacementXY = { displacement.x, displacement.y, 0.f };
+                                    offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
+                                }
                             }
-                            */
-
-                            NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                            if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
-                                // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                                offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
-                            }
-
-                            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-                            UInt32 playerHandle = *g_playerHandle;
-                            g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, playerHandle, offset, offsetAngle, 150.f, 50.f));
-                            //g_taskInterface->AddTask(KeepOffsetTask::Create(actorHandle, actorHandle, offset, offsetAngle, 150.f, 0.f));
                         }
-                        });
-                }
+
+                        //NiPoint3 playerOffsetWS = (*g_thePlayer)->pos - g_prevPlayerPos;
+                        //NiPoint3 playerOffsetXY = { playerOffsetWS.x, playerOffsetWS.y, 0.f };
+                        //offsetWS += playerOffsetXY * Config::options.keepOffsetPlayerDirectionMultiplier;
+
+                        //NiPoint3 velocity = ((*g_thePlayer)->pos - g_prevPlayerPos) / *g_deltaTime;
+                        //float speed = VectorLength(velocity);
+
+                        float catchUpRadius = Config::options.keepOffsetCatchUpRadius;
+                        float followRadius = Config::options.keepOffsetFollowRadius;
+
+                        // Why 3? Because keepoffset takes the magnitude between 0 and 1, then multiplies by 3. So that's the max it would usually allow.
+                        // For this function, 1 is walking, 2 is running, and values between that are interpolated, and values above/below 2/1 are multiplied by the run/walk speeds.
+                        //float walkSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 1.f);
+                        //float runSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 2.f);
+                        //float maxSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 3.f);
+                        //PrintVector({ walkSpeed, runSpeed, maxSpeed });
+
+                        //float targetSpeed = (VectorLength(offsetWS) / *g_deltaTime) * Config::options.keepOffsetMovingFollowRadius;
+                        //PrintToFile(std::to_string(targetSpeed), "targetSpeed.txt");
+
+                        //float magnitude = 0.f;
+                        //if (targetSpeed < walkSpeed) {
+                        //    magnitude = targetSpeed / walkSpeed;
+                        //}
+                        //else if (targetSpeed < runSpeed) {
+                        //    magnitude = lerp(1.f, 2.f, (targetSpeed - walkSpeed) / (runSpeed - walkSpeed));
+                        //}
+                        //else if (targetSpeed < maxSpeed) {
+                        //    magnitude = lerp(2.f, 3.f, (targetSpeed - runSpeed) / (maxSpeed - runSpeed));
+                        //}
+                        //else {
+                        //    magnitude = targetSpeed / runSpeed;
+                        //    //magnitude = 3.f;
+                        //}
+
+                        //magnitude /= 3.f; // keepoffset scales by 3
+
+                        //_MESSAGE("%d TargetSpeed", *g_currentFrameCounter);
+                        //PrintVector(VectorNormalized(offsetWS) * ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, magnitude * 3.f) * *g_deltaTime);
+
+                        //offsetWS = VectorNormalized(offsetWS) * magnitude; // works only if catchupradius is 1 and followradius is 0
+
+                        //catchUpRadius += speed * Config::options.keepOffsetMovingCatchUpRadius;
+                        //followRadius += speed * Config::options.keepOffsetMovingFollowRadius;
+
+                        // TODO: Can we measure the actor's current speed (rather the amount they moved in the previous frame(s)) and use that to drive the target speed we have?
+                        //    - I believe the magnitude of the offset amount from the actor is effectively the target speed percent. Should re-test this (target offset magnitude 0-100 (or 0 to catch up radius?))
+
+
+                        // TODO: We should do a full transform inverse of some sort here. Check the keepoffset function for what transform it applies, we need to do the opposite here.
+
+                        data.offsets.pop_back();
+                        data.offsets.push_front(offsetWS);
+                        NiPoint3 avgOffsetWS = GetAverageVector(data.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
+
+
+                        BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
+                        float walkLeftSpeed = maxSpeeds.Speeds[0][0];
+                        float walkRightSpeed = maxSpeeds.Speeds[1][0];
+                        float walkForwardSpeed = maxSpeeds.Speeds[2][0];
+                        float walkBackSpeed = maxSpeeds.Speeds[3][0];
+                        float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
+
+                        NiPoint3 forward = ForwardVector(refrTransform.rot);
+                        NiPoint3 right = RightVector(refrTransform.rot);
+
+                        float forwardAmt = DotProduct(avgOffsetWS, forward);
+                        float rightAmt = DotProduct(avgOffsetWS, right);
+
+                        if (rightAmt >= 0.f && walkRightSpeed <= 0.f) {
+                            avgOffsetWS -= right * rightAmt;
+                        }
+                        if (rightAmt < 0.f && walkLeftSpeed <= 0.f) {
+                            avgOffsetWS -= right * rightAmt;
+                        }
+                        if (forwardAmt >= 0.f && walkForwardSpeed <= 0.f) {
+                            avgOffsetWS -= forward * forwardAmt;
+                        }
+                        if (forwardAmt < 0.f && walkBackSpeed <= 0.f) {
+                            avgOffsetWS -= forward * forwardAmt;
+                        }
+
+
+                        offset = refrTransform.rot.Transpose() * avgOffsetWS;
+                        PrintToFile(std::to_string(VectorLength(avgOffsetWS)), "offset.txt");
+                        //PrintVector(avgOffsetWS);
+                        //PrintVector(offset);
+
+                        // To prevent oscillation between on/off, we start and stop actually keeping offset at different thresholds
+                        if (!data.isActive && VectorLength(offset) > Config::options.keepOffsetStartThreshold) {
+                            data.isActive = true;
+                        }
+                        else if (data.isActive && VectorLength(offset) < Config::options.keepOffsetStopThreshold) {
+                            data.isActive = false;
+                        }
+
+                        if (!data.isActive) {
+                            offset = { 0.f, 0.f, 0.f };
+                        }
+
+                        {
+                            NiTransform t;
+                            t.pos = refrTransform.pos;
+                            //NiPoint3 vec = VectorNormalized(avgOffsetWS) * 200.f;
+                            NiPoint3 vec = avgOffsetWS * 5.f;
+                            t.pos += (vec * 0.5f);
+                            t.pos.z += 50.f;
+                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                            t.scale = 1.f;
+                            RegisterDebugTransform("avgOffsetWS", { t, {0, 1, 0, 1} });
+                        }
+
+                            //NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
+                            //offset = InverseTransform(refrTransform) * offsetWS;
+                        //}
+
+                        // TODO: This angle stuff is pretty busted with oscillation for quadrupeds like dog/cow in riverwood.
+                        //       Possibly also incorporate movement direction into rotation, e.g. rotate towards the direction of movement?
+                        NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+                        if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
+                            // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+                            offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+                        }
+
+                        data.offset = offset;
+                        data.offsetAngle = offsetAngle;
+                        data.catchUpRadius = catchUpRadius;
+                        data.followRadius = followRadius;
+                    }
+                });
             }
         }
     }
     else {
         if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
+            // TODO: Is there a possible race condition here? Where ClearKeepOffset can run and then KeepOffset can run?
             g_taskInterface->AddTask(ClearKeepOffsetTask::Create(GetOrCreateRefrHandle(actor)));
             g_keepOffsetActors.erase(actor);
         }
@@ -4019,7 +4277,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     }
 
     if (NiPointer<bhkCharProxyController> controller = GetCharProxyController(*g_thePlayer)) {
-        if (controller != g_characterProxyListener.proxy) {
+        if (controller != g_characterProxyListener.playerProxy) {
             if (RE::hkRefPtr<hkpCharacterProxy> proxy = controller->proxy.characterProxy) {
                 _MESSAGE("%d: Player Character Proxy changed", *g_currentFrameCounter);
 
@@ -4147,7 +4405,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     capsule->setVertex(1, NiPointToHkVector(vert1));
                 }
 
-                g_characterProxyListener.proxy = controller;
+                g_characterProxyListener.playerProxy = controller;
             }
         }
     }
@@ -4231,6 +4489,11 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }*/
 #endif // _DEBUG
+
+            if ((actor->flags1 & 2) == 0) {
+                // AI is not on for this actor
+                // TODO: Handle the ragdoll somehow. Maybe remove the ragdoll and fallback to the CC? Can just make shouldAddToWorld false maybe??
+            }
 
             UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
             UInt16 collisionGroup = GetCollisionGroup(filterInfo);
@@ -4334,6 +4597,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                         g_activeBipedGroups.insert(collisionGroup);
 
                         if (
+                            (Config::options.dontCollidePlayerWithSmallRaces && IsSmall(actor)) ||
                             (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
                             (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
                         ) {
@@ -4390,6 +4654,12 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
     g_rightHeldActorCollisionGroup = rightHeldCollisionGroup;
     g_leftHeldActorCollisionGroup = leftHeldCollisionGroup;
+
+    //g_playerPosDelta = player->pos - g_prevPlayerPos;
+    g_prevPlayerPositions.pop_back();
+    g_prevPlayerPositions.push_front(player->pos - g_prevPlayerPos);
+    g_playerPosDelta = GetAverageVector(g_prevPlayerPositions, GetNumSmoothingFrames(Config::options.keepOffsetPlayerSmoothingTime));
+    g_prevPlayerPos = player->pos;
 }
 
 void TryForceRigidBodyControls(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header)
@@ -5763,6 +6033,848 @@ void UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook(
 }
 
 
+NiPoint3 ForwardVectorToEulerRot(const NiPoint3 &forwardVec)
+{
+    NiPoint3 eulerRot;
+    eulerRot.x = -atan2f(forwardVec.z, sqrtf(forwardVec.x * forwardVec.x + forwardVec.y * forwardVec.y));
+    eulerRot.y = 0.f;
+    eulerRot.z = atan2f(forwardVec.x, forwardVec.y);
+    return eulerRot;
+}
+
+NiPoint3 ForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
+{
+    float pitch = -eulerRot.x;
+    float yaw = eulerRot.z;
+
+    float cosPitch = cosf(pitch);
+    NiPoint3 forwardVec;
+    forwardVec.x = sinf(yaw) * cosPitch;
+    forwardVec.y = cosf(yaw) * cosPitch;
+    forwardVec.z = sinf(pitch);
+    return forwardVec;
+}
+
+typedef bool (*_ActorState_GetCurrentSpeedData)(ActorState *_this, BGSMovementType__MaxSpeeds &a_out);
+
+typedef void(*_Actor_ModifyMovementData)(Actor *_this, float a_deltaTime, NiPoint3 &a_moveAmt, NiPoint3 &a_rotAmt);
+_Actor_ModifyMovementData g_Character_ModifyMovementData_Original = nullptr;
+static RelocPtr<_Actor_ModifyMovementData> Character_ModifyMovementData_vtbl(0x16D76C0);
+void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3 &a_moveAmt, NiPoint3 &a_rotAmt)
+{
+    g_Character_ModifyMovementData_Original(actor, a_deltaTime, a_moveAmt, a_rotAmt);
+
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+
+        auto it = g_keepOffsetActors.find(actor);
+        if (it == g_keepOffsetActors.end()) {
+            return;
+        }
+
+        MovementControllerNPC *movementController = GetMovementController(actor);
+        if (!movementController) return;
+
+        static BSFixedString sIMovementMotionDrivenControl("IMovementMotionDrivenControl");
+        IMovementMotionDrivenControl *motionDrivenControl = (IMovementMotionDrivenControl *)movementController->GetInterfaceByName_2(sIMovementMotionDrivenControl);
+        if (!motionDrivenControl) return;
+
+        if (!motionDrivenControl->IsMotionDriven()) return;
+
+
+
+        _MESSAGE("MoveAmt");
+        //PrintVector(a_moveAmt / a_deltaTime);
+        _MESSAGE("%.2f", VectorLength(a_moveAmt / a_deltaTime));
+
+
+        return;
+
+
+
+
+
+
+
+
+
+        // TODO: Perhaps for quadrupeds we limit movement to their forward axis? Or perhaps not just for quadrupeds, but for everyone?? Humanoids/bipeds kind of walk floatily sideways too.
+        //       We could use the forward/back/left/right values from the current movement type to limit movement to those directions.
+        // TODO: We could probably use ApplyVelocityForDuration instead of using this hook.
+
+        // TODO: There is some kind of discontinuity when we stop moving, the actor kind of snaps
+
+        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+        NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
+        NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+
+        NiPoint3 forward = ForwardVector(refrTransform.rot);
+        NiPoint3 right = RightVector(refrTransform.rot);
+        //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
+
+        {
+            NiTransform t;
+            t.pos = refrTransform.pos;
+            NiPoint3 vec = VectorNormalized(forward) * 200.f;
+            t.pos += (vec * 0.5f);
+            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+            t.scale = 1.f;
+            RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
+        }
+
+        BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
+        float walkLeftSpeed = maxSpeeds.Speeds[0][0];
+        float walkRightSpeed = maxSpeeds.Speeds[1][0];
+        float walkForwardSpeed = maxSpeeds.Speeds[2][0];
+        float walkBackSpeed = maxSpeeds.Speeds[3][0];
+        float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
+
+        float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
+        float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
+        float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
+        float speedProportion = maxSpeedAmt / maxSpeed;
+
+        NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
+        NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
+        NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
+        float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
+        float actorDirectionMultiplier = 1.f;
+        if (dot > 0.f) {
+            actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
+        }
+
+        a_moveAmt += offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
+
+        it->second.moveAmounts.pop_back();
+        it->second.moveAmounts.push_front(a_moveAmt);
+        //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
+        NiPoint3 smoothedMoveAmt = a_moveAmt;
+
+
+        const NiPoint3 &gameMovementEuler = ActorProcess_GetMovementDirectionEuler(actor->processManager);
+
+        float speed = VectorLength(smoothedMoveAmt) / a_deltaTime;
+        NiPoint3 movementEuler = ForwardVectorToEulerRot(smoothedMoveAmt);
+
+        //movementEuler = MatrixToEuler(AdvanceRotation(EulerToMatrix(it->second.endMovementDirection), EulerToMatrix(movementEuler), Config::options.keepOffsetMovementDirectionChangeSpeed));
+
+        if (VectorLength(smoothedMoveAmt) > Config::options.keepOffsetMovingCatchUpRadius) {
+            if (ActorProcessManager *process = actor->processManager) {
+                // This makes them actually animate as moving in the direction they're moving
+                ActorProcess_SetMovementSpeed(process, speed);
+                // TODO: Perhaps also ActorProcess_SetRotationSpeedZ ?
+                ActorProcess_SetMovementDirectionEulerZ(process, movementEuler.z);
+                //ActorProcess_SetMovementDirectionEulerX(process, movementEuler.x); // usually only done by the game if the actor is flying
+                ActorProcess_SetMovementDirectionEulerY(process, movementEuler.y);
+            }
+            it->second.endMovementTime = g_currentFrameTime;
+            it->second.endMovementDirection = movementEuler;
+        }
+        //else {
+        //    double lerpAmount = std::clamp((g_currentFrameTime - it->second.endMovementTime) / Config::options.keepOffsetDirectionLerpOutTime, 0.0, 1.0);
+        //    //movementEuler = lerp(it->second.endMovementDirection, gameMovementEuler, lerpAmount);
+        //    NiQuaternion newMovementQuat = slerp(MatrixToQuaternion(EulerToMatrix(it->second.endMovementDirection)), MatrixToQuaternion(EulerToMatrix(gameMovementEuler)), lerpAmount);
+        //    movementEuler = MatrixToEuler(QuaternionToMatrix(newMovementQuat));
+        //    if (ActorProcessManager *process = actor->processManager) {
+        //        ActorProcess_SetMovementSpeed(process, speed);
+        //        ActorProcess_SetMovementDirectionEulerZ(process, movementEuler.z);
+        //        ActorProcess_SetMovementDirectionEulerY(process, movementEuler.y);
+        //    }
+        //}
+
+        {
+            NiTransform t;
+            t.pos = refrTransform.pos;
+            NiPoint3 vec = refrTransform.rot * ForwardVector(EulerToMatrix(gameMovementEuler) )* 150.f;
+            t.pos += (vec * 0.5f);
+            t.pos.z += 50.f;
+            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+            t.scale = 1.f;
+            RegisterDebugTransform("ActorMoveAmt", { t, {0, 0, 1, 1} });
+        }
+
+        PrintToFile(std::to_string(ActorProcess_GetMovementSpeed(actor->processManager)), "keepOffsetSpeed.txt");
+
+        PrintToFile(std::to_string(ActorProcess_GetRotationSpeedZ(actor->processManager)), "keepOffsetRotSpeedZ.txt");
+
+        //PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
+        PrintToFile(std::to_string(movementEuler.z), "keepOffsetDirZ.txt");
+        PrintToFile(std::to_string(gameMovementEuler.z), "gameDirZ.txt");
+
+        //_MESSAGE("%d MoveAmt", *g_currentFrameCounter);
+        //PrintVector(a_moveAmt);
+    }
+}
+
+_Actor_ModifyMovementData g_PlayerCharacter_ModifyMovementData_Original = nullptr;
+static RelocPtr<_Actor_ModifyMovementData> PlayerCharacter_ModifyMovementData_vtbl(0x16E2B10);
+void PlayerCharacter_ModifyMovementData_Hook(PlayerCharacter *player, float a_deltaTime, NiPoint3 &a_moveAmt, NiPoint3 &a_rotAmt)
+{
+    g_PlayerCharacter_ModifyMovementData_Original(player, a_deltaTime, a_moveAmt, a_rotAmt);
+
+    NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(player, refrTransform);
+
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+
+        for (auto it = g_keepOffsetActors.begin(); it != g_keepOffsetActors.end(); ++it) {
+            Actor *actor = it->first;
+            NiPoint3 playerToActor = actor->pos - player->pos;
+            NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
+
+            NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
+
+            NiPoint3 moveAmtXY = { a_moveAmt.x, a_moveAmt.y, 0.f };
+
+            float dot = DotProduct(VectorNormalized(vec), VectorNormalized(moveAmtXY));
+            if (dot > 0.f) {
+                a_moveAmt *= 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionPlayer, 0.f, 1.f);
+            }
+        }
+    }
+}
+
+
+struct MovementVector
+{
+    NiPoint3 eulerRot; // 00
+    float magnitude; // 0C
+};
+
+struct AnimUpdateData
+{
+    MovementVector movementVector; // 00
+    NiPoint3 rotSpeedEuler; // 10
+};
+
+struct MovementArbiterUpdateData
+{
+    struct Data
+    {
+        UInt64 unk00;
+        tArray<void *> unk10;
+        UInt64 unk20;
+        tArray<void *> unk30;
+        MovementVector movementVector; // 40
+        NiPoint3 unkRot50;
+        bool unk5C;
+        UInt64 unk60;
+        bool unk68;
+        float deltaTime; // 6C
+        float acceleratedRunSpeed; // 70
+        float deceleratedRunSpeed; // 74
+        float rotSpeedClamed; // 78
+        float rotSpeedUnclamped; // 7C
+        float acceleratedRotSpeed; // 80
+        UInt32 pad84;
+    };
+
+    float deltaTime0; // 00
+    UInt32 unk04;
+    float deltaTime1; // 08
+    UInt32 pad0C;
+    Data data; // 10
+    NiPoint3 unk98;
+    UInt32 unkA4;
+    NiPoint3 unkA8;
+    float deltaTime2; // B4
+    AnimUpdateData updateData; // B8
+};
+
+struct MovementParametersData
+{
+    float unk00;
+    UInt32 pad04;
+    void *data; // 08
+};
+
+struct MovementUpdateData
+{
+    float targetDisplacementMultiplier; // 00
+    MovementVector movementVector; // 04
+    float unk14;
+    NiPoint3 targetAngle; // 18
+    UInt32 unk24;
+    MovementParametersData movementParams; // 28
+    MovementArbiterUpdateData::Data *arbiterUpdateData; // 38
+    void *unk40;
+    UInt64 unk48;
+    UInt16 unk50;
+    UInt16 pad52;
+    UInt32 pad54;
+}; // size == 0x58 ??
+
+
+
+/*
+* struct AnimUpdateData
+{
+    MovementVector movementVector; // 00
+    NiPoint3 rotSpeedEuler; // 10
+};
+
+struct MovementHandlerUpdateDataSmallDelta
+{
+    UInt64 unk00;
+    tArray<void *> unk08;
+    UInt64 unk20;
+    tArray<void *> unk30;
+    MovementVector movementVector; // 40
+    NiPoint3 actorRot; // 50
+    bool unk5C;
+    UInt64 unk60;
+    bool unk68;
+    float deltaTime; // 6C
+    float acceleratedRunSpeed; // 70
+    float deceleratedRunSpeed; // 74
+    float rotSpeedClamed; // 78
+    float rotSpeedUnclamped; // 7C
+    float acceleratedRotSpeed; // 80
+    UInt32 pad84;
+};
+
+struct MovementHandlerOutputDataSmallDelta
+{
+    NiPoint3 eulerRot; // 00
+    float moveAmt; // 0C
+    NiPoint3 moveDir; // 10
+    float deltaTime; // 1C
+};
+
+struct MovementHandlerAgentUpdateDataSmallDelta
+{
+    MovementHandlerUpdateDataSmallDelta *updateData; // 00
+    MovementHandlerOutputDataSmallDelta *outputData; // 08
+};
+
+struct MovementUpdateDataSmallDelta
+{
+    float deltaTime0; // 00
+    UInt32 unk04;
+    float deltaTime1; // 08
+    UInt32 pad0C;
+    MovementHandlerUpdateDataSmallDelta updateData; // 10
+    MovementHandlerOutputDataSmallDelta outputData; // 98
+    AnimUpdateData animUpdateData; // B8
+};
+
+struct MovementParametersData
+{
+    float unk00;
+    UInt32 pad04;
+    struct IMovementParameters *data; // 08
+};
+
+struct MovementPlannerAgentReturnDataSmallDelta
+{
+    float targetDisplacementMultiplier; // 00
+    MovementVector movementVector; // 04
+    float unk14;
+    NiPoint3 targetAngle; // 18
+    UInt32 unk24;
+    MovementParametersData movementParams; // 28
+    MovementHandlerUpdateDataSmallDelta *updateData; // 38
+    void *unk40;
+    UInt64 unk48;
+    UInt16 unk50;
+    UInt16 pad52;
+    UInt32 pad54;
+}; // size == 0x58 ??
+*/
+
+
+
+NiPoint3 GetForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
+{
+    NiMatrix33 rot = EulerToMatrix(eulerRot);
+    return ForwardVector(rot);
+}
+
+MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2)
+{
+    NiPoint3 vec1 = ForwardVectorFromEulerRot(v1.eulerRot) * v1.magnitude;
+    NiPoint3 newVec = vec1 + v2;
+
+    MovementVector result;
+    result.magnitude = VectorLength(newVec);
+    result.eulerRot = ForwardVectorToEulerRot(newVec);
+
+    return result;
+}
+
+typedef void(*_MovementPlannerAgentKeepOffset_ModifyMovementData)(IMovementPlannerAgent *_this, MovementArbiterUpdateData *a2, MovementUpdateData *a3);
+_MovementPlannerAgentKeepOffset_ModifyMovementData g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original = nullptr;
+static RelocPtr<_MovementPlannerAgentKeepOffset_ModifyMovementData> MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl(0x16EE020);
+void MovementPlannerAgentKeepOffset_ModifyMovementData_Hook(IMovementPlannerAgent *_this, MovementArbiterUpdateData *a2, MovementUpdateData *a3)
+{
+    MovementPlannerAgentKeepOffset *a1 = (MovementPlannerAgentKeepOffset *)((UInt64)_this - 0x18);
+
+    g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original(_this, a2, a3);
+
+    if (MovementControllerNPC *controller = a1->movementController) {
+        if (Actor *actor = controller->actor) {
+            std::scoped_lock lock(g_keepOffsetActorsLock);
+
+            auto it = g_keepOffsetActors.find(actor);
+            if (it == g_keepOffsetActors.end()) {
+                return;
+            }
+
+
+
+
+
+            NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+            NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
+            NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+
+            NiPoint3 forward = ForwardVector(refrTransform.rot);
+            NiPoint3 right = RightVector(refrTransform.rot);
+            //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
+
+            {
+                NiTransform t;
+                t.pos = refrTransform.pos;
+                NiPoint3 vec = VectorNormalized(forward) * 200.f;
+                t.pos += (vec * 0.5f);
+                t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                t.scale = 1.f;
+                RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
+            }
+
+            BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
+            float walkLeftSpeed = maxSpeeds.Speeds[0][0];
+            float walkRightSpeed = maxSpeeds.Speeds[1][0];
+            float walkForwardSpeed = maxSpeeds.Speeds[2][0];
+            float walkBackSpeed = maxSpeeds.Speeds[3][0];
+            float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
+
+            float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
+            float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
+            float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
+            float speedProportion = maxSpeedAmt / maxSpeed;
+
+            NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
+            NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
+            NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
+            float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
+            float actorDirectionMultiplier = 1.f;
+            if (dot > 0.f) {
+                actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
+            }
+
+            NiPoint3 moveAmt = offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
+
+            //float speed = VectorLength(moveAmt) / a2->deltaTime1;
+            //NiPoint3 movementEuler = ForwardVectorToEulerRot(moveAmt);
+
+            // Note: movement vector is in local space of the actor, so whatever we add to it needs to be as well?
+            a3->movementVector = AddToMovementVector(a3->movementVector, refrTransform.rot * moveAmt);
+            _MESSAGE("ModifyMovementData");
+            //PrintVector(ForwardVectorFromEulerRot(a3->movementVector.eulerRot) * a3->movementVector.magnitude);
+            _MESSAGE("%.2f", VectorLength(ForwardVectorFromEulerRot(a3->movementVector.eulerRot) * a3->movementVector.magnitude) / a2->deltaTime0);
+
+
+
+
+            //NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+            ////NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
+            //NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, g_playerPosDelta.z };
+            ////playerOffsetXY /= *g_deltaTime;
+
+            //NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+
+            //// Note: movement vector is in local space of the actor, so whatever we add to it needs to be as well?
+            ////a3->movementVector = AddToMovementVector(a3->movementVector, offset);
+        }
+    }
+}
+
+
+typedef void(*_Character_FinishLoadGame)(Actor *character, void *loadGameBuffer);
+_Character_FinishLoadGame g_Character_FinishLoadGame_Original = 0;
+static RelocPtr<_Character_FinishLoadGame> Character_FinishLoadGame_vtbl(0x16D6E68);
+void Character_FinishLoadGame_Hook(Actor *actor, void *loadGameBuffer)
+{
+    if (Config::options.removeActiveActorsOnLoad) {
+        // This runs here since it runs before ResetObjects() (i.e. g_activeActors is not cleared yet).
+        // FinishLoadGame() is what will potentially add the actor to the world if they are ragdolled or using furniture, so here we are removing our influence just before that.
+        RemoveActorFromWorldIfActive(actor);
+    }
+
+    g_Character_FinishLoadGame_Original(actor, loadGameBuffer);
+}
+
+
+typedef void(*_Actor_CheckAndHandleMotionOrAnimationDrivenChange)(Actor *actor);
+_Actor_CheckAndHandleMotionOrAnimationDrivenChange Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original = 0;
+RelocAddr<uintptr_t> Actor_CheckAndHandleMotionOrAnimationDrivenChange_HookLoc(0x5E0885);
+void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
+{
+    std::scoped_lock lock(g_keepOffsetActorsLock);
+
+    auto it = g_keepOffsetActors.find(actor);
+    if (it == g_keepOffsetActors.end()) {
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
+        return;
+    }
+
+    // TODO: Maybe only force motiondriven if they are bAllowRotation, but NOT if they are animation driven?
+    // TODO: If the player moves (e.g. via joystick), we can apply the offset directly in the player movement direction rather than the "local" offset driven by how you move your hand relative to the thing you're holding.
+    // TODO: We could push away (either through keepoffset or applyvelocityforduration) actors that are intersecting the player.
+
+
+    //bool isAnimationDriven = false;
+    //static BSFixedString sbAnimationDriven("bAnimationDriven");
+    //get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
+
+    KeepOffsetData &data = it->second;
+
+    MovementControllerNPC *movementController = GetMovementController(actor);
+    if (!movementController) return;
+
+    if (Config::options.forceMotionDrivenDuringKeepOffset && !movementController->movementMotionDrivenControl.IsMotionDriven()) {
+#ifdef _DEBUG
+        _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
+#endif // _DEBUG
+        //static BSAnimationGraphEvent evnt{ "StartMotionDriven", nullptr, "" };
+        //actor->animGraphEventSink.ReceiveEvent(&evnt, nullptr);
+    }
+
+    movementController->movementPlannerDirectControl.SetPlannerDirectControl();
+    movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
+
+    //movementController->movementDirectControl.SetMovementSpeed(Config::options.keepOffsetMovementDirectionChangeSpeed);
+    //NiPoint3 dir = ForwardVectorToEulerRot(VectorNormalized(actor->pos - (*g_thePlayer)->pos));
+    //movementController->movementDirectControl.SetMovementDirection(dir);
+
+    //Actor_KeepOffsetFromActor(actor, data.target, data.offset, data.offsetAngle, data.catchUpRadius, data.followRadius);
+
+
+    NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+    NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
+    NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
+
+    NiPoint3 forward = ForwardVector(refrTransform.rot);
+    NiPoint3 right = RightVector(refrTransform.rot);
+    //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
+
+    {
+        NiTransform t;
+        t.pos = refrTransform.pos;
+        NiPoint3 vec = VectorNormalized(forward) * 200.f;
+        t.pos += (vec * 0.5f);
+        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+        t.scale = 1.f;
+        RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
+    }
+
+    BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
+    float walkLeftSpeed = maxSpeeds.Speeds[0][0];
+    float walkRightSpeed = maxSpeeds.Speeds[1][0];
+    float walkForwardSpeed = maxSpeeds.Speeds[2][0];
+    float walkBackSpeed = maxSpeeds.Speeds[3][0];
+    float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
+
+    float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
+    float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
+    float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
+    float speedProportion = maxSpeedAmt / maxSpeed;
+
+    NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
+    NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
+    NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
+    float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
+    float actorDirectionMultiplier = 1.f;
+    if (dot > 0.f) {
+        actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
+    }
+
+    NiPoint3 moveAmt = offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
+
+    it->second.moveAmounts.pop_back();
+    it->second.moveAmounts.push_front(moveAmt);
+    //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
+    NiPoint3 targetMoveAmt = moveAmt;
+
+    {
+        NiTransform t;
+        t.pos = refrTransform.pos;
+        NiPoint3 vec = (refrTransform.rot * targetMoveAmt) * 50.f;
+        t.pos += (vec * 0.5f);
+        t.pos.z += 50.f;
+        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+        t.scale = 1.f;
+        RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
+    }
+
+    float speed = VectorLength(targetMoveAmt);
+    NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(targetMoveAmt));
+
+    PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
+    PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
+
+    //movementController->movementDirectControl.SetMovementSpeed(Config::options.dummyFloat1);
+    //if (speed > Config::options.keepOffsetDirectionLerpOutTime) {
+    //    movementController->movementDirectControl.SetMovementDirection(direction);
+    //}
+    //// TODO: Handle rotation properly like keepoffset would do
+    //NiPoint3 rotSpeed{};
+    //movementController->movementDirectControl.SetMovementRotationSpeed(rotSpeed);
+    movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
+    if (speed > Config::options.keepOffsetDirectionLerpOutTime) {
+        movementController->movementPlannerDirectControl.SetTargetDirection(direction);
+    }
+    // TODO: Handle rotation properly like keepoffset would do
+    NiPoint3 rotSpeed{};
+    movementController->movementPlannerDirectControl.SetTargetAngle(rotSpeed);
+
+    data.prevSpeed = speed;
+    data.prevDirection = direction;
+}
+
+// MovementPlannerArbiter ActorState::CalculateSpeedsWithAcceleration
+struct IMovementParameters
+{
+    virtual ~IMovementParameters() = 0; // 0
+    virtual float GetWalkRunPercent() = 0; // 1
+    virtual float GetAcceleration() = 0; // 2
+    virtual float GetDeceleration() = 0; // 3
+    virtual float GetAngleAcceleration() = 0; // 4
+    virtual float GetRotationPercent() = 0; // 5
+    virtual UInt32 GetType() = 0; // 6
+    virtual void Write(void *writeStream) = 0; // 7
+    virtual void Read(void *readStream) = 0; // 8
+
+    SInt32 refCount_8;
+    char _pad_C[4];
+};
+struct MovementParameters : IMovementParameters
+{
+    float walkRunPercent; // 10
+    float acceleration; // 14
+    float deceleration; // 18
+    float rotationPercent; // 1C
+    float angleAcceleration; // 20
+    UInt32 pad24;
+};
+struct IMovementQueryState
+{
+    void *vftable_IMovementQueryState_0;
+};
+struct MyMovementParameters
+{
+    virtual ~MyMovementParameters() {} // 0
+    virtual float GetWalkRunPercent() { return walkRunPercent; } // 1
+    virtual float GetAcceleration() { return acceleration; } // 2
+    virtual float GetDeceleration() { return deceleration; } // 3
+    virtual float GetAngleAcceleration() { return angleAcceleration; } // 4
+    virtual float GetRotationPercent() { return rotationPercent; } // 5
+    virtual UInt32 GetType() { return type; } // 6
+    virtual void Write(void *writeStream) {} // 7
+    virtual void Read(void *readStream) {} // 8
+
+    MyMovementParameters(IMovementParameters *params)
+    {
+        walkRunPercent = params->GetWalkRunPercent();
+        acceleration = Config::options.dummyFloat2;
+        deceleration = Config::options.dummyFloat2;
+        rotationPercent = Config::options.dummyFloat3;
+        angleAcceleration = params->GetAngleAcceleration();
+        type = params->GetType();
+    }
+
+    float walkRunPercent; // 10
+    float acceleration; // 14
+    float deceleration; // 18
+    float rotationPercent; // 1C
+    float angleAcceleration; // 20
+    UInt32 type; // 24
+};
+typedef void(*_ActorState_CalculateSpeedsWithAcceleration)(ActorState *a1, IMovementParameters *a2, IMovementQueryState *a3, MovementVector *a4, float *a_acceleratedRunSpeedOut, float *a_deceleratedRunSpeedOut, float *a_acceleratedRotSpeedOut);
+_ActorState_CalculateSpeedsWithAcceleration MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original = 0;
+RelocAddr<uintptr_t> MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_HookLoc(0x116D362);
+void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(ActorState *actorState, IMovementParameters *movementParams, IMovementQueryState *queryState, MovementVector *movementVector, float *acceleratedRunSpeedOut, float *deceleratedRunSpeedOut, float *acceleratedRotSpeedOut)
+{
+    Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
+
+    bool foundActor = false;
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+
+        auto it = g_keepOffsetActors.find(actor);
+        if (it != g_keepOffsetActors.end()) {
+            foundActor = true;
+        }
+    }
+
+    if (foundActor) {
+        MyMovementParameters fixedParams(movementParams);
+        MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
+    }
+    else {
+        MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, movementParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
+    }
+
+    //Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
+
+    //{
+    //    std::scoped_lock lock(g_keepOffsetActorsLock);
+
+    //    auto it = g_keepOffsetActors.find(actor);
+    //    if (it == g_keepOffsetActors.end()) {
+    //        return;
+    //    }
+
+    //    //*acceleratedRunSpeedOut = Config::options.keepOffsetMovementDirectionChangeSpeed;
+    //    //*deceleratedRunSpeedOut = Config::options.keepOffsetMovementDirectionChangeSpeed;
+
+    //    //PrintVector({ *acceleratedRunSpeedOut, *deceleratedRunSpeedOut, *acceleratedRotSpeedOut });
+    //    _MESSAGE("CalcSpeeds");
+    //    //PrintVector(ForwardVectorFromEulerRot(movementVector->eulerRot) * movementVector->magnitude);
+    //    _MESSAGE("%.2f", VectorLength(ForwardVectorFromEulerRot(movementVector->eulerRot) * movementVector->magnitude));
+    //}
+}
+
+typedef void(*_ActorState_CalculateRotSpeeds)(ActorState *a1, IMovementParameters *a2, IMovementQueryState *a3, MovementVector *a4, float *clampedRotateSpeedOut, float *desiredRotateSpeedOut);
+_ActorState_CalculateRotSpeeds MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original = 0;
+RelocAddr<uintptr_t> MovementPlannerArbiter_ActorState_CalculateRotSpeeds_HookLoc(0x116D39D);
+void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actorState, IMovementParameters *movementParams, IMovementQueryState *queryState, MovementVector *movementVector, float *clampedRotateSpeedOut, float *desiredRotateSpeedOut)
+{
+    Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
+
+    bool foundActor = false;
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+
+        auto it = g_keepOffsetActors.find(actor);
+        if (it != g_keepOffsetActors.end()) {
+            foundActor = true;
+        }
+    }
+
+    if (foundActor) {
+        MyMovementParameters fixedParams(movementParams);
+        MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
+    }
+    else {
+        MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, movementParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
+    }
+}
+
+
+typedef void(*_ActorProcess_QueueAction)(ActorProcessManager *process, UInt32 *defaultObject);
+_ActorProcess_QueueAction ActorProcess_QueueAction_Original = 0;
+RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc1(0x745BAC);
+RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc2(0x745D8F);
+RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc3(0x745F74);
+RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc4(0x745F9D);
+void ActorProcess_QueueAction_Hook(ActorProcessManager *process, UInt32 *defaultObject)
+{
+    {
+        Actor *foundActor = nullptr;
+        std::unique_lock lock(g_activeActorsLock);
+        for (Actor *actor : g_activeActors) {
+            if (actor->processManager == process) {
+                foundActor = actor;
+                break;
+            }
+        }
+
+        if (foundActor && VectorLength(foundActor->pos - (*g_thePlayer)->pos) < 100.f) {
+            TESFullName *fullName = DYNAMIC_CAST(foundActor->baseForm, TESForm, TESFullName);
+            _MESSAGE("%d QueueAction %s %d", *g_currentFrameCounter, fullName->name, *defaultObject);
+        }
+    }
+
+    ActorProcess_QueueAction_Original(process, defaultObject);
+}
+
+
+
+void DebugDrawSphere(const NiTransform &transform, const NiColorA &color)
+{
+#ifdef _DEBUG
+    //NiTransform axisX = transform;
+    //axisX.pos += RightVector(axisX.rot) * axisX.scale;
+    //axisX.scale = 0.2f;
+    //NiTransform axisY = transform;
+    //axisY.pos += ForwardVector(axisX.rot) * axisY.scale;
+    //axisY.scale = 0.2f;
+    //NiTransform axisZ = transform;
+    //axisZ.pos += UpVector(axisX.rot) * axisZ.scale;
+    //axisZ.scale = 0.2f;
+
+    NiTransform sphere = transform;
+    //sphere.scale -= 0.2f;
+    Draw::DrawSphere(sphere, color);
+    //Draw::DrawSphere(axisX, { 1.f, 0.f, 0.f, 1.f });
+    //Draw::DrawSphere(axisY, { 0.f, 1.f, 0.f, 1.f });
+    //Draw::DrawSphere(axisZ, { 0.f, 0.f, 1.f, 1.f });
+#endif // _DEBUG
+}
+
+std::unordered_map<std::string_view, DebugTransform> g_debugDrawTransforms{};
+
+void DebugDraw()
+{
+#ifdef _DEBUG
+    for (auto &pair : g_debugDrawTransforms) {
+        DebugDrawSphere(pair.second.transform, pair.second.color);
+    }
+#endif // _DEBUG
+}
+
+void RegisterDebugTransform(const std::string_view &name, const DebugTransform &transform)
+{
+#ifdef _DEBUG
+    g_debugDrawTransforms[name] = transform;
+#endif // _DEBUG
+}
+
+void UnregisterDebugTransform(const std::string_view &name)
+{
+#ifdef _DEBUG
+    g_debugDrawTransforms.erase(name);
+#endif // _DEBUG
+}
+
+#ifdef _DEBUG
+
+bool g_wasDrawingLastFrame = false;
+
+auto DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_HookLoc = RelocPtr<uintptr_t>(0x1323E3E);
+typedef void(*_NiCamera_FinishAccumulatingPostResolveDepth)(NiCamera *camera, void *shaderAccumulator, UInt32 flags);
+_NiCamera_FinishAccumulatingPostResolveDepth DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Original = 0;
+void DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Hook(NiCamera *camera, void *shaderAccumulator, UInt32 flags)
+{
+    bool draw = true;
+    if (draw) {
+        if (!g_wasDrawingLastFrame) {
+            _MESSAGE("Draw on");
+        }
+
+        Draw::StartDraw();
+        DebugDraw();
+
+    }
+    else if (g_wasDrawingLastFrame) {
+        _MESSAGE("Draw off");
+    }
+
+    g_wasDrawingLastFrame = draw;
+
+    DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Original(camera, shaderAccumulator, flags);
+}
+
+#endif // _DEBUG
+
+
 auto processHavokHitJobsHookLoc = RelocAddr<uintptr_t>(0x6497E4);
 
 auto PlayerCharacter_UpdateWeaponSwing_HookLoc = RelocAddr<uintptr_t>(0x6ABCA4);
@@ -5946,6 +7058,48 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_HookLoc.GetUIntPtr(), uintptr_t(UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook));
         UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original = (_Actor_UpdateFromCharacterControllerAndFootIK)originalFunc;
+    }
+
+    {
+        g_Character_ModifyMovementData_Original = *Character_ModifyMovementData_vtbl;
+        SafeWrite64(Character_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(Character_ModifyMovementData_Hook));
+    }
+    {
+        g_PlayerCharacter_ModifyMovementData_Original = *PlayerCharacter_ModifyMovementData_vtbl;
+        SafeWrite64(PlayerCharacter_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_ModifyMovementData_Hook));
+    }
+
+    {
+        g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original = *MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl;
+        SafeWrite64(MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(MovementPlannerAgentKeepOffset_ModifyMovementData_Hook));
+    }
+
+    {
+        g_Character_FinishLoadGame_Original = *Character_FinishLoadGame_vtbl;
+        SafeWrite64(Character_FinishLoadGame_vtbl.GetUIntPtr(), uintptr_t(Character_FinishLoadGame_Hook));
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(Actor_CheckAndHandleMotionOrAnimationDrivenChange_HookLoc.GetUIntPtr(), uintptr_t(Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook));
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original = (_Actor_CheckAndHandleMotionOrAnimationDrivenChange)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_HookLoc.GetUIntPtr(), uintptr_t(MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook));
+        MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original = (_ActorState_CalculateSpeedsWithAcceleration)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(MovementPlannerArbiter_ActorState_CalculateRotSpeeds_HookLoc.GetUIntPtr(), uintptr_t(MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook));
+        MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original = (_ActorState_CalculateRotSpeeds)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(ActorProcess_QueueAction_HookLoc1.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
+        ActorProcess_QueueAction_Original = (_ActorProcess_QueueAction)originalFunc;
+        Write5Call(ActorProcess_QueueAction_HookLoc2.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
+        Write5Call(ActorProcess_QueueAction_HookLoc3.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
+        Write5Call(ActorProcess_QueueAction_HookLoc4.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
     }
 
     {
@@ -6637,6 +7791,14 @@ extern "C" {
             g_Actor_SetPosition_Original = *Actor_SetPosition_vtbl;
             SafeWrite64(Actor_SetPosition_vtbl.GetUIntPtr(), uintptr_t(Actor_SetPosition_Hook));
         }
+
+#ifdef _DEBUG
+        {
+            std::uintptr_t originalFunc = Write5Call(DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_HookLoc.GetUIntPtr(), uintptr_t(DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Hook));
+            DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Original = (_NiCamera_FinishAccumulatingPostResolveDepth)originalFunc;
+            _MESSAGE("DoColorPass NiCamera::FinishAccumulatingPostResolveDepth hook complete");
+        }
+#endif // _DEBUG
 
         g_timer.Start();
 
