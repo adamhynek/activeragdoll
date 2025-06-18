@@ -2703,11 +2703,11 @@ CollisionFilterComparisonResult CollisionFilterComparisonCallback(void *filter, 
     if (otherGroup != g_playerCollisionGroup) {
         if (otherLayer == BGSCollisionLayer::kCollisionLayer_Biped || otherLayer == BGSCollisionLayer::kCollisionLayer_BipedNoCC) {
             // Collide with the biped unless we want to explicitly ignore them
-            //if (!Config::options.enablePlayerBipedCollision ||
-            //    (g_rightHeldActorCollisionGroup && otherGroup == g_rightHeldActorCollisionGroup) ||
-            //    (g_leftHeldActorCollisionGroup && otherGroup == g_leftHeldActorCollisionGroup)) {
-            //    return CollisionFilterComparisonResult::Ignore;
-            //}
+            if (!Config::options.enablePlayerBipedCollision ||
+                (g_rightHeldActorCollisionGroup && otherGroup == g_rightHeldActorCollisionGroup) ||
+                (g_leftHeldActorCollisionGroup && otherGroup == g_leftHeldActorCollisionGroup)) {
+                return CollisionFilterComparisonResult::Ignore;
+            }
 
             if (!g_activeBipedGroups.count(otherGroup)) {
                 // Disable collision with biped objects that are not actors
@@ -4066,13 +4066,13 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         // TODO: This angle stuff is pretty busted with oscillation for quadrupeds like dog/cow in riverwood.
                         //       Possibly also incorporate movement direction into rotation, e.g. rotate towards the direction of movement?
                         NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                        if (!data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetAngleStartThreshold) {
-                            // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                            data.isRotate = true;
-                        }
-                        else if (data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) < Config::options.keepOffsetAngleStopThreshold) {
-                            data.isRotate = false;
-                        }
+                        //if (!data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetAngleStartThreshold) {
+                        //    // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+                        //    data.isRotate = true;
+                        //}
+                        //else if (data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) < Config::options.keepOffsetAngleStopThreshold) {
+                        //    data.isRotate = false;
+                        //}
                         offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
 
                         PrintToFile(std::to_string(ragdoll->rootOffsetAngle), "rootOffsetAngle");
@@ -6508,18 +6508,23 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
 
 
-    NiPoint3 moveAmtFromRagdollInfluence = data.isTranslate ? data.offset : NiPoint3();
+    NiPoint3 moveAmtFromRagdollInfluenceRaw = data.offset;
+    NiPoint3 moveAmtFromRagdollInfluence = data.isTranslate ? moveAmtFromRagdollInfluenceRaw : NiPoint3();
 
 
 
+    NiPoint3 finalMoveAmtRaw = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
     NiPoint3 finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
 
 
 
 
-    NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
+    //NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
+    NiPoint3 offsetAngle = data.offsetAngle;
 
 
+    float angleStartThreshold = Config::options.keepOffsetAngleStartThreshold;
+    float angleStopThreshold = Config::options.keepOffsetAngleStopThreshold;
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually induces weird motion and rotation, so only allow forward/backward movement
@@ -6535,15 +6540,19 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             lateralYawMult = -1.f;
         }
 
-        NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
-        float rightDot = DotProduct(finalMoveAmt, right);
-        NiPoint3 lateralComponent = right * rightDot;
-        bool isRight = rightDot >= 0.f;
+        float rightDotRaw = DotProduct(finalMoveAmtRaw, right);
+        NiPoint3 lateralComponentRaw = right * rightDotRaw;
+        bool isRight = rightDotRaw >= 0.f;
         lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
 
-        offsetAngle.z += VectorLength(lateralComponent) * lateralYawMult * Config::options.dummyFloat4;
+        offsetAngle.z += VectorLength(lateralComponentRaw) * lateralYawMult * Config::options.dummyFloat4;
 
+        NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
         finalMoveAmt = forwardComponent;
+
+        // start/end 0.15/0.05, yawmult 1.0, anglediffmult -0.25 feel good for quadrupeds right now
+        angleStartThreshold = Config::options.keepOffsetAngleStartThresholdNoStrafe;
+        angleStopThreshold = Config::options.keepOffsetAngleStopThresholdNoStrafe;
     }
 
     {
@@ -6551,7 +6560,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
         NiTransform t;
         t.pos = actor->pos;
-        NiPoint3 vec = RotateVectorByAxisAngle(forward, { 0.f, 0.f, 1.f }, offsetAngle.z) * 70.f;
+        NiPoint3 vec = RotateVectorByAxisAngle(forward, { 0.f, 0.f, 1.f }, -offsetAngle.z) * 70.f;
         t.pos += (vec * 0.5f);
         t.pos.z += 50.f;
         t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
@@ -6559,6 +6568,19 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         t.scale = 1.f;
         RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
     }
+
+    // Do this after computing the final rotation
+    if (!data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) >= angleStartThreshold) {
+        // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+        data.isRotate = true;
+    }
+    else if (data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) < angleStopThreshold) {
+        data.isRotate = false;
+    }
+    if (!data.isRotate) {
+        offsetAngle = { 0.f, 0.f, 0.f };
+    }
+
 
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);

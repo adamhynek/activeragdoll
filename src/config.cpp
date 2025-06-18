@@ -317,6 +317,8 @@ namespace Config {
         if (!RegisterBool("forceMotionDrivenDuringKeepOffset", options.forceMotionDrivenDuringKeepOffset)) success = false;
         if (!RegisterFloat("keepOffsetAngleStartThreshold", options.keepOffsetAngleStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetAngleStopThreshold", options.keepOffsetAngleStopThreshold)) success = false;
+        if (!RegisterFloat("keepOffsetAngleStartThresholdNoStrafe", options.keepOffsetAngleStartThresholdNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
