@@ -728,7 +728,10 @@ struct KeepOffsetData
     double endMovementTime = 0.0;
     std::deque<NiPoint3> moveAmounts{ 500, NiPoint3() };
     std::deque<NiPoint3> offsets{ 500, NiPoint3() };
-    bool isActive = false;
+    hkQsTransform grabbedBoneAnimPoseWS{};
+    NiPoint3 animCentroidWS{};
+    bool isTranslate = false;
+    bool isRotate = false;
     float prevSpeed = 0.f;
     NiPoint3 prevDirection{};
     float advanceSpeed = 0.f;
@@ -760,6 +763,27 @@ std::optional<float> GetStress(Actor *actor, const hkpRigidBody *desiredBody)
     });
 
     return stress;
+}
+
+std::optional<hkQsTransform> GetAnimPoseForRigidBody(Actor *actor, const hkpRigidBody *desiredBody)
+{
+    std::optional<hkQsTransform> pose = std::nullopt;
+    ForEachRagdollDriver(actor, [desiredBody, &pose](hkbRagdollDriver *driver) -> void {
+        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
+                            pose = activeRagdoll->lowResAnimPoseWS[i];
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    return pose;
 }
 
 std::optional<NiPoint3> GetBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
@@ -3970,54 +3994,31 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                                     NiPoint3 displacementXY = { displacement.x, displacement.y, 0.f };
                                     //offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
                                     offsetWS = displacementXY;
+
+                                    {
+                                        NiTransform t;
+                                        t.pos = t.pos = actor->pos;;
+                                        NiPoint3 vec = displacementXY * 10.f;
+                                        t.pos += (vec * 0.5f);
+                                        t.pos.z += 50.f;
+                                        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                                        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                                        t.scale = 1.f;
+                                        RegisterDebugTransform("TotalDisplacement", { t, {0, 0, 1, 1} });
+                                    }
+
+                                    if (std::optional<hkQsTransform> animPose = GetAnimPoseForRigidBody(actor, rigidBody->hkBody)) {
+                                        data.grabbedBoneAnimPoseWS = *animPose;
+                                    }
+
+
+                                    offsetWS = ragdoll->rootOffset * *g_inverseHavokWorldScale;
                                 }
                             }
                         }
 
-                        //NiPoint3 playerOffsetWS = (*g_thePlayer)->pos - g_prevPlayerPos;
-                        //NiPoint3 playerOffsetXY = { playerOffsetWS.x, playerOffsetWS.y, 0.f };
-                        //offsetWS += playerOffsetXY * Config::options.keepOffsetPlayerDirectionMultiplier;
-
-                        //NiPoint3 velocity = ((*g_thePlayer)->pos - g_prevPlayerPos) / *g_deltaTime;
-                        //float speed = VectorLength(velocity);
-
                         float catchUpRadius = Config::options.keepOffsetCatchUpRadius;
                         float followRadius = Config::options.keepOffsetFollowRadius;
-
-                        // Why 3? Because keepoffset takes the magnitude between 0 and 1, then multiplies by 3. So that's the max it would usually allow.
-                        // For this function, 1 is walking, 2 is running, and values between that are interpolated, and values above/below 2/1 are multiplied by the run/walk speeds.
-                        //float walkSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 1.f);
-                        //float runSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 2.f);
-                        //float maxSpeed = ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, 3.f);
-                        //PrintVector({ walkSpeed, runSpeed, maxSpeed });
-
-                        //float targetSpeed = (VectorLength(offsetWS) / *g_deltaTime) * Config::options.keepOffsetMovingFollowRadius;
-                        //PrintToFile(std::to_string(targetSpeed), "targetSpeed.txt");
-
-                        //float magnitude = 0.f;
-                        //if (targetSpeed < walkSpeed) {
-                        //    magnitude = targetSpeed / walkSpeed;
-                        //}
-                        //else if (targetSpeed < runSpeed) {
-                        //    magnitude = lerp(1.f, 2.f, (targetSpeed - walkSpeed) / (runSpeed - walkSpeed));
-                        //}
-                        //else if (targetSpeed < maxSpeed) {
-                        //    magnitude = lerp(2.f, 3.f, (targetSpeed - runSpeed) / (maxSpeed - runSpeed));
-                        //}
-                        //else {
-                        //    magnitude = targetSpeed / runSpeed;
-                        //    //magnitude = 3.f;
-                        //}
-
-                        //magnitude /= 3.f; // keepoffset scales by 3
-
-                        //_MESSAGE("%d TargetSpeed", *g_currentFrameCounter);
-                        //PrintVector(VectorNormalized(offsetWS) * ActorState_GetSpeedFromMovementMagnitude(&actor->actorState, magnitude * 3.f) * *g_deltaTime);
-
-                        //offsetWS = VectorNormalized(offsetWS) * magnitude; // works only if catchupradius is 1 and followradius is 0
-
-                        //catchUpRadius += speed * Config::options.keepOffsetMovingCatchUpRadius;
-                        //followRadius += speed * Config::options.keepOffsetMovingFollowRadius;
 
                         // TODO: Can we measure the actor's current speed (rather the amount they moved in the previous frame(s)) and use that to drive the target speed we have?
                         //    - I believe the magnitude of the offset amount from the actor is effectively the target speed percent. Should re-test this (target offset magnitude 0-100 (or 0 to catch up radius?))
@@ -4029,34 +4030,6 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         data.offsets.push_front(offsetWS);
                         NiPoint3 avgOffsetWS = GetAverageVector(data.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
 
-
-                        BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
-                        float walkLeftSpeed = maxSpeeds.Speeds[0][0];
-                        float walkRightSpeed = maxSpeeds.Speeds[1][0];
-                        float walkForwardSpeed = maxSpeeds.Speeds[2][0];
-                        float walkBackSpeed = maxSpeeds.Speeds[3][0];
-                        float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
-
-                        NiPoint3 forward = ForwardVector(refrTransform.rot);
-                        NiPoint3 right = RightVector(refrTransform.rot);
-
-                        float forwardAmt = DotProduct(avgOffsetWS, forward);
-                        float rightAmt = DotProduct(avgOffsetWS, right);
-
-                        if (rightAmt >= 0.f && walkRightSpeed <= 0.f) {
-                            avgOffsetWS -= right * rightAmt;
-                        }
-                        if (rightAmt < 0.f && walkLeftSpeed <= 0.f) {
-                            avgOffsetWS -= right * rightAmt;
-                        }
-                        if (forwardAmt >= 0.f && walkForwardSpeed <= 0.f) {
-                            avgOffsetWS -= forward * forwardAmt;
-                        }
-                        if (forwardAmt < 0.f && walkBackSpeed <= 0.f) {
-                            avgOffsetWS -= forward * forwardAmt;
-                        }
-
-
                         //offset = refrTransform.rot.Transpose() * avgOffsetWS;
                         offset = avgOffsetWS;
                         PrintToFile(std::to_string(VectorLength(avgOffsetWS)), "offset.txt");
@@ -4064,31 +4037,27 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         //PrintVector(offset);
 
                         // To prevent oscillation between on/off, we start and stop actually keeping offset at different thresholds
-                        if (!data.isActive && VectorLength(offset) > Config::options.keepOffsetStartThreshold) {
-                            data.isActive = true;
+                        if (!data.isTranslate && VectorLength(offset) >= Config::options.keepOffsetStartThreshold) {
+                            data.isTranslate = true;
                         }
-                        else if (data.isActive && VectorLength(offset) < Config::options.keepOffsetStopThreshold) {
-                            data.isActive = false;
-                        }
-
-                        if (!data.isActive) {
-                            offset = { 0.f, 0.f, 0.f };
+                        else if (data.isTranslate && VectorLength(offset) < Config::options.keepOffsetStopThreshold) {
+                            data.isTranslate = false;
                         }
 
                         offset *= Config::options.keepOffsetDirectionMultiplier;
 
-                        {
-                            NiTransform t;
-                            t.pos = refrTransform.pos;
-                            //NiPoint3 vec = VectorNormalized(avgOffsetWS) * 200.f;
-                            NiPoint3 vec = avgOffsetWS * 5.f;
-                            t.pos += (vec * 0.5f);
-                            t.pos.z += 50.f;
-                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                            t.scale = 1.f;
-                            RegisterDebugTransform("avgOffsetWS", { t, {0, 1, 0, 1} });
-                        }
+                        //{
+                        //    NiTransform t;
+                        //    t.pos = refrTransform.pos;
+                        //    //NiPoint3 vec = VectorNormalized(avgOffsetWS) * 200.f;
+                        //    NiPoint3 vec = avgOffsetWS * 5.f;
+                        //    t.pos += (vec * 0.5f);
+                        //    t.pos.z += 50.f;
+                        //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                        //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                        //    t.scale = 1.f;
+                        //    RegisterDebugTransform("avgOffsetWS", { t, {0, 1, 0, 1} });
+                        //}
 
                             //NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
                             //offset = InverseTransform(refrTransform) * offsetWS;
@@ -4097,10 +4066,17 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         // TODO: This angle stuff is pretty busted with oscillation for quadrupeds like dog/cow in riverwood.
                         //       Possibly also incorporate movement direction into rotation, e.g. rotate towards the direction of movement?
                         NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                        if (fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetMinAngleDifference) {
+                        if (!data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetAngleStartThreshold) {
                             // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                            offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+                            data.isRotate = true;
                         }
+                        else if (data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) < Config::options.keepOffsetAngleStopThreshold) {
+                            data.isRotate = false;
+                        }
+                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+
+                        PrintToFile(std::to_string(ragdoll->rootOffsetAngle), "rootOffsetAngle");
+                        PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
 
                         data.offset = offset;
                         data.offsetAngle = offsetAngle;
@@ -4711,6 +4687,82 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput &ge
 }
 
 
+
+
+struct PlanarFit2D
+{
+    float yawRad = 0.f;          // CCW rotation in radians
+    NiPoint3 offsetXY{ 0.f, 0.f, 0.f };  // planar translation
+    NiPoint3 restCentroid{ 0.f, 0.f, 0.f };
+    NiPoint3 physCentroid{ 0.f, 0.f, 0.f };
+    NiPoint3 centroidOffset{ 0.f, 0.f, 0.f };
+};
+
+PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
+    const std::vector<NiPoint3> &physPos,
+    const std::vector<float> &weights)
+{
+    const std::size_t n = restPos.size();
+    PlanarFit2D out;
+
+    if (n == 0 || physPos.size() != n || weights.size() != n) {
+        return out;                               // invalid input → identity
+    }
+
+    // 1. Weighted centroids ---------------------------------------------------
+    float sumW = 0.f;
+    NiPoint3 c_p = { 0.f, 0.f, 0.f };               // rest-pose centroid
+    NiPoint3 c_q = { 0.f, 0.f, 0.f };               // physics-pose centroid
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const float w = weights[i];
+        sumW += w;
+
+        c_p += restPos[i] * w;
+        c_q += physPos[i] * w;
+    }
+
+    if (sumW <= std::numeric_limits<float>::epsilon()) {
+        return out;                               // all weights zero → identity
+    }
+
+    c_p /= sumW;
+    c_q /= sumW;
+
+    // 2. Accumulate dot- and cross-terms --------------------------------------
+    double A = 0.0;   // Σ w (dx·dx′ + dy·dy′)
+    double B = 0.0;   // Σ w (dx·dy′ − dy·dx′)
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const float w = weights[i];
+        const NiPoint3 d = restPos[i] - c_p;     // rest displacement
+        const NiPoint3 dP = physPos[i] - c_q;     // phys displacement
+
+        A += static_cast<double>(w) * (d.x * dP.x + d.y * dP.y);
+        B += static_cast<double>(w) * (d.x * dP.y - d.y * dP.x);
+    }
+
+    // 3. Least-squares yaw -----------------------------------------------------
+    const float theta = std::atan2(B, A);     // radians
+
+    // 4. Matching planar translation ------------------------------------------
+    const float c = std::cos(theta);
+    const float s = std::sin(theta);
+
+    NiPoint3 offset;
+    offset.x = c_q.x - (c * c_p.x - s * c_p.y);
+    offset.y = c_q.y - (s * c_p.x + c * c_p.y);
+
+    out.yawRad = theta;
+    out.offsetXY = offset;
+    out.restCentroid = c_p;
+    out.physCentroid = c_q;
+    return out;
+}
+
+
+
+
 struct SavedConstraintData
 {
     NiPoint3 pivotA;
@@ -5186,12 +5238,84 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                 NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
                                 ragdoll->rootOffset = actualPos - posePos;
 
-                                NiPoint3 poseForward = ForwardVector(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
+                                //NiPoint3 poseForward = ForwardVector(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
                                 NiMatrix33 actualRot; HkMatrixToNiMatrix(actualT.m_rotation, actualRot);
-                                NiPoint3 actualForward = ForwardVector(actualRot);
-                                float poseAngle = atan2f(poseForward.x, poseForward.y);
-                                float actualAngle = atan2f(actualForward.x, actualForward.y);
-                                ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
+                                //NiPoint3 actualForward = ForwardVector(actualRot);
+                                //float poseAngle = atan2f(poseForward.x, poseForward.y);
+                                //float actualAngle = atan2f(actualForward.x, actualForward.y);
+                                //ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
+
+                                NiPoint3 poseEuler = MatrixToEuler(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
+                                NiPoint3 actualEuler = MatrixToEuler(actualRot);
+
+                                ragdoll->rootOffsetAngle = AngleDifference(poseEuler.z, actualEuler.z);
+
+
+                                {
+                                    std::unique_lock lock(g_keepOffsetActorsLock);
+
+                                    auto it = g_keepOffsetActors.find(actor);
+                                    if (it != g_keepOffsetActors.end()) {
+                                        KeepOffsetData &data = it->second;
+
+                                        std::vector<NiPoint3> rbPos{};
+                                        for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+                                            hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+                                            rbPos.push_back(HkVectorToNiPoint(rb->getTransform().getTranslation()) - HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale);
+                                        }
+
+                                        std::vector weights(ragdoll->lowResAnimPoseWS.size(), 1.f);
+                                        std::vector<NiPoint3> animPos{};
+                                        for (const hkQsTransform &t : ragdoll->lowResAnimPoseWS) {
+                                            animPos.push_back(HkVectorToNiPoint(t.m_translation) - HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale);
+                                        }
+                                        PlanarFit2D fit = SolvePlanarYaw(animPos, rbPos, weights);
+
+                                        ragdoll->rootOffset = fit.offsetXY;
+                                        ragdoll->rootOffsetAngle = fit.yawRad;
+                                        data.animCentroidWS = fit.restCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
+
+                                        {
+                                            NiTransform t;
+                                            t.pos = t.pos = actor->pos;;
+                                            NiPoint3 vec = fit.offsetXY * *g_inverseHavokWorldScale * 10.f;
+                                            t.pos += (vec * 0.5f);
+                                            t.pos.z += 50.f;
+                                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                                            t.scale = 1.f;
+                                            RegisterDebugTransform("kabschOffset", { t, {1, 0, 0, 1} });
+                                        }
+
+                                        NiPoint3 actorForward = ForwardVector(EulerToMatrix(actor->rot));
+
+                                        {
+                                            NiTransform t;
+                                            t.pos = actor->pos;
+                                            NiPoint3 vec = actorForward * 70.f;
+                                            t.pos += (vec * 0.5f);
+                                            t.pos.z += 50.f;
+                                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                                            t.scale = 1.f;
+                                            RegisterDebugTransform("actorForward", { t, {1, 0, 0, 1} });
+                                        }
+
+                                        //{
+                                        //    NiTransform t;
+                                        //    t.pos = actor->pos;
+                                        //    NiPoint3 vec = RotateVectorByAxisAngle(actorForward, { 0.f, 0.f, 1.f }, fit.yawRad) * 70.f;
+                                        //    t.pos += (vec * 0.5f);
+                                        //    t.pos.z += 50.f;
+                                        //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+                                        //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                                        //    t.scale = 1.f;
+                                        //    RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
+                                        //}
+                                    }
+
+                                }
+
 
                                 if (
                                     Config::options.doWarp &&
@@ -6081,130 +6205,11 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 
         if (!motionDrivenControl->IsMotionDriven()) return;
 
-
-
-        _MESSAGE("MoveAmt");
-        //PrintVector(a_moveAmt / a_deltaTime);
-        _MESSAGE("%.2f", VectorLength(a_moveAmt / a_deltaTime));
-
-
-        return;
-
-
-
-
-
-
-
-
-
         // TODO: Perhaps for quadrupeds we limit movement to their forward axis? Or perhaps not just for quadrupeds, but for everyone?? Humanoids/bipeds kind of walk floatily sideways too.
         //       We could use the forward/back/left/right values from the current movement type to limit movement to those directions.
         // TODO: We could probably use ApplyVelocityForDuration instead of using this hook.
 
         // TODO: There is some kind of discontinuity when we stop moving, the actor kind of snaps
-
-        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-        NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
-        NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
-
-        NiPoint3 forward = ForwardVector(refrTransform.rot);
-        NiPoint3 right = RightVector(refrTransform.rot);
-        //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
-
-        {
-            NiTransform t;
-            t.pos = refrTransform.pos;
-            NiPoint3 vec = VectorNormalized(forward) * 200.f;
-            t.pos += (vec * 0.5f);
-            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-            t.scale = 1.f;
-            RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
-        }
-
-        BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
-        float walkLeftSpeed = maxSpeeds.Speeds[0][0];
-        float walkRightSpeed = maxSpeeds.Speeds[1][0];
-        float walkForwardSpeed = maxSpeeds.Speeds[2][0];
-        float walkBackSpeed = maxSpeeds.Speeds[3][0];
-        float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
-
-        float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
-        float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
-        float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
-        float speedProportion = maxSpeedAmt / maxSpeed;
-
-        NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
-        NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
-        NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
-        float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
-        float actorDirectionMultiplier = 1.f;
-        if (dot > 0.f) {
-            actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
-        }
-
-        a_moveAmt += offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
-
-        it->second.moveAmounts.pop_back();
-        it->second.moveAmounts.push_front(a_moveAmt);
-        //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
-        NiPoint3 smoothedMoveAmt = a_moveAmt;
-
-
-        const NiPoint3 &gameMovementEuler = ActorProcess_GetMovementDirectionEuler(actor->processManager);
-
-        float speed = VectorLength(smoothedMoveAmt) / a_deltaTime;
-        NiPoint3 movementEuler = ForwardVectorToEulerRot(smoothedMoveAmt);
-
-        //movementEuler = MatrixToEuler(AdvanceRotation(EulerToMatrix(it->second.endMovementDirection), EulerToMatrix(movementEuler), Config::options.keepOffsetMovementDirectionChangeSpeed));
-
-        if (VectorLength(smoothedMoveAmt) > Config::options.keepOffsetMovingCatchUpRadius) {
-            if (ActorProcessManager *process = actor->processManager) {
-                // This makes them actually animate as moving in the direction they're moving
-                ActorProcess_SetMovementSpeed(process, speed);
-                // TODO: Perhaps also ActorProcess_SetRotationSpeedZ ?
-                ActorProcess_SetMovementDirectionEulerZ(process, movementEuler.z);
-                //ActorProcess_SetMovementDirectionEulerX(process, movementEuler.x); // usually only done by the game if the actor is flying
-                ActorProcess_SetMovementDirectionEulerY(process, movementEuler.y);
-            }
-            it->second.endMovementTime = g_currentFrameTime;
-            it->second.endMovementDirection = movementEuler;
-        }
-        //else {
-        //    double lerpAmount = std::clamp((g_currentFrameTime - it->second.endMovementTime) / Config::options.keepOffsetDirectionLerpOutTime, 0.0, 1.0);
-        //    //movementEuler = lerp(it->second.endMovementDirection, gameMovementEuler, lerpAmount);
-        //    NiQuaternion newMovementQuat = slerp(MatrixToQuaternion(EulerToMatrix(it->second.endMovementDirection)), MatrixToQuaternion(EulerToMatrix(gameMovementEuler)), lerpAmount);
-        //    movementEuler = MatrixToEuler(QuaternionToMatrix(newMovementQuat));
-        //    if (ActorProcessManager *process = actor->processManager) {
-        //        ActorProcess_SetMovementSpeed(process, speed);
-        //        ActorProcess_SetMovementDirectionEulerZ(process, movementEuler.z);
-        //        ActorProcess_SetMovementDirectionEulerY(process, movementEuler.y);
-        //    }
-        //}
-
-        {
-            NiTransform t;
-            t.pos = refrTransform.pos;
-            NiPoint3 vec = refrTransform.rot * ForwardVector(EulerToMatrix(gameMovementEuler) )* 150.f;
-            t.pos += (vec * 0.5f);
-            t.pos.z += 50.f;
-            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-            t.scale = 1.f;
-            RegisterDebugTransform("ActorMoveAmt", { t, {0, 0, 1, 1} });
-        }
-
-        PrintToFile(std::to_string(ActorProcess_GetMovementSpeed(actor->processManager)), "keepOffsetSpeed.txt");
-
-        PrintToFile(std::to_string(ActorProcess_GetRotationSpeedZ(actor->processManager)), "keepOffsetRotSpeedZ.txt");
-
-        //PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
-        PrintToFile(std::to_string(movementEuler.z), "keepOffsetDirZ.txt");
-        PrintToFile(std::to_string(gameMovementEuler.z), "gameDirZ.txt");
-
-        //_MESSAGE("%d MoveAmt", *g_currentFrameCounter);
-        //PrintVector(a_moveAmt);
     }
 }
 
@@ -6404,95 +6409,6 @@ MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2)
     return result;
 }
 
-typedef void(*_MovementPlannerAgentKeepOffset_ModifyMovementData)(IMovementPlannerAgent *_this, MovementArbiterUpdateData *a2, MovementUpdateData *a3);
-_MovementPlannerAgentKeepOffset_ModifyMovementData g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original = nullptr;
-static RelocPtr<_MovementPlannerAgentKeepOffset_ModifyMovementData> MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl(0x16EE020);
-void MovementPlannerAgentKeepOffset_ModifyMovementData_Hook(IMovementPlannerAgent *_this, MovementArbiterUpdateData *a2, MovementUpdateData *a3)
-{
-    MovementPlannerAgentKeepOffset *a1 = (MovementPlannerAgentKeepOffset *)((UInt64)_this - 0x18);
-
-    g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original(_this, a2, a3);
-
-    if (MovementControllerNPC *controller = a1->movementController) {
-        if (Actor *actor = controller->actor) {
-            std::scoped_lock lock(g_keepOffsetActorsLock);
-
-            auto it = g_keepOffsetActors.find(actor);
-            if (it == g_keepOffsetActors.end()) {
-                return;
-            }
-
-
-
-
-
-            NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-            NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
-            NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
-
-            NiPoint3 forward = ForwardVector(refrTransform.rot);
-            NiPoint3 right = RightVector(refrTransform.rot);
-            //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
-
-            {
-                NiTransform t;
-                t.pos = refrTransform.pos;
-                NiPoint3 vec = VectorNormalized(forward) * 200.f;
-                t.pos += (vec * 0.5f);
-                t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                t.scale = 1.f;
-                RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
-            }
-
-            BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
-            float walkLeftSpeed = maxSpeeds.Speeds[0][0];
-            float walkRightSpeed = maxSpeeds.Speeds[1][0];
-            float walkForwardSpeed = maxSpeeds.Speeds[2][0];
-            float walkBackSpeed = maxSpeeds.Speeds[3][0];
-            float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
-
-            float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
-            float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
-            float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
-            float speedProportion = maxSpeedAmt / maxSpeed;
-
-            NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
-            NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
-            NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
-            float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
-            float actorDirectionMultiplier = 1.f;
-            if (dot > 0.f) {
-                actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
-            }
-
-            NiPoint3 moveAmt = offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
-
-            //float speed = VectorLength(moveAmt) / a2->deltaTime1;
-            //NiPoint3 movementEuler = ForwardVectorToEulerRot(moveAmt);
-
-            // Note: movement vector is in local space of the actor, so whatever we add to it needs to be as well?
-            a3->movementVector = AddToMovementVector(a3->movementVector, refrTransform.rot * moveAmt);
-            _MESSAGE("ModifyMovementData");
-            //PrintVector(ForwardVectorFromEulerRot(a3->movementVector.eulerRot) * a3->movementVector.magnitude);
-            _MESSAGE("%.2f", VectorLength(ForwardVectorFromEulerRot(a3->movementVector.eulerRot) * a3->movementVector.magnitude) / a2->deltaTime0);
-
-
-
-
-            //NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-            ////NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
-            //NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, g_playerPosDelta.z };
-            ////playerOffsetXY /= *g_deltaTime;
-
-            //NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
-
-            //// Note: movement vector is in local space of the actor, so whatever we add to it needs to be as well?
-            ////a3->movementVector = AddToMovementVector(a3->movementVector, offset);
-        }
-    }
-}
-
 
 typedef void(*_Character_FinishLoadGame)(Actor *character, void *loadGameBuffer);
 _Character_FinishLoadGame g_Character_FinishLoadGame_Original = 0;
@@ -6536,16 +6452,17 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     MovementControllerNPC *movementController = GetMovementController(actor);
     if (!movementController) return;
 
-    if (Config::options.forceMotionDrivenDuringKeepOffset && !movementController->movementMotionDrivenControl.IsMotionDriven()) {
+    bool isPlannerDirectControl = movementController->isHighProcess && movementController->movementType == MovementControllerNPC::MovementType::kPlannerDirectControl && movementController->isPlannerDirectControl;
+    if (Config::options.forceMotionDrivenDuringKeepOffset && !isPlannerDirectControl) {
 #ifdef _DEBUG
         _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
 #endif // _DEBUG
         //static BSAnimationGraphEvent evnt{ "StartMotionDriven", nullptr, "" };
         //actor->animGraphEventSink.ReceiveEvent(&evnt, nullptr);
+        movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
+        movementController->movementPlannerDirectControl.SetPlannerDirectControl();
+        movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
     }
-
-    movementController->movementPlannerDirectControl.SetPlannerDirectControl();
-    movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
 
     //movementController->movementDirectControl.SetMovementSpeed(Config::options.keepOffsetMovementDirectionChangeSpeed);
     //NiPoint3 dir = ForwardVectorToEulerRot(VectorNormalized(actor->pos - (*g_thePlayer)->pos));
@@ -6559,32 +6476,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     //NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
     NiPoint3 offset = playerOffsetXY;
 
-    NiPoint3 forward = ForwardVector(refrTransform.rot);
-    NiPoint3 right = RightVector(refrTransform.rot);
-    //offset *= fabs(DotProduct(VectorNormalized(offset), forward));
-
-    {
-        NiTransform t;
-        t.pos = refrTransform.pos;
-        NiPoint3 vec = VectorNormalized(forward) * 200.f;
-        t.pos += (vec * 0.5f);
-        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-        t.scale = 1.f;
-        RegisterDebugTransform("ActorForward", { t, {1, 0, 0, 1} });
-    }
-
-    BGSMovementType__MaxSpeeds maxSpeeds; Actor_GetCurrentSpeedData(actor, maxSpeeds);
-    float walkLeftSpeed = maxSpeeds.Speeds[0][0];
-    float walkRightSpeed = maxSpeeds.Speeds[1][0];
-    float walkForwardSpeed = maxSpeeds.Speeds[2][0];
-    float walkBackSpeed = maxSpeeds.Speeds[3][0];
-    float maxSpeed = max(max(max(walkLeftSpeed, walkRightSpeed), walkForwardSpeed), walkBackSpeed);
-
-    float forwardAmt = DotProduct(VectorNormalized(playerOffsetXY), forward);
-    float rightAmt = DotProduct(VectorNormalized(playerOffsetXY), right);
-    float maxSpeedAmt = (forwardAmt > 0 ? walkForwardSpeed : walkBackSpeed) * fabs(forwardAmt) + (rightAmt > 0 ? walkRightSpeed : walkLeftSpeed) * fabs(rightAmt);
-    float speedProportion = maxSpeedAmt / maxSpeed;
 
     NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
     NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
@@ -6595,33 +6486,80 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
     }
 
-    NiPoint3 moveAmt = offset * speedProportion * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
+    NiPoint3 moveAmt = offset * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
 
     it->second.moveAmounts.pop_back();
     it->second.moveAmounts.push_front(moveAmt);
     //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
 
-    {
-        NiTransform t;
-        t.pos = refrTransform.pos;
-        NiPoint3 vec = (refrTransform.rot * moveAmt) * 50.f;
-        t.pos += (vec * 0.5f);
-        t.pos.z += 50.f;
-        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-        t.scale = 1.f;
-        RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
-    }
+    //{
+    //    NiTransform t;
+    //    t.pos = refrTransform.pos;
+    //    NiPoint3 vec = (refrTransform.rot * moveAmt) * 50.f;
+    //    t.pos += (vec * 0.5f);
+    //    t.pos.z += 50.f;
+    //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+    //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+    //    t.scale = 1.f;
+    //    RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
+    //}
 
     NiPoint3 moveAmtFromPlayerMovement = moveAmt;
 
 
 
-    NiPoint3 moveAmtFromRagdollInfluence = data.offset;
+    NiPoint3 moveAmtFromRagdollInfluence = data.isTranslate ? data.offset : NiPoint3();
 
 
 
     NiPoint3 finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+
+
+
+
+    NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
+
+
+
+    if (!IMovementState_CanStrafe(&actor->actorState)) {
+        // If they can't strafe, sideways movement actually induces weird motion and rotation, so only allow forward/backward movement
+
+        // TODO: What if each hand is grabbing different bones ???
+        NiPoint3 centroidToGrabbedNode = HkVectorToNiPoint(data.grabbedBoneAnimPoseWS.m_translation) - data.animCentroidWS;
+
+        NiPoint3 forward = ForwardVector(refrTransform.rot);
+        NiPoint3 right = RightVector(refrTransform.rot);
+
+        float lateralYawMult = 1.f;
+        if (DotProduct(centroidToGrabbedNode, forward) >= 0.f) {
+            lateralYawMult = -1.f;
+        }
+
+        NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
+        float rightDot = DotProduct(finalMoveAmt, right);
+        NiPoint3 lateralComponent = right * rightDot;
+        bool isRight = rightDot >= 0.f;
+        lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
+
+        offsetAngle.z += VectorLength(lateralComponent) * lateralYawMult * Config::options.dummyFloat4;
+
+        finalMoveAmt = forwardComponent;
+    }
+
+    {
+        NiPoint3 forward = ForwardVector(refrTransform.rot);
+
+        NiTransform t;
+        t.pos = actor->pos;
+        NiPoint3 vec = RotateVectorByAxisAngle(forward, { 0.f, 0.f, 1.f }, offsetAngle.z) * 70.f;
+        t.pos += (vec * 0.5f);
+        t.pos.z += 50.f;
+        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
+        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+        t.scale = 1.f;
+        RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
+    }
+
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
     NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(finalMoveAmt));
@@ -6629,20 +6567,12 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
     PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
 
-    //movementController->movementDirectControl.SetMovementSpeed(Config::options.dummyFloat1);
-    //if (speed > Config::options.keepOffsetDirectionLerpOutTime) {
-    //    movementController->movementDirectControl.SetMovementDirection(direction);
-    //}
-    //// TODO: Handle rotation properly like keepoffset would do
-    //NiPoint3 rotSpeed{};
-    //movementController->movementDirectControl.SetMovementRotationSpeed(rotSpeed);
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
     if (speed > Config::options.keepOffsetDirectionLerpOutTime) {
         movementController->movementPlannerDirectControl.SetTargetDirection(direction);
     }
-    // TODO: Handle rotation properly like keepoffset would do
-    //NiPoint3 targetAngle{};
-    NiPoint3 targetAngle = actor->rot + data.offsetAngle;
+
+    NiPoint3 targetAngle = actor->rot + offsetAngle; // TODO: Do we need to clamp angle to something here? Like -180 to 180 or 0 to 360?
     movementController->movementPlannerDirectControl.SetTargetAngle(targetAngle);
 
     data.prevSpeed = speed;
@@ -7078,11 +7008,6 @@ void PerformHooks(void)
     {
         g_PlayerCharacter_ModifyMovementData_Original = *PlayerCharacter_ModifyMovementData_vtbl;
         SafeWrite64(PlayerCharacter_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_ModifyMovementData_Hook));
-    }
-
-    {
-        g_MovementPlannerAgentKeepOffset_ModifyMovementData_Original = *MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl;
-        SafeWrite64(MovementPlannerAgentKeepOffset_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(MovementPlannerAgentKeepOffset_ModifyMovementData_Hook));
     }
 
     {

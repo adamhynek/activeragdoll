@@ -306,6 +306,7 @@ RelocAddr<_ActorProcess_ResetBumpWaitTimer> ActorProcess_ResetBumpWaitTimer(0x66
 RelocAddr<_Actor_CanBeKnockedDown> Actor_CanBeKnockedDown(0x5EB870);
 RelocAddr<_ActorState_DenormalizeSpeed> ActorState_DenormalizeSpeed(0x1120B10);
 RelocAddr<_ActorState_NormalizeSpeed> ActorState_NormalizeSpeed(0x1120AA0);
+RelocAddr<_IMovementState_CanStrafe> IMovementState_CanStrafe(0x1120930);
 RelocAddr<_Actor_GetCurrentSpeedData> Actor_GetCurrentSpeedData(0x610E10);
 RelocAddr<_ActorProcess_SetMovementSpeed> ActorProcess_SetMovementSpeed(0x6863E0);
 RelocAddr<_ActorProcess_GetMovementSpeed> ActorProcess_GetMovementSpeed(0x6863C0);

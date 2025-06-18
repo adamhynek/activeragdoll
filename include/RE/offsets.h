@@ -713,6 +713,9 @@ extern RelocAddr<_ActorState_DenormalizeSpeed> ActorState_DenormalizeSpeed;
 typedef float(*_ActorState_NormalizeSpeed)(ActorState *_this, float a_magnitude);
 extern RelocAddr<_ActorState_NormalizeSpeed> ActorState_NormalizeSpeed;
 
+typedef bool(*_IMovementState_CanStrafe)(IMovementState *_this);
+extern RelocAddr<_IMovementState_CanStrafe> IMovementState_CanStrafe;
+
 typedef void(*_ActorProcess_SetMovementSpeed)(ActorProcessManager *_this, float speed);
 extern RelocAddr<_ActorProcess_SetMovementSpeed> ActorProcess_SetMovementSpeed;
 

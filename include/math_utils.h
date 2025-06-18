@@ -75,6 +75,7 @@ inline float DotProductSafe(const NiQuaternion &q1, const NiQuaternion &q2) { re
 inline float QuaternionLength(const NiQuaternion &q) { return sqrtf(DotProduct(q, q)); }
 NiPoint3 VectorNormalized(const NiPoint3 &vec);
 NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
+float CrossProduct2D(const NiPoint3 &vec1, const NiPoint3 &vec2);
 NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta);
 NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat);
 NiPoint3 NiMatrixToEuler(NiMatrix33 &mat);
@@ -126,8 +127,8 @@ inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x +=
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }
 inline float AngleDifference(float angle1, float angle2)
 {
-    float diff = fmodf(angle2 - angle1 + 180.f, 360.f) - 180.f;
-    return diff < -180.f ? diff + 360.f : diff;
+    float diff = fmodf(angle2 - angle1 + M_PI, 2 * M_PI) - M_PI;
+    return diff < -M_PI ? diff + 2 * M_PI : diff;
 }
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);

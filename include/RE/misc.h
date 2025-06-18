@@ -398,11 +398,13 @@ struct MovementControllerAI : BSIntrusiveRefCounted
         IMovementInterface *interfacePtr; // 08
     };
 
-    UInt8 unk10[0x48 - 0x10]; // 10
+    BSTSmallArray<void *, 2> movementArbiters; // 10
+    BSTSmallArray<void *, 1> movementAgents; // 30
     BSTSmallArray<InterfaceEntry, 11> interfaces; // 48
     BSReadWriteLock interfacesLock; // 108
-    UInt64 unk110;
-    UInt64 unk118;
+    UInt32 formID; // 110
+    UInt32 pad114;
+    void *movementControllerNullDataTracker; // 118
 };
 static_assert(offsetof(MovementControllerAI, interfaces) == 0x48);
 static_assert(offsetof(MovementControllerAI, interfacesLock) == 0x108);
@@ -413,8 +415,8 @@ struct IMovementMotionDrivenControl : IMovementInterface
     ~IMovementMotionDrivenControl() override;  // 00
 
     // add
-    virtual void Unk_01(void);  // 01
-    virtual void Unk_02(void);  // 02
+    virtual void MoveToHigh(void);  // 01
+    virtual void MoveFromHigh(void);  // 02
     virtual void SetAnimationDriven(void);  // 03
     virtual void SetMotionDriven(void);  // 04
     virtual void SetAllowRotation(void);  // 05
@@ -452,6 +454,25 @@ struct IMovementPlannerDirectControl : IMovementInterface
 
 struct MovementControllerNPC : MovementControllerAI
 {
+    enum class MovementType : UInt32
+    {
+        kAnimationDriven = 0,
+        kMotionDrivenControls = 1,
+        kMotionDrivenLand = 2,
+        kMotionDrivenFlight = 3,
+        kAnimationDrivenAllowPlannerRotation = 4,
+        kAnimationDrivenAllowControlsRotation = 5,
+        kNodeFollowing = 6,
+        kDirectControl = 7,
+        kPlannerDirectControl = 8,
+        kAnimationDrivenAllowDirectControlRotation = 9,
+        kMotionDrivenLandLow = 10,
+        kMotionDrivenFlightLow = 11,
+        kStaticPathing = 12,
+        kKeepOffsetFromActor = 13,
+        kMotionDrivenHorseControls = 14
+    };
+
     IMovementInterface movementMessageInterface; // 120
     IMovementMotionDrivenControl movementMotionDrivenControl; // 128
     IMovementInterface movementSelectIdle; // 130
@@ -462,12 +483,15 @@ struct MovementControllerNPC : MovementControllerAI
     tArray<MovementMessageActorCollision *> movementMessages; // 158
     UInt8 unk170[0x1B8 - 0x170];
     Actor *actor; // 1B8
-    UInt32 flags; // 1C0
-    UInt32 unk1C4;
+    MovementType movementType; // 1C0
+    UInt8 isFlying; // 1C4
+    UInt8 isMotionDriven; // 1C5
+    UInt8 isDirectControl; // 1C6
+    UInt8 isPlannerDirectControl; // 1C7
     UInt8 unk1C8;
-    UInt8 unk1C9;
-    UInt8 unk1CA;
-    UInt8 keepOffsetFromActor; // 1CB
+    UInt8 isHighProcess; // 1C9
+    UInt8 isStaticPathing; // 1CA
+    UInt8 isKeepOffset; // 1CB
     UInt8 unk1CC;
     UInt8 unk1CD;
     UInt8 unk1CE;
@@ -476,6 +500,7 @@ struct MovementControllerNPC : MovementControllerAI
 static_assert(offsetof(MovementControllerNPC, movementMessageLock) == 0x150);
 static_assert(offsetof(MovementControllerNPC, movementMessages) == 0x158);
 static_assert(offsetof(MovementControllerNPC, actor) == 0x1B8);
+static_assert(offsetof(MovementControllerNPC, isHighProcess) == 0x1C9);
 static_assert(sizeof(MovementControllerNPC) == 0x1D0);
 
 enum class KnockState : UInt8

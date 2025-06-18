@@ -22,6 +22,11 @@ NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2)
     return result;
 }
 
+float CrossProduct2D(const NiPoint3 &vec1, const NiPoint3 &vec2)
+{
+    return { vec1.x * vec2.y - vec1.y - vec2.x };
+}
+
 NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta)
 {
     NiPoint3 a = axis;

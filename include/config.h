@@ -155,7 +155,8 @@ namespace Config {
 
         bool doKeepOffset = true;
         bool forceMotionDrivenDuringKeepOffset = true;
-        float keepOffsetMinAngleDifference = 0.25f;
+        float keepOffsetAngleStartThreshold = 0.25f;
+        float keepOffsetAngleStopThreshold = 0.25f;
         float keepOffsetAngleDifferenceMultiplier = 0.8f;
         float keepOffsetDirectionMultiplier = 1.f;
         float keepOffsetPlayerDirectionMultiplier = 1.f;
