@@ -23,6 +23,7 @@ struct ActiveRagdoll
     std::vector<hkQsTransform> lowResAnimPoseWS{};
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
+    std::vector<std::optional<NiQuaternion>> prevKeyframeBoneRots{};
     hkQsTransform worldFromModel{};
     hkQsTransform worldFromModelPostPhysics{};
     hkQsTransform stickyWorldFromModel{};

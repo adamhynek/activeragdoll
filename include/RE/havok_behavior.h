@@ -19,6 +19,7 @@
 #include <Physics/Collide/Query/Collector/PointCollector/hkpAllCdPointCollector.h>
 #include <Physics/Utilities/CharacterControl/StateMachine/hkpCharacterState.h>
 #include <Physics/Utilities/CharacterControl/StateMachine/hkpCharacterContext.h>
+#include <Common/Base/Container/Queue/hkQueue.h>
 
 #include "skse64_common/Relocation.h"
 #include "skse64/PapyrusVM.h"
@@ -148,9 +149,9 @@ static_assert(sizeof(hkbCharacter) == 0xA0);
 struct hkbContext
 {
     hkbCharacter *character; // 00
-    UInt64 unk08;
-    UInt64 unk10;
-    UInt64 unk18;
+    hkbBehaviorGraph *behaviorGraph; // 08
+    hkPointerMap<struct hkbNode *, int> *nodeToIndexMap; // 10
+    hkQueue<struct hkbEvent> *eventQueue; // 18
     UInt64 unk20;
     UInt64 unk28;
     bool success; // 30
@@ -185,6 +186,79 @@ static_assert(sizeof(hkbNode) == 0x48);
 
 struct hkbGenerator : hkbNode { /* TODO */ };
 struct hkbBehaviorGraph : hkbGenerator { /* TODO */ };
+
+struct hkbTransitionEffect : hkbGenerator
+{
+    UInt8 selfTransitionMode; // 48
+    UInt8 eventMode; // 49
+    UInt8 defaultEventMode; // 4A
+};
+static_assert(offsetof(hkbTransitionEffect, eventMode) == 0x49);
+
+struct hkbBlendingTransitionEffect : hkbTransitionEffect
+{
+    float duration; // 50
+    float toGeneratorStartTimeFraction; // 54
+    UInt16 flags; // 58
+    UInt8 endMode; // 5A
+    UInt8 blendCurve; // 5B
+    UInt16 alignmentBone; // 5C
+    hkbGenerator *fromGenerator; // 60
+    hkbGenerator *toGenerator; // 68
+    hkArray<hkQsTransform> worldFromModelTransforms; // 70 - from, to, last ?
+    float timeRemaining; // 80
+    float timeInTransition; // 84
+    bool applySelfTransition; // 88
+    bool initializeCharacterPose; // 89
+};
+static_assert(offsetof(hkbBlendingTransitionEffect, fromGenerator) == 0x60);
+
+struct BSCyclicBlendTransitionGenerator : hkbGenerator
+{
+    enum class State : SInt8
+    {
+        Invalid = -1,
+        None = 0,
+        Freeze = 1,
+        CrossBlend = 2,
+        CrossBlendStart = 3,
+    };
+
+    UInt32 unk48;
+    hkbGenerator *generator; // 50
+    UInt32 freezeEventId; // 58
+    UInt32 pad5C;
+    UInt64 unk60;
+    UInt32 crossBlendEventId; // 64
+    UInt32 pad6C;
+    UInt64 unk70;
+    float blendParamater; // 78
+    float transitionDuration; // 7C
+    UInt8 unk80;
+    UInt32 pad84;
+    UInt64 unk88;
+    hkbGenerator *clonedGenerator; // 90
+    UInt64 unk98;
+    hkbBlendingTransitionEffect *blendingTransitionEffect; // A0
+    State state; // A8
+};
+static_assert(offsetof(BSCyclicBlendTransitionGenerator, state) == 0xA8);
+
+struct hkbEventPayload : hkReferencedObject {};
+
+struct hkbEventBase
+{
+    UInt32 id; // 00
+    UInt32 pad04; // 04
+    hkbEventPayload *payload; // 08
+};
+
+struct hkbEventProperty : hkbEventBase {};
+
+struct hkbEvent : hkbEventBase
+{
+    hkRefVariant sender; // 10
+};
 
 struct bhkCharacterController : NiRefObject
 {
@@ -543,6 +617,17 @@ struct hkbGeneratorOutput
 
     struct Tracks *m_tracks; // 00
     bool m_deleteTracks; // 08
+};
+
+struct hkbProjectData
+{
+    void *vtbl; // 00
+    UInt16 m_memSizeAndFlags_8;
+    SInt16 m_referenceCount_A;
+    UInt32 pad0C;
+    hkVector4 m_worldUpWS; // 10
+    struct hkbProjectStringData *m_stringData; // 20
+    hkInt8 m_defaultEventMode; // 28
 };
 
 struct hkbFootIkDriver : hkReferencedObject

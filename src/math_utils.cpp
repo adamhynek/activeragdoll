@@ -49,6 +49,31 @@ NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta)
     return result;
 }
 
+std::pair<NiPoint3, float> MatrixToAxisAngle(const NiMatrix33 &mat)
+{
+    NiPoint3 axis;
+    float trace = mat.data[0][0] + mat.data[1][1] + mat.data[2][2];
+    float value = (trace - 1.0f) / 2.0f;
+    float angle = acosf(std::clamp(value, -1.0f, 1.0f));
+
+    if (fabsf(angle) < 0.00001f) {
+        return { NiPoint3(0, 0, 1), 0.0f };
+    }
+
+    axis.x = mat.data[2][1] - mat.data[1][2];
+    axis.y = mat.data[0][2] - mat.data[2][0];
+    axis.z = mat.data[1][0] - mat.data[0][1];
+
+    float length = VectorLength(axis);
+    if (length < 0.00001f) {
+        // Handle special 180-degree case if needed
+        return { NiPoint3(0, 0, 1), angle };
+    }
+
+    axis /= length;
+    return { axis, angle };
+}
+
 NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat)
 {
     NiPoint3 euler;
@@ -133,6 +158,31 @@ NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, f
     // Rodrigues' rotation formula
     float cosTheta = cosf(angle);
     return vector * cosTheta + (CrossProduct(axis, vector) * sinf(angle)) + axis * DotProduct(axis, vector) * (1.0f - cosTheta);
+}
+
+NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec)
+{
+    NiPoint3 qreal = { quat.m_fW, quat.m_fW, quat.m_fW };
+    NiPoint3 q2minus1 = NiPoint3(qreal.x * qreal.x, qreal.y * qreal.y, qreal.z * qreal.z) - NiPoint3(0.5, 0.5, 0.5);
+
+    NiPoint3 ret;
+    //ret.setMul4(q2minus1, direction);
+    ret = { q2minus1.x * vec.x, q2minus1.y * vec.y, q2minus1.z * vec.z };
+
+    //hkReal imagDotDir = quat.getImag().dot3(direction);
+    float imagDotDir = DotProduct({ quat.m_fX, quat.m_fY, quat.m_fZ }, vec);
+
+    //ret.addMul4(imagDotDir, quat.getImag());
+    ret += {quat.m_fX *imagDotDir, quat.m_fY *imagDotDir, quat.m_fZ *imagDotDir};
+
+    NiPoint3 imagCrossDir;
+    //imagCrossDir.setCross(quat.getImag(), direction);
+    imagCrossDir = CrossProduct({ quat.m_fX, quat.m_fY, quat.m_fZ }, vec);
+    //ret.addMul4(qreal, imagCrossDir);
+    ret += {qreal.x *imagCrossDir.x, qreal.y *imagCrossDir.y, qreal.z *imagCrossDir.z};
+
+    //this->setAdd4(ret, ret);
+    return ret + ret;
 }
 
 NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal)
@@ -295,20 +345,23 @@ NiQuaternion QuaternionInverse(const NiQuaternion &q)
     return inverse;
 }
 
+NiQuaternion lerp(const NiQuaternion &a, const NiQuaternion &b, float t)
+{
+    // Linear interpolation between two quaternions
+    NiQuaternion result;
+    result.m_fW = a.m_fW + t * (b.m_fW - a.m_fW);
+    result.m_fX = a.m_fX + t * (b.m_fX - a.m_fX);
+    result.m_fY = a.m_fY + t * (b.m_fY - a.m_fY);
+    result.m_fZ = a.m_fZ + t * (b.m_fZ - a.m_fZ);
+    return QuaternionNormalized(result);
+}
+
 NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t)
 {
     // quaternion to return
     NiQuaternion qm;
     // Calculate angle between them.
     float cosHalfTheta = DotProduct(qa, qb);
-    // if qa=qb or qa=-qb then theta = 0 and we can return qb
-    if (fabs(cosHalfTheta) >= 0.99999) { // I actually experimentally determined this value. The value where I got this code was 0.9995 which is way too low for small angles
-        qm.m_fW = qb.m_fW;
-        qm.m_fX = qb.m_fX;
-        qm.m_fY = qb.m_fY;
-        qm.m_fZ = qb.m_fZ;
-        return qm;
-    }
 
     // If the dot product is negative, slerp won't take
     // the shorter path. Note that qb and -qb are equivalent when
@@ -321,6 +374,11 @@ NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t)
         q2.m_fY *= -1;
         q2.m_fZ *= -1;
         cosHalfTheta *= -1;
+    }
+
+    // if qa=qb or qa=-qb then theta = 0 and we can return qb
+    if (fabs(cosHalfTheta) >= 0.99999) { // I actually experimentally determined this value. The value where I got this code was 0.9995 which is way too low for small angles
+        return lerp(qa, q2, t);
     }
 
     // Calculate temporary values.
@@ -343,6 +401,62 @@ NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t)
     qm.m_fY = (qa.m_fY * ratioA + q2.m_fY * ratioB);
     qm.m_fZ = (qa.m_fZ * ratioA + q2.m_fZ * ratioB);
     return qm;
+}
+
+NiQuaternion continuousSlerp(
+    const NiQuaternion &qa,
+    const NiQuaternion &qb,
+    double t,
+    const NiQuaternion &qPrev
+) {
+    NiQuaternion qA = qa;
+    NiQuaternion qB = qb;
+
+    if (DotProduct(qPrev, qA) < 0.f) {
+        qA.m_fW = -qA.m_fW;
+        qA.m_fX = -qA.m_fX;
+        qA.m_fY = -qA.m_fY;
+        qA.m_fZ = -qA.m_fZ;
+    }
+
+    // only flip if it would break continuity
+    if (DotProduct(qPrev, qB) < 0.f) {
+        qB.m_fW = -qB.m_fW;
+        qB.m_fX = -qB.m_fX;
+        qB.m_fY = -qB.m_fY;
+        qB.m_fZ = -qB.m_fZ;
+    }
+
+    float cosHalfTheta = DotProduct(qA, qB);
+
+    if (fabs(cosHalfTheta) >= 0.99999f) {
+        return lerp(qA, qB, t);
+    }
+
+    float halfTheta = acosf(cosHalfTheta);
+    float sinHalfTheta = sqrtf(1.f - cosHalfTheta * cosHalfTheta);
+
+    if (sinHalfTheta < 0.001f) {
+        NiQuaternion qr;
+        qr.m_fW = 0.5f * (qA.m_fW + qB.m_fW);
+        qr.m_fX = 0.5f * (qA.m_fX + qB.m_fX);
+        qr.m_fY = 0.5f * (qA.m_fY + qB.m_fY);
+        qr.m_fZ = 0.5f * (qA.m_fZ + qB.m_fZ);
+        return qr;
+    }
+
+    // standard slerp
+    float invSin = 1.f / sinHalfTheta;
+    float a = sinf((1.f - t) * halfTheta) * invSin;
+    float b = sinf(t * halfTheta) * invSin;
+
+    NiQuaternion qr;
+    qr.m_fW = qA.m_fW * a + qB.m_fW * b;
+    qr.m_fX = qA.m_fX * a + qB.m_fX * b;
+    qr.m_fY = qA.m_fY * a + qB.m_fY * b;
+    qr.m_fZ = qA.m_fZ * a + qB.m_fZ * b;
+
+    return qr;
 }
 
 hkQsTransform lerphkQsTransform(hkQsTransform &a, hkQsTransform &b, double t)

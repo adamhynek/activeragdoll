@@ -77,12 +77,14 @@ NiPoint3 VectorNormalized(const NiPoint3 &vec);
 NiPoint3 CrossProduct(const NiPoint3 &vec1, const NiPoint3 &vec2);
 float CrossProduct2D(const NiPoint3 &vec1, const NiPoint3 &vec2);
 NiMatrix33 MatrixFromAxisAngle(const NiPoint3 &axis, float theta);
+std::pair<NiPoint3, float> MatrixToAxisAngle(const NiMatrix33 &mat);
 NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat);
 NiPoint3 NiMatrixToEuler(NiMatrix33 &mat);
 NiPoint3 MatrixToEuler(const NiMatrix33 &mat);
 NiMatrix33 EulerToMatrix(const NiPoint3 &euler);
 NiMatrix33 MatrixFromForwardVector(NiPoint3 &forward, NiPoint3 &world);
 NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, float angle);
+NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
 NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal);
 void NiMatrixToHkMatrix(const NiMatrix33 &niMat, hkMatrix3 &hkMat);
 void HkMatrixToNiMatrix(const hkMatrix3 &hkMat, NiMatrix33 &niMat);
@@ -112,6 +114,8 @@ NiQuaternion QuaternionMultiply(const NiQuaternion &q, float multiplier);
 NiQuaternion QuaternionInverse(const NiQuaternion &q);
 inline float QuaternionAngle(const NiQuaternion &qa, const NiQuaternion &qb) { return 2.f * acosf(abs(DotProductSafe(qa, qb))); }
 NiQuaternion slerp(const NiQuaternion &qa, const NiQuaternion &qb, double t);
+NiQuaternion continuousSlerp(const NiQuaternion &qa, const NiQuaternion &qb, double t, const NiQuaternion &qPrev);
+NiQuaternion lerp(const NiQuaternion &a, const NiQuaternion &b, float t);
 inline NiPoint3 lerp(const NiPoint3 &a, const NiPoint3 &b, float t) { return a * (1.f - t) + b * t; }
 inline float lerp(float a, float b, float t) { return a * (1.f - t) + b * t; }
 inline double lerp(double a, double b, double t) { return a * (1.0 - t) + b * t; }
@@ -123,6 +127,7 @@ float AdvanceFloat(float a, float b, float speed, float *deltaOut);
 NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoint3 *deltaOut);
 NiMatrix33 AdvanceRotation(const NiMatrix33 &a, const NiMatrix33 &b, float speed, NiMatrix33 *deltaOut = nullptr);
 inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
+inline NiPoint3 ConstrainAngle180(const NiPoint3 &euler) { return { ConstrainAngle180(euler.x), ConstrainAngle180(euler.y), ConstrainAngle180(euler.z) }; }
 inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }
 inline float ConstrainAngleNegative360(float x) { return -ConstrainAngle360(-x); }
 inline float AngleDifference(float angle1, float angle2)

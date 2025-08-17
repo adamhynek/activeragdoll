@@ -160,6 +160,7 @@ namespace Config {
         float keepOffsetAngleStartThresholdNoStrafe = 0.25f;
         float keepOffsetAngleStopThresholdNoStrafe = 0.25f;
         float keepOffsetAngleDifferenceMultiplier = 0.8f;
+        float keepOffsetMinCentroidDistanceForLateralYaw = 0.2f;
         float keepOffsetDirectionMultiplier = 1.f;
         float keepOffsetPlayerDirectionMultiplier = 1.f;
         float keepOffsetCatchUpRadius = 150.f;
@@ -172,7 +173,8 @@ namespace Config {
         float keepOffsetSpeedReductionInActorDirectionActor = 0.5f;
         float keepOffsetStartThreshold = 10.f;
         float keepOffsetStopThreshold = 5.f;
-        double keepOffsetDirectionLerpOutTime = 0.1;
+        float keepOffsetSpeedDirectionCutoff = 0.1;
+        float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
         float keepOffsetSpeedCalcSmoothingTime = 0.3f;
         float keepOffsetMovementDirectionChangeSpeed = 0.1f;
 

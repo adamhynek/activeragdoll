@@ -719,6 +719,14 @@ bool ShouldKeepOffset(Actor *actor)
 
 struct KeepOffsetData
 {
+    enum class TranslateState
+    {
+        NotMoving,
+        PlayerMovementOnly,
+        RagdollMovementOnly,
+        PlayerAndRagdoll,
+    };
+
     UInt32 target;
     NiPoint3 offset;
     NiPoint3 offsetAngle;
@@ -726,11 +734,13 @@ struct KeepOffsetData
     float followRadius;
     NiPoint3 endMovementDirection;
     double endMovementTime = 0.0;
-    std::deque<NiPoint3> moveAmounts{ 500, NiPoint3() };
     std::deque<NiPoint3> offsets{ 500, NiPoint3() };
-    hkQsTransform grabbedBoneAnimPoseWS{};
+    std::deque<NiPoint3> speeds{ 500, NiPoint3() };
+    hkQsTransform grabbedBoneAnimPoseWS{}; // TODO: Probably one for each hand
+    NiPoint3 handPosOnGrabbedNode{}; // TODO: Probably one for each hand
     NiPoint3 animCentroidWS{};
-    bool isTranslate = false;
+    NiPoint3 ragdollCentroidWS{};
+    TranslateState translateState = TranslateState::NotMoving;
     bool isRotate = false;
     float prevSpeed = 0.f;
     NiPoint3 prevDirection{};
@@ -3312,7 +3322,7 @@ bool AddRagdollToWorld(Actor *actor)
                     if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
                         g_activeActors.insert(actor);
 
-                        std::shared_ptr<ActiveRagdoll> activeRagdoll(new ActiveRagdoll());
+                        std::shared_ptr<ActiveRagdoll> activeRagdoll = std::make_shared<ActiveRagdoll>();
                         g_activeRagdolls[driver] = activeRagdoll;
 
                         if (Config::options.blendInWhenAddingToWorld) {
@@ -3990,6 +4000,25 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                                     //    offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
                                     //}
 
+                                    {
+                                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                                        NiTransform nodeToHand = InverseTransform(handToNode);
+
+                                        NiTransform rbPose = heldNode->m_worldTransform;
+                                        NiTransform handOnRbPose = rbPose * nodeToHand;
+                                        data.handPosOnGrabbedNode = handOnRbPose.pos;
+
+#ifdef _DEBUG
+                                        {
+                                            NiTransform t;
+                                            t.pos = data.handPosOnGrabbedNode;
+                                            t.scale = 1.f;
+                                            RegisterDebugTransform("asdf", { t, {0, 0, 1, 1} });
+                                        }
+                                    }
+#endif
+
+
                                     NiPoint3 displacement = GetTotalDisplacement(actor);
                                     NiPoint3 displacementXY = { displacement.x, displacement.y, 0.f };
                                     //offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
@@ -3997,7 +4026,7 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
 
                                     {
                                         NiTransform t;
-                                        t.pos = t.pos = actor->pos;;
+                                        t.pos = t.pos = actor->pos;
                                         NiPoint3 vec = displacementXY * 10.f;
                                         t.pos += (vec * 0.5f);
                                         t.pos.z += 50.f;
@@ -4036,16 +4065,6 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         //PrintVector(avgOffsetWS);
                         //PrintVector(offset);
 
-                        // To prevent oscillation between on/off, we start and stop actually keeping offset at different thresholds
-                        if (!data.isTranslate && VectorLength(offset) >= Config::options.keepOffsetStartThreshold) {
-                            data.isTranslate = true;
-                        }
-                        else if (data.isTranslate && VectorLength(offset) < Config::options.keepOffsetStopThreshold) {
-                            data.isTranslate = false;
-                        }
-
-                        offset *= Config::options.keepOffsetDirectionMultiplier;
-
                         //{
                         //    NiTransform t;
                         //    t.pos = refrTransform.pos;
@@ -4073,7 +4092,7 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         //else if (data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) < Config::options.keepOffsetAngleStopThreshold) {
                         //    data.isRotate = false;
                         //}
-                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle) * Config::options.keepOffsetAngleDifferenceMultiplier;
+                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle);
 
                         PrintToFile(std::to_string(ragdoll->rootOffsetAngle), "rootOffsetAngle");
                         PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
@@ -4154,6 +4173,7 @@ void UpdateHiggsInfo(bhkWorld *world)
     }
 }
 
+int g_frameAlternate = 1;
 
 _ProcessHavokHitJobs ProcessHavokHitJobs_Original = 0;
 void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
@@ -4174,6 +4194,11 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
 #ifdef _DEBUG
     Config::ReloadIfModified();
+#endif // _DEBUG
+
+#ifdef _DEBUG
+    g_frameAlternate = g_frameAlternate == 1 ? -1 : 1;
+    PrintToFile(std::to_string(g_frameAlternate), "frame.txt");
 #endif // _DEBUG
 
     g_currentFrameTime = GetTime();
@@ -4763,6 +4788,83 @@ PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
 
 
 
+
+
+
+struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
+{
+    hkQsTransform bodyWorld; // 00
+    hkQsTransform poseWorld; // 30
+};
+
+void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeDataEx(
+    const hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData,
+    std::vector<std::optional<NiQuaternion>> *qPrevs = nullptr
+)
+{
+    for (int i = 0; i < a_bodyData->m_numRigidBodies; i++) {
+        int parentIndex = a_bodyData->m_parentIndices[i];
+        const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].poseWorld;
+
+        hkQsTransform poseWorld; poseWorld.setMul(parentPose, a_desiredPoseLocal[i]);
+        a_applyKeyframeData[i].poseWorld = poseWorld;
+
+        hkVector4 translation = poseWorld.m_translation;
+        hkQuaternion rotation = poseWorld.m_rotation;
+
+
+        int controlDataIndex = a_bodyData->m_controlDataIndices ? a_bodyData->m_controlDataIndices[i] : 0;
+        if (controlDataIndex == -1) continue;
+
+        hkaKeyFrameHierarchyUtility::ControlData &controlData = a_controlPalette[controlDataIndex];
+        float hierarchyGain = controlData.m_hierarchyGain;
+        if (a_bodyData->m_boneWeights) {
+            hierarchyGain *= a_bodyData->m_boneWeights[i];
+        }
+
+        if (hierarchyGain > 0.f && parentIndex >= 0) {
+            hkpRigidBody *parentBody = a_bodyData->m_rigidBodies[parentIndex];
+
+            hkQsTransform parentBodyTransform;
+            parentBodyTransform.m_translation = parentBody->getPosition();
+            parentBodyTransform.m_rotation = parentBody->getRotation();
+
+            hkQsTransform transformedLocal; transformedLocal.setMul(parentBodyTransform, a_desiredPoseLocal[i]);
+
+            NiQuaternion newRot;
+            if (qPrevs) {
+                std::optional<NiQuaternion> &qPrev = (*qPrevs)[i];
+                if (!qPrev.has_value()) {
+                    qPrev = HkQuatToNiQuat(rotation);
+                }
+                newRot = continuousSlerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain, *qPrev);
+                qPrev = newRot; // Store the new rotation for the next frame
+            }
+            else {
+                newRot = slerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain);
+            }
+
+            rotation = NiQuatToHkQuat(newRot);
+            translation = NiPointToHkVector(lerp(HkVectorToNiPoint(translation), HkVectorToNiPoint(transformedLocal.m_translation), hierarchyGain));
+        }
+
+        NiPoint3 centerOfMassLocal = HkVectorToNiPoint(a_bodyData->m_rigidBodies[i]->getCenterOfMassLocal());
+
+        hkQsTransform bodyWorld;
+        bodyWorld.m_translation = NiPointToHkVector(HkVectorToNiPoint(translation) + RotateVectorByQuaternion(HkQuatToNiQuat(rotation), centerOfMassLocal));
+        bodyWorld.m_rotation = rotation;
+        bodyWorld.m_scale.setAll(0.f);
+
+        a_applyKeyframeData[i].bodyWorld = bodyWorld;
+    }
+}
+
+
+
+
+
+
+
 struct SavedConstraintData
 {
     NiPoint3 pivotA;
@@ -4773,6 +4875,8 @@ struct SavedConstraintData
     float twistMinAngle;
     float twistMaxAngle;
 };
+
+std::shared_ptr<ActiveRagdoll> g_currentlyDrivingRagdoll = nullptr;
 
 void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
 {
@@ -4788,6 +4892,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
     std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver);
     if (!ragdoll) return;
+
+    g_currentlyDrivingRagdoll = ragdoll;
 
     /*
     NiPoint3 rootBoneMappingTranslation = { 0.f, 0.f, 0.f };
@@ -5274,6 +5380,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                         ragdoll->rootOffset = fit.offsetXY;
                                         ragdoll->rootOffsetAngle = fit.yawRad;
                                         data.animCentroidWS = fit.restCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
+                                        data.ragdollCentroidWS = fit.physCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
 
                                         {
                                             NiTransform t;
@@ -5597,6 +5704,8 @@ void DriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbContex
     PreDriveToPoseHook(driver, deltaTime, context, generatorOutput);
     hkbRagdollDriver_driveToPose_Original(driver, deltaTime, context, generatorOutput);
     PostDriveToPoseHook(driver, deltaTime, context, generatorOutput);
+
+    g_currentlyDrivingRagdoll = nullptr; // set in PreDriveToPoseHook
 }
 
 _hkbRagdollDriver_postPhysics hkbRagdollDriver_postPhysics_Original = 0;
@@ -6241,6 +6350,29 @@ void PlayerCharacter_ModifyMovementData_Hook(PlayerCharacter *player, float a_de
     }
 }
 
+// hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData
+typedef void(*_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)(hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData);
+_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = 0;
+RelocAddr<uintptr_t> hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc(0xBA3B36);
+void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData)
+{
+    if (g_currentlyDrivingRagdoll) {
+        if (g_currentlyDrivingRagdoll->prevKeyframeBoneRots.size() != a_bodyData->m_numRigidBodies) {
+            // First time we see this bodyData, initialize the vector
+            std::vector<std::optional<NiQuaternion>> prevBoneRots(a_bodyData->m_numRigidBodies);
+            for (UInt32 i = 0; i < a_bodyData->m_numRigidBodies; i++) {
+                prevBoneRots[i] = {};
+            }
+            g_currentlyDrivingRagdoll->prevKeyframeBoneRots = prevBoneRots;
+        }
+
+        hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeDataEx(a_desiredPoseLocal, a_bodyData, a_controlPalette, a_keyframeData, a_applyKeyframeData, &g_currentlyDrivingRagdoll->prevKeyframeBoneRots);
+    }
+    else {
+        hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original(a_desiredPoseLocal, a_bodyData, a_controlPalette, a_keyframeData, a_applyKeyframeData);
+    }
+}
+
 
 struct MovementVector
 {
@@ -6488,10 +6620,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     NiPoint3 moveAmt = offset * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
 
-    it->second.moveAmounts.pop_back();
-    it->second.moveAmounts.push_front(moveAmt);
-    //NiPoint3 smoothedMoveAmt = GetAverageVector(it->second.moveAmounts, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
-
     //{
     //    NiTransform t;
     //    t.pos = refrTransform.pos;
@@ -6507,45 +6635,113 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     NiPoint3 moveAmtFromPlayerMovement = moveAmt;
 
 
+    bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
+    bool isRagdollMovementStart = VectorLength(data.offset) >= Config::options.keepOffsetStartThreshold;
+    bool isRagdollMovementStop = VectorLength(data.offset) < Config::options.keepOffsetStopThreshold;
 
-    NiPoint3 moveAmtFromRagdollInfluenceRaw = data.offset;
-    NiPoint3 moveAmtFromRagdollInfluence = data.isTranslate ? moveAmtFromRagdollInfluenceRaw : NiPoint3();
-
-
-
+    NiPoint3 moveAmtFromRagdollInfluenceRaw = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
     NiPoint3 finalMoveAmtRaw = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
-    NiPoint3 finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+    NiPoint3 finalMoveAmt = finalMoveAmtRaw;
 
+    if (data.translateState == KeepOffsetData::TranslateState::NotMoving) {
+        if (isPlayerMoving && isRagdollMovementStart) {
+            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
+        }
+        else if (!isPlayerMoving && isRagdollMovementStart) {
+            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
+        }
+        else if (isPlayerMoving) {
+            data.translateState = KeepOffsetData::TranslateState::PlayerMovementOnly;
+        }
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::PlayerMovementOnly) {
+        if (isPlayerMoving && isRagdollMovementStart) {
+            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
+        }
+        else if (!isPlayerMoving && isRagdollMovementStart) {
+            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
+        }
+        else if (!isPlayerMoving && isRagdollMovementStop) {
+            data.translateState = KeepOffsetData::TranslateState::NotMoving;
+        }
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::RagdollMovementOnly) {
+        if (isPlayerMoving && !isRagdollMovementStop) {
+            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
+        }
+        else if (isPlayerMoving) {
+            data.translateState = KeepOffsetData::TranslateState::PlayerMovementOnly;
+        }
+        else if (isRagdollMovementStop) {
+            data.translateState = KeepOffsetData::TranslateState::NotMoving;
+        }
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
+        if (!isPlayerMoving && !isRagdollMovementStop) {
+            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
+        }
+        else if (!isPlayerMoving && isRagdollMovementStop) {
+            data.translateState = KeepOffsetData::TranslateState::NotMoving;
+        }
+    }
+
+    if (data.translateState == KeepOffsetData::TranslateState::NotMoving) {
+        finalMoveAmt = { 0.f, 0.f, 0.f };
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
+        // If we are moving both the player and the ragdoll, we apply both movements
+        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::PlayerMovementOnly) {
+        // If we are only moving the player, we don't want to apply the offset
+        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
+    }
+    else if (data.translateState == KeepOffsetData::TranslateState::RagdollMovementOnly) {
+        // If we are only moving the ragdoll, we don't want to apply the player movement
+        finalMoveAmt = moveAmtFromRagdollInfluenceRaw;
+    }
 
 
 
     //NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
-    NiPoint3 offsetAngle = data.offsetAngle;
+    NiPoint3 offsetAngle = data.offsetAngle * Config::options.keepOffsetAngleDifferenceMultiplier;
 
 
     float angleStartThreshold = Config::options.keepOffsetAngleStartThreshold;
     float angleStopThreshold = Config::options.keepOffsetAngleStopThreshold;
 
+    float headingAdd = 0.f;
+
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually induces weird motion and rotation, so only allow forward/backward movement
 
-        // TODO: What if each hand is grabbing different bones ???
-        NiPoint3 centroidToGrabbedNode = HkVectorToNiPoint(data.grabbedBoneAnimPoseWS.m_translation) - data.animCentroidWS;
-
         NiPoint3 forward = ForwardVector(refrTransform.rot);
-        NiPoint3 right = RightVector(refrTransform.rot);
 
-        float lateralYawMult = 1.f;
-        if (DotProduct(centroidToGrabbedNode, forward) >= 0.f) {
-            lateralYawMult = -1.f;
+        // TODO: What if each hand is grabbing different bones ???
+        NiPoint3 centroidToGrabbedNode = HkVectorToNiPoint(data.grabbedBoneAnimPoseWS.m_translation) - data.animCentroidWS; // anim centroid - havok coords
+        
+        // TODO: We could make this a "percent of the size of the creature" instead of a fixed value
+        NiPoint3 centroidToHandOnNode = (data.handPosOnGrabbedNode * *g_havokWorldScale) - data.ragdollCentroidWS; // physics centroid - havok coords
+        float centroidToHandOnNodeLengthAlongForward = fabsf(DotProduct(centroidToHandOnNode, forward));
+
+        PrintToFile(std::to_string(centroidToHandOnNodeLengthAlongForward), "keepOffsetCentroidToGrabbedNodeXY.txt");
+
+        if (centroidToHandOnNodeLengthAlongForward >= Config::options.keepOffsetMinCentroidDistanceForLateralYaw) {
+            NiPoint3 right = RightVector(refrTransform.rot);
+
+            float lateralYawMult = 1.f;
+            if (DotProduct(centroidToGrabbedNode, forward) >= 0.f) {
+                lateralYawMult = -1.f;
+            }
+
+            // TODO: Full player movement contributing to lateral feels like too much right now.
+            float rightDotRaw = DotProduct(finalMoveAmtRaw, right);
+            NiPoint3 lateralComponentRaw = right * rightDotRaw;
+            bool isRight = rightDotRaw >= 0.f;
+            lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
+
+            offsetAngle.z += VectorLength(lateralComponentRaw) * lateralYawMult * Config::options.dummyFloat4;
         }
-
-        float rightDotRaw = DotProduct(finalMoveAmtRaw, right);
-        NiPoint3 lateralComponentRaw = right * rightDotRaw;
-        bool isRight = rightDotRaw >= 0.f;
-        lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
-
-        offsetAngle.z += VectorLength(lateralComponentRaw) * lateralYawMult * Config::options.dummyFloat4;
 
         NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
         finalMoveAmt = forwardComponent;
@@ -6553,6 +6749,32 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         // start/end 0.15/0.05, yawmult 1.0, anglediffmult -0.25 feel good for quadrupeds right now
         angleStartThreshold = Config::options.keepOffsetAngleStartThresholdNoStrafe;
         angleStopThreshold = Config::options.keepOffsetAngleStopThresholdNoStrafe;
+    }
+    else {
+        // Can Strafe
+
+        float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
+
+        if (playerMovementAmt > Config::options.keepOffsetMinPlayerMoveAmtForHeading) {
+            NiPoint3 playerMovementDirection = VectorNormalized(moveAmtFromPlayerMovement);
+
+            float currentHeading = actor->rot.z;
+
+            float movementHeading = GetHeadingFromVector(playerMovementDirection);
+            float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
+
+            float movementHeadingDiff = ConstrainAngle180(movementHeading - currentHeading);
+            float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
+
+            if (fabsf(movementHeadingDiff) < fabsf(movementHeadingOppositeDiff)) {
+                // Player is moving in the same direction as the actor's current heading
+                headingAdd = movementHeadingDiff * Config::options.dummyFloat0 * *g_deltaTime;
+            }
+            else {
+                // Player is moving in the opposite direction of the actor's current heading
+                headingAdd = movementHeadingOppositeDiff * Config::options.dummyFloat0 * *g_deltaTime;
+            }
+        }
     }
 
     {
@@ -6581,27 +6803,40 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         offsetAngle = { 0.f, 0.f, 0.f };
     }
 
+    // Always add headingAdd, even if not over the threshold
+    offsetAngle.z += headingAdd;
 
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
     NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(finalMoveAmt));
 
+    // TODO: This is stupid, we need a more nuanced way to go from player movement to player+ragdoll.
+    NiPoint3 rawSpeed = VectorNormalized(finalMoveAmt) * speed;
+    it->second.speeds.pop_back();
+    it->second.speeds.push_front(rawSpeed);
+    NiPoint3 smoothedSpeed = GetAverageVector(it->second.speeds, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
+    speed = VectorLength(smoothedSpeed);
+    direction = ForwardVectorToEulerRot(VectorNormalized(smoothedSpeed));
+
+
+    //speed = 0.7f; // TODO: Remove
+    //direction = ForwardVectorToEulerRot(ForwardVector(refrTransform.rot)); // TODO: Remove
+
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
     PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
 
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
-    if (speed > Config::options.keepOffsetDirectionLerpOutTime) {
+    if (speed > Config::options.keepOffsetSpeedDirectionCutoff) {
         movementController->movementPlannerDirectControl.SetTargetDirection(direction);
     }
 
-    NiPoint3 targetAngle = actor->rot + offsetAngle; // TODO: Do we need to clamp angle to something here? Like -180 to 180 or 0 to 360?
+    NiPoint3 targetAngle = ConstrainAngle180(actor->rot + offsetAngle);
     movementController->movementPlannerDirectControl.SetTargetAngle(targetAngle);
 
     data.prevSpeed = speed;
     data.prevDirection = direction;
 }
 
-// MovementPlannerArbiter ActorState::CalculateSpeedsWithAcceleration
 struct IMovementParameters
 {
     virtual ~IMovementParameters() = 0; // 0
@@ -6731,6 +6966,53 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
 }
 
 
+typedef void(*_MovementUtils_DampenMovementVector)(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut);
+_MovementUtils_DampenMovementVector MovementUtils_DampenMovementVector_Original = 0;
+RelocAddr<uintptr_t> MovementUtils_DampenMovementVector_HookLoc(0x1169D69);
+void MovementUtils_DampenMovementVector_Hook(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut)
+{
+    MovementUtils_DampenMovementVector_Original(currentMoveVec, desiredMoveVec, acceleratedRunSpeed, deceleratedRunSpeed, rotSpeedUnclamped, deltaTime, moveVecOut);
+
+    if (deceleratedRunSpeed > 10000) {
+        PrintToFile(std::to_string(currentMoveVec->eulerRot.z), "currentMovementVectorEulerZ.txt");
+        PrintToFile(std::to_string(currentMoveVec->magnitude), "currentMovementVectorEulerMag.txt");
+        PrintToFile(std::to_string(desiredMoveVec->eulerRot.z), "desiredMovementVectorEulerZ.txt");
+        PrintToFile(std::to_string(desiredMoveVec->magnitude), "desiredMovementVectorEulerMag.txt");
+        PrintToFile(std::to_string(moveVecOut->eulerRot.z), "dampenedMovementVectorEulerZ.txt");
+        PrintToFile(std::to_string(moveVecOut->magnitude), "dampenedMovementVectorEulerMag.txt");
+    }
+}
+
+typedef UInt32(*_hkbTransitionEffect_getEventMode)(hkbTransitionEffect *transitionEffect);
+_hkbTransitionEffect_getEventMode hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original = 0;
+RelocAddr<uintptr_t> hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_HookLoc(0xA7A31F);
+UInt32 hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Hook(hkbBlendingTransitionEffect *transitionEffect)
+{
+    UInt32 eventMode = hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original(transitionEffect);
+    if (eventMode == 2 || eventMode == 3) {
+        if ((transitionEffect->fromGenerator && DYNAMIC_CAST(transitionEffect->fromGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) ||
+            (transitionEffect->toGenerator && DYNAMIC_CAST(transitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)))
+        {
+            eventMode = 1;
+        }
+    }
+    return eventMode;
+}
+
+typedef void(*_hkbNode_handleEvent)(hkbNode *_this, hkbContext *context, hkbEvent *evnt);
+_hkbNode_handleEvent BSCyclicBlendTransitionGenerator_handleEvent_Original = nullptr;
+static RelocPtr<_hkbNode_handleEvent> BSCyclicBlendTransitionGenerator_handleEvent_vtbl(0x17C5518);
+void BSCyclicBlendTransitionGenerator_handleEvent_Hook(BSCyclicBlendTransitionGenerator *_this, hkbContext *context, hkbEvent *evnt)
+{
+    if (evnt->id == _this->freezeEventId && (_this->state == BSCyclicBlendTransitionGenerator::State::CrossBlend || _this->state == BSCyclicBlendTransitionGenerator::State::CrossBlendStart)) {
+        // CyclicFreeze can only happen from a None state. After handleEvent accepts this event, the state will be Freeze.
+        _this->state = BSCyclicBlendTransitionGenerator::State::None;
+    }
+
+    BSCyclicBlendTransitionGenerator_handleEvent_Original(_this, context, evnt);
+}
+
+
 typedef void(*_ActorProcess_QueueAction)(ActorProcessManager *process, UInt32 *defaultObject);
 _ActorProcess_QueueAction ActorProcess_QueueAction_Original = 0;
 RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc1(0x745BAC);
@@ -6756,6 +7038,51 @@ void ActorProcess_QueueAction_Hook(ActorProcessManager *process, UInt32 *default
     }
 
     ActorProcess_QueueAction_Original(process, defaultObject);
+}
+
+
+
+struct MovementHandlerAgentTranslationController
+{
+    enum ControllerType : UInt32
+    {
+        kControllerType_Strafing = 0,
+        kControllerType_NoStrafing = 1,
+        kControllerType_Horse = 2
+    };
+
+    void *vftable_MovementHandlerAgentTranslationController_0;
+    SInt32 refCount_8;
+    char _pad_C[0x4];
+    IMovementState *movementState; // 10
+    void *vftable_IMovementHandlerAgent_18;
+    void *vftable_IMovementSetTranslationControllerType_20;
+    bool isSwitchingDirection; // 28
+    UInt32 unk2C; // 2C
+    MovementControllerNPC *movementController; // 30
+    ControllerType controlType; // 38
+    UInt32 unk3C; // 3C
+    UInt64 unk40; // 40
+};
+
+typedef void(*_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage)(MovementHandlerAgentTranslationController *_this, void *a2, UInt32 a_freezeType);
+_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original = 0;
+RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc1(0x1169E57);
+RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc2(0x1169E9D);
+RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc3(0x1169EAF);
+void MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook(MovementHandlerAgentTranslationController *_this, void *a2, UInt32 a_freezeType)
+{
+    _MESSAGE("%d SendFreezeDirectionMessage %d", *g_currentFrameCounter, a_freezeType);
+    MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original(_this, a2, a_freezeType);
+}
+
+typedef void *(*_MovementMessageFreezeDirection_ctor)(void *msg, UInt32 freezeType);
+_MovementMessageFreezeDirection_ctor MovementMessageFreezeDirection_ctor_Original = 0;
+RelocAddr<uintptr_t> MovementMessageFreezeDirection_ctor_HookLoc(0x1169DFB);
+void * MovementMessageFreezeDirection_ctor_Hook(void *msg, UInt32 freezeType)
+{
+    _MESSAGE("%d MovementMessageFreezeDirection_ctor %d", *g_currentFrameCounter, freezeType);
+    return MovementMessageFreezeDirection_ctor_Original(msg, freezeType);
 }
 
 
@@ -7050,6 +7377,37 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(MovementPlannerArbiter_ActorState_CalculateRotSpeeds_HookLoc.GetUIntPtr(), uintptr_t(MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook));
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original = (_ActorState_CalculateRotSpeeds)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(MovementUtils_DampenMovementVector_HookLoc.GetUIntPtr(), uintptr_t(MovementUtils_DampenMovementVector_Hook));
+        MovementUtils_DampenMovementVector_Original = (_MovementUtils_DampenMovementVector)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_HookLoc.GetUIntPtr(), uintptr_t(hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Hook));
+        hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original = (_hkbTransitionEffect_getEventMode)originalFunc;
+    }
+
+    {
+        BSCyclicBlendTransitionGenerator_handleEvent_Original = *BSCyclicBlendTransitionGenerator_handleEvent_vtbl;
+        SafeWrite64(BSCyclicBlendTransitionGenerator_handleEvent_vtbl.GetUIntPtr(), uintptr_t(BSCyclicBlendTransitionGenerator_handleEvent_Hook));
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc.GetUIntPtr(), uintptr_t(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook));
+        hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = (_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)originalFunc;
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc1.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
+        MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original = (_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage)originalFunc;
+        Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc2.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
+        Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc3.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
+    }
+    {
+        std::uintptr_t originalFunc = Write5Call(MovementMessageFreezeDirection_ctor_HookLoc.GetUIntPtr(), uintptr_t(MovementMessageFreezeDirection_ctor_Hook));
+        MovementMessageFreezeDirection_ctor_Original = (_MovementMessageFreezeDirection_ctor)originalFunc;
     }
 
     {
@@ -7515,6 +7873,11 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
                 }
         }
     }
+
+#ifdef _DEBUG
+    _MESSAGE("%d: %s %d", *g_currentFrameCounter, animationName.c_str(), accepted);
+#endif
+
     return accepted;
 }
 

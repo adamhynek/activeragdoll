@@ -320,6 +320,7 @@ namespace Config {
         if (!RegisterFloat("keepOffsetAngleStartThresholdNoStrafe", options.keepOffsetAngleStartThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
+        if (!RegisterFloat("keepOffsetMinCentroidDistanceForLateralYaw", options.keepOffsetMinCentroidDistanceForLateralYaw)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetCatchUpRadius", options.keepOffsetCatchUpRadius)) success = false;
@@ -332,7 +333,9 @@ namespace Config {
         if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionActor", options.keepOffsetSpeedReductionInActorDirectionActor)) success = false;
         if (!RegisterFloat("keepOffsetStartThreshold", options.keepOffsetStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
-        if (!RegisterDouble("keepOffsetDirectionLerpOutTime", options.keepOffsetDirectionLerpOutTime)) success = false;
+        if (!RegisterFloat("keepOffsetSpeedDirectionCutoff", options.keepOffsetSpeedDirectionCutoff)) success = false;
+        if (!RegisterFloat("keepOffsetMinPlayerMoveAmtForHeading", options.keepOffsetMinPlayerMoveAmtForHeading)) success = false;
+
         if (!RegisterFloat("keepOffsetSpeedCalcSmoothingTime", options.keepOffsetSpeedCalcSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetMovementDirectionChangeSpeed", options.keepOffsetMovementDirectionChangeSpeed)) success = false;
 
