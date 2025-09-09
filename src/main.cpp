@@ -746,6 +746,7 @@ struct KeepOffsetData
     NiPoint3 prevDirection{};
     float advanceSpeed = 0.f;
     int numZeroSpeedFrames = 0;
+    double noSpeedTime = 0.0;
 };
 std::mutex g_keepOffsetActorsLock;
 std::unordered_map<Actor *, KeepOffsetData> g_keepOffsetActors{};
@@ -6815,12 +6816,22 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     it->second.speeds.pop_back();
     it->second.speeds.push_front(rawSpeed);
     NiPoint3 smoothedSpeed = GetAverageVector(it->second.speeds, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
+
     speed = VectorLength(smoothedSpeed);
     direction = ForwardVectorToEulerRot(VectorNormalized(smoothedSpeed));
 
-
-    //speed = 0.7f; // TODO: Remove
-    //direction = ForwardVectorToEulerRot(ForwardVector(refrTransform.rot)); // TODO: Remove
+    { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
+        float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
+        float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, data.prevSpeed);
+        if (denormSpeed < Config::options.zeroSpeedThreshold) { // 5 is the value below which the character will not move anyway
+            if (denormPrevSpeed >= Config::options.zeroSpeedThreshold) {
+                data.noSpeedTime = g_currentFrameTime;
+            }
+        }
+        if (g_currentFrameTime - data.noSpeedTime < Config::options.holdZeroSpeedTime) {
+            speed = 0.f;
+        }
+    }
 
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
     PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
@@ -6863,11 +6874,11 @@ struct MovementParameters : IMovementParameters
 };
 struct IMovementQueryState
 {
-    void *vftable_IMovementQueryState_0;
+    void *vtbl; // 00
 };
-struct MyMovementParameters
+struct OverwriteMovementParameters
 {
-    virtual ~MyMovementParameters() {} // 0
+    virtual ~OverwriteMovementParameters() {} // 0
     virtual float GetWalkRunPercent() { return walkRunPercent; } // 1
     virtual float GetAcceleration() { return acceleration; } // 2
     virtual float GetDeceleration() { return deceleration; } // 3
@@ -6877,7 +6888,7 @@ struct MyMovementParameters
     virtual void Write(void *writeStream) {} // 7
     virtual void Read(void *readStream) {} // 8
 
-    MyMovementParameters(IMovementParameters *params)
+    OverwriteMovementParameters(IMovementParameters *params)
     {
         walkRunPercent = params->GetWalkRunPercent();
         acceleration = Config::options.dummyFloat2;
@@ -6912,7 +6923,7 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
     }
 
     if (foundActor) {
-        MyMovementParameters fixedParams(movementParams);
+        OverwriteMovementParameters fixedParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
     }
     else {
@@ -6957,7 +6968,7 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
     }
 
     if (foundActor) {
-        MyMovementParameters fixedParams(movementParams);
+        OverwriteMovementParameters fixedParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }
     else {
@@ -6973,14 +6984,14 @@ void MovementUtils_DampenMovementVector_Hook(MovementVector *currentMoveVec, Mov
 {
     MovementUtils_DampenMovementVector_Original(currentMoveVec, desiredMoveVec, acceleratedRunSpeed, deceleratedRunSpeed, rotSpeedUnclamped, deltaTime, moveVecOut);
 
-    if (deceleratedRunSpeed > 10000) {
+    //if (deceleratedRunSpeed > 10000) {
         PrintToFile(std::to_string(currentMoveVec->eulerRot.z), "currentMovementVectorEulerZ.txt");
         PrintToFile(std::to_string(currentMoveVec->magnitude), "currentMovementVectorEulerMag.txt");
         PrintToFile(std::to_string(desiredMoveVec->eulerRot.z), "desiredMovementVectorEulerZ.txt");
         PrintToFile(std::to_string(desiredMoveVec->magnitude), "desiredMovementVectorEulerMag.txt");
         PrintToFile(std::to_string(moveVecOut->eulerRot.z), "dampenedMovementVectorEulerZ.txt");
         PrintToFile(std::to_string(moveVecOut->magnitude), "dampenedMovementVectorEulerMag.txt");
-    }
+    //}
 }
 
 typedef UInt32(*_hkbTransitionEffect_getEventMode)(hkbTransitionEffect *transitionEffect);

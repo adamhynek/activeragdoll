@@ -338,6 +338,8 @@ namespace Config {
 
         if (!RegisterFloat("keepOffsetSpeedCalcSmoothingTime", options.keepOffsetSpeedCalcSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetMovementDirectionChangeSpeed", options.keepOffsetMovementDirectionChangeSpeed)) success = false;
+        if (!RegisterFloat("zeroSpeedThreshold", options.zeroSpeedThreshold)) success = false;
+        if (!RegisterDouble("holdZeroSpeedTime", options.holdZeroSpeedTime)) success = false;
 
         if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;
         if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;

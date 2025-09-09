@@ -177,6 +177,8 @@ namespace Config {
         float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
         float keepOffsetSpeedCalcSmoothingTime = 0.3f;
         float keepOffsetMovementDirectionChangeSpeed = 0.1f;
+        float zeroSpeedThreshold = 5.f;
+        double holdZeroSpeedTime = 0.0;
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
         float collisionDamageMinMassPlayerInflicted = 6.f;
