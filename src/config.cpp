@@ -335,6 +335,7 @@ namespace Config {
         if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
         if (!RegisterFloat("keepOffsetSpeedDirectionCutoff", options.keepOffsetSpeedDirectionCutoff)) success = false;
         if (!RegisterFloat("keepOffsetMinPlayerMoveAmtForHeading", options.keepOffsetMinPlayerMoveAmtForHeading)) success = false;
+        if (!RegisterFloat("keepOffsetPlayerDirectionHeadingForwardThreshold", options.keepOffsetPlayerDirectionHeadingForwardThreshold)) success = false;
 
         if (!RegisterFloat("keepOffsetSpeedCalcSmoothingTime", options.keepOffsetSpeedCalcSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetMovementDirectionChangeSpeed", options.keepOffsetMovementDirectionChangeSpeed)) success = false;

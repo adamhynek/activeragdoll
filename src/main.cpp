@@ -4016,8 +4016,8 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                                             t.scale = 1.f;
                                             RegisterDebugTransform("asdf", { t, {0, 0, 1, 1} });
                                         }
-                                    }
 #endif
+                                    }
 
 
                                     NiPoint3 displacement = GetTotalDisplacement(actor);
@@ -6714,7 +6714,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     float headingAdd = 0.f;
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
-        // If they can't strafe, sideways movement actually induces weird motion and rotation, so only allow forward/backward movement
+        // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car. So we only allow forward/backward movement directly.
 
         NiPoint3 forward = ForwardVector(refrTransform.rot);
 
@@ -6762,18 +6762,17 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             float currentHeading = actor->rot.z;
 
             float movementHeading = GetHeadingFromVector(playerMovementDirection);
-            float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
-
             float movementHeadingDiff = ConstrainAngle180(movementHeading - currentHeading);
-            float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
 
-            if (fabsf(movementHeadingDiff) < fabsf(movementHeadingOppositeDiff)) {
+            if (fabsf(movementHeadingDiff) < Config::options.keepOffsetPlayerDirectionHeadingForwardThreshold) {
                 // Player is moving in the same direction as the actor's current heading
-                headingAdd = movementHeadingDiff * Config::options.dummyFloat0 * *g_deltaTime;
+                headingAdd = movementHeadingDiff * Config::options.dummyFloat0; // TODO: Should we use deltatime here? Do we even want a multiplier here or just rely on the rotation speed of the actor?
             }
             else {
                 // Player is moving in the opposite direction of the actor's current heading
-                headingAdd = movementHeadingOppositeDiff * Config::options.dummyFloat0 * *g_deltaTime;
+                float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
+                float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
+                headingAdd = movementHeadingOppositeDiff * Config::options.dummyFloat0;
             }
         }
     }

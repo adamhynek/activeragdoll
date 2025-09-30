@@ -175,6 +175,7 @@ namespace Config {
         float keepOffsetStopThreshold = 5.f;
         float keepOffsetSpeedDirectionCutoff = 0.1;
         float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
+        float keepOffsetPlayerDirectionHeadingForwardThreshold = 1.57f;
         float keepOffsetSpeedCalcSmoothingTime = 0.3f;
         float keepOffsetMovementDirectionChangeSpeed = 0.1f;
         float zeroSpeedThreshold = 5.f;
