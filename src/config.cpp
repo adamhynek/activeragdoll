@@ -321,12 +321,14 @@ namespace Config {
         if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetMinCentroidDistanceForLateralYaw", options.keepOffsetMinCentroidDistanceForLateralYaw)) success = false;
+        if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
+        if (!RegisterFloat("keepOffsetLateralRagdollMovementInfluence", options.keepOffsetLateralRagdollMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetCatchUpRadius", options.keepOffsetCatchUpRadius)) success = false;
         if (!RegisterFloat("keepOffsetFollowRadius", options.keepOffsetFollowRadius)) success = false;
         if (!RegisterFloat("keepOffsetMovingCatchUpRadius", options.keepOffsetMovingCatchUpRadius)) success = false;
-        if (!RegisterFloat("keepOffsetMovingFollowRadius", options.keepOffsetMovingFollowRadius)) success = false;
+        if (!RegisterFloat("keepOffsetPlayerMovementInfluence", options.keepOffsetPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetPlayerSmoothingTime", options.keepOffsetPlayerSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetActorSmoothingTime", options.keepOffsetActorSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionPlayer", options.keepOffsetSpeedReductionInActorDirectionPlayer)) success = false;
@@ -341,6 +343,8 @@ namespace Config {
         if (!RegisterFloat("keepOffsetMovementDirectionChangeSpeed", options.keepOffsetMovementDirectionChangeSpeed)) success = false;
         if (!RegisterFloat("zeroSpeedThreshold", options.zeroSpeedThreshold)) success = false;
         if (!RegisterDouble("holdZeroSpeedTime", options.holdZeroSpeedTime)) success = false;
+
+        if (!RegisterBool("doContinuousSlerp", options.doContinuousSlerp)) success = false;
 
         if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;
         if (!RegisterFloat("collisionDamageMinMassPlayerInflicted", options.collisionDamageMinMassPlayerInflicted)) success = false;

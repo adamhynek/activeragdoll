@@ -161,12 +161,14 @@ namespace Config {
         float keepOffsetAngleStopThresholdNoStrafe = 0.25f;
         float keepOffsetAngleDifferenceMultiplier = 0.8f;
         float keepOffsetMinCentroidDistanceForLateralYaw = 0.2f;
+        float keepOffsetLateralPlayerMovementInfluence = 0.1f;
+        float keepOffsetLateralRagdollMovementInfluence = 1.f;
         float keepOffsetDirectionMultiplier = 1.f;
         float keepOffsetPlayerDirectionMultiplier = 1.f;
         float keepOffsetCatchUpRadius = 150.f;
         float keepOffsetFollowRadius = 50.f;
         float keepOffsetMovingCatchUpRadius = 150.f;
-        float keepOffsetMovingFollowRadius = 50.f;
+        float keepOffsetPlayerMovementInfluence = 1.f;
         float keepOffsetPlayerSmoothingTime = 0.1f;
         float keepOffsetActorSmoothingTime = 0.1f;
         float keepOffsetSpeedReductionInActorDirectionPlayer = 0.5f;
@@ -180,6 +182,8 @@ namespace Config {
         float keepOffsetMovementDirectionChangeSpeed = 0.1f;
         float zeroSpeedThreshold = 5.f;
         double holdZeroSpeedTime = 0.0;
+
+        bool doContinuousSlerp = true;
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
         float collisionDamageMinMassPlayerInflicted = 6.f;

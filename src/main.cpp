@@ -722,8 +722,6 @@ struct KeepOffsetData
     enum class TranslateState
     {
         NotMoving,
-        PlayerMovementOnly,
-        RagdollMovementOnly,
         PlayerAndRagdoll,
     };
 
@@ -6357,7 +6355,7 @@ _hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData hkaKeyFrameHierarchyUtil
 RelocAddr<uintptr_t> hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc(0xBA3B36);
 void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData)
 {
-    if (g_currentlyDrivingRagdoll) {
+    if (Config::options.doContinuousSlerp && g_currentlyDrivingRagdoll) {
         if (g_currentlyDrivingRagdoll->prevKeyframeBoneRots.size() != a_bodyData->m_numRigidBodies) {
             // First time we see this bodyData, initialize the vector
             std::vector<std::optional<NiQuaternion>> prevBoneRots(a_bodyData->m_numRigidBodies);
@@ -6619,8 +6617,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
     }
 
-    NiPoint3 moveAmt = offset * actorDirectionMultiplier * Config::options.keepOffsetMovingFollowRadius;
-
     //{
     //    NiTransform t;
     //    t.pos = refrTransform.pos;
@@ -6633,75 +6629,31 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     //    RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
     //}
 
-    NiPoint3 moveAmtFromPlayerMovement = moveAmt;
+    NiPoint3 moveAmtFromPlayerMovement = offset * actorDirectionMultiplier * Config::options.keepOffsetPlayerMovementInfluence;
 
 
     bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
     bool isRagdollMovementStart = VectorLength(data.offset) >= Config::options.keepOffsetStartThreshold;
     bool isRagdollMovementStop = VectorLength(data.offset) < Config::options.keepOffsetStopThreshold;
 
-    NiPoint3 moveAmtFromRagdollInfluenceRaw = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
-    NiPoint3 finalMoveAmtRaw = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
-    NiPoint3 finalMoveAmt = finalMoveAmtRaw;
+    NiPoint3 moveAmtFromRagdollInfluence = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
     if (data.translateState == KeepOffsetData::TranslateState::NotMoving) {
-        if (isPlayerMoving && isRagdollMovementStart) {
+        if (isPlayerMoving || isRagdollMovementStart) {
             data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
-        }
-        else if (!isPlayerMoving && isRagdollMovementStart) {
-            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
-        }
-        else if (isPlayerMoving) {
-            data.translateState = KeepOffsetData::TranslateState::PlayerMovementOnly;
-        }
-    }
-    else if (data.translateState == KeepOffsetData::TranslateState::PlayerMovementOnly) {
-        if (isPlayerMoving && isRagdollMovementStart) {
-            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
-        }
-        else if (!isPlayerMoving && isRagdollMovementStart) {
-            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
-        }
-        else if (!isPlayerMoving && isRagdollMovementStop) {
-            data.translateState = KeepOffsetData::TranslateState::NotMoving;
-        }
-    }
-    else if (data.translateState == KeepOffsetData::TranslateState::RagdollMovementOnly) {
-        if (isPlayerMoving && !isRagdollMovementStop) {
-            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
-        }
-        else if (isPlayerMoving) {
-            data.translateState = KeepOffsetData::TranslateState::PlayerMovementOnly;
-        }
-        else if (isRagdollMovementStop) {
-            data.translateState = KeepOffsetData::TranslateState::NotMoving;
         }
     }
     else if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
-        if (!isPlayerMoving && !isRagdollMovementStop) {
-            data.translateState = KeepOffsetData::TranslateState::RagdollMovementOnly;
-        }
-        else if (!isPlayerMoving && isRagdollMovementStop) {
+        if (!isPlayerMoving && isRagdollMovementStop) {
             data.translateState = KeepOffsetData::TranslateState::NotMoving;
         }
     }
 
-    if (data.translateState == KeepOffsetData::TranslateState::NotMoving) {
-        finalMoveAmt = { 0.f, 0.f, 0.f };
-    }
-    else if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
+    NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f }; // not moving
+    if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
         // If we are moving both the player and the ragdoll, we apply both movements
-        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
+        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
     }
-    else if (data.translateState == KeepOffsetData::TranslateState::PlayerMovementOnly) {
-        // If we are only moving the player, we don't want to apply the offset
-        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluenceRaw;
-    }
-    else if (data.translateState == KeepOffsetData::TranslateState::RagdollMovementOnly) {
-        // If we are only moving the ragdoll, we don't want to apply the player movement
-        finalMoveAmt = moveAmtFromRagdollInfluenceRaw;
-    }
-
 
 
     //NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
@@ -6735,13 +6687,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 lateralYawMult = -1.f;
             }
 
-            // TODO: Full player movement contributing to lateral feels like too much right now.
-            float rightDotRaw = DotProduct(finalMoveAmtRaw, right);
-            NiPoint3 lateralComponentRaw = right * rightDotRaw;
-            bool isRight = rightDotRaw >= 0.f;
+            NiPoint3 moveAmtInfluencingRotation = moveAmtFromPlayerMovement * Config::options.keepOffsetLateralPlayerMovementInfluence + moveAmtFromRagdollInfluence * Config::options.keepOffsetLateralRagdollMovementInfluence;
+            float rightDot = DotProduct(moveAmtInfluencingRotation, right);
+            NiPoint3 lateralComponent = right * rightDot;
+            bool isRight = rightDot >= 0.f;
             lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
 
-            offsetAngle.z += VectorLength(lateralComponentRaw) * lateralYawMult * Config::options.dummyFloat4;
+            offsetAngle.z += VectorLength(lateralComponent) * lateralYawMult;
         }
 
         NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
@@ -6993,20 +6945,20 @@ void MovementUtils_DampenMovementVector_Hook(MovementVector *currentMoveVec, Mov
     //}
 }
 
-typedef UInt32(*_hkbTransitionEffect_getEventMode)(hkbTransitionEffect *transitionEffect);
-_hkbTransitionEffect_getEventMode hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original = 0;
-RelocAddr<uintptr_t> hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_HookLoc(0xA7A31F);
-UInt32 hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Hook(hkbBlendingTransitionEffect *transitionEffect)
+typedef void(*_hkbUtils_collectActiveNodesLeafFirst)(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9);
+_hkbUtils_collectActiveNodesLeafFirst hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original = 0;
+RelocAddr<uintptr_t> hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_HookLoc(0xA88B6A);
+void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9)
 {
-    UInt32 eventMode = hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original(transitionEffect);
-    if (eventMode == 2 || eventMode == 3) {
-        if ((transitionEffect->fromGenerator && DYNAMIC_CAST(transitionEffect->fromGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) ||
-            (transitionEffect->toGenerator && DYNAMIC_CAST(transitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)))
-        {
-            eventMode = 1;
+    hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original(a1, a2, a_flags, a_nodeInfoOut, a_activeNodeToIndexMap, a_activeNodesChildrenIndices, a_prevActiveNodes, a_nodeToIndexMap, a9);
+    for (UInt32 i = 0; i < a_nodeInfoOut->m_size; i++) {
+        hkbNodeInfo &nodeInfo = a_nodeInfoOut->m_data[i];
+        if (BSCyclicBlendTransitionGenerator *cyclicBlendGenerator = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, BSCyclicBlendTransitionGenerator)) {
+            // The event we care about not ignoring is CyclicFreeze. This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
+            nodeInfo.ignoreEvents = false;
+            nodeInfo.ignoreEventsParentIdx = -1;
         }
     }
-    return eventMode;
 }
 
 typedef void(*_hkbNode_handleEvent)(hkbNode *_this, hkbContext *context, hkbEvent *evnt);
@@ -7395,8 +7347,8 @@ void PerformHooks(void)
     }
 
     {
-        std::uintptr_t originalFunc = Write5Call(hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_HookLoc.GetUIntPtr(), uintptr_t(hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Hook));
-        hkbBlendingTransitionEffect_getChildren_hkbTransitionEffect_getEventMode_Original = (_hkbTransitionEffect_getEventMode)originalFunc;
+        std::uintptr_t originalFunc = Write5Call(hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_HookLoc.GetUIntPtr(), uintptr_t(hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook));
+        hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original = (_hkbUtils_collectActiveNodesLeafFirst)originalFunc;
     }
 
     {
@@ -7883,6 +7835,33 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
                 }
         }
     }
+
+
+
+
+    //// TODO: Remove this
+    //if (std::string_view(animationName.c_str()) == "CyclicFreeze") {
+    //    if (!accepted) {
+    //        if (Actor *actor = DYNAMIC_CAST(_this, IAnimationGraphManagerHolder, Actor)) {
+    //            BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    //            if (GetAnimationGraphManager(actor, animGraphManager)) {
+    //                BSAnimationGraphManager *manager = animGraphManager.ptr;
+    //                BShkbAnimationGraph *graph = manager->graphs.GetData()->ptr;
+    //                hkbBehaviorGraph *behaviorGraph = graph->behaviorGraph;
+    //                hkArray<hkbNodeInfo> *nodeInfo = behaviorGraph->activeNodes;
+    //                hkbNodeInfo *firstNodeInfo = nodeInfo->begin();
+    //                int x = 0;
+    //            }
+    //        }
+    //        int x = 0;
+    //    }
+    //    else {
+    //        int x = 0;
+    //    }
+    //}
+
+
+
 
 #ifdef _DEBUG
     _MESSAGE("%d: %s %d", *g_currentFrameCounter, animationName.c_str(), accepted);

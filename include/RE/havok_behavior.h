@@ -184,8 +184,98 @@ struct hkbNode : hkbBindable
 static_assert(offsetof(hkbNode, userData) == 0x30);
 static_assert(sizeof(hkbNode) == 0x48);
 
+struct hkbNodeInfo
+{
+    void *unk00;
+    void *unk08;
+    void *unk10;
+    void *unk18;
+    void *unk20;
+    void *unk28;
+    UInt32 unk30;
+    UInt32 unk34;
+    void *unk38;
+    float unk40;
+    float unk44; // some kind of duration
+    UInt32 unk48;
+    bool unk4C;
+    bool unk4D;
+    bool unk4E;
+    hkbNode *m_nodeTemplate; // 50
+    hkbNode *m_nodeClone; // 58
+    hkbBehaviorGraph *m_behavior; // 60
+    UInt32 currentStateIfStateMachine; // 68
+    UInt32 numParents; // 6C
+    UInt32 numChildren; // 70
+    UInt32 firstChildIdx; // 74
+    UInt32 syncToParentParentIdx; // node index
+    UInt32 ignoreEventsParentIdx; // node index
+    UInt32 unk80;
+    bool ignoreEvents; // 84
+    bool isGenerator; // 85
+    bool syncToParent; // 86
+    bool isStopped;
+    bool hasActivateBeenCalled; // 88
+    bool isStateMachine; // 89
+    UInt32 unk8C;
+};
+static_assert(sizeof(hkbNodeInfo) == 0x90);
+
+struct hkbBehaviorGraphData
+{
+    void *vtbl; // 00
+    UInt16 m_memSizeAndFlags_8;
+    SInt16 m_referenceCount_A;
+    hkArray<hkRefVariant>                       attributeDefaults;       // 10
+    hkArray<hkRefVariant>             variableInfos;           // 20
+    hkArray<hkRefVariant>             characterPropertyInfos;  // 30
+    hkArray<hkRefVariant>             eventInfos;              // 40
+    hkArray<hkRefVariant>           variableBounds;          // 50
+    UInt64                             unk60;                   // 60
+    UInt64                             unk68;                   // 68
+    hkRefVariant variableInitialValues;   // 70
+    void *stringData;              // 78
+};
+
 struct hkbGenerator : hkbNode { /* TODO */ };
-struct hkbBehaviorGraph : hkbGenerator { /* TODO */ };
+
+struct hkbBehaviorGraph : hkbGenerator
+{
+    uint8_t variableMode;                     // 048
+    uint8_t                                 pad49;                            // 049
+    uint16_t                                pad4A;                            // 04A
+    uint32_t                                pad4C;                            // 04C
+    hkArray<hkRefVariant>                        uniqueIDPool;                     // 050
+    hkRefVariant                                 idToStateMachineTemplateMap;      // 060
+    hkArray<hkRefVariant>                        mirroredExternalIDMap;            // 068
+    hkRefVariant                                 pseudoRandomGenerator;            // 078
+    hkbGenerator *rootGenerator;                    // 080
+    hkbBehaviorGraphData *data;                             // 088
+    hkRefVariant                                 rootGeneratorClone;               // 090
+    hkArray<hkbNodeInfo> *activeNodes;                      // 098
+    hkRefVariant activeNodeTemplateToIndexMap;     // 0A0
+    hkRefVariant                                 activeNodesChildrenIndices;       // 0A8
+    hkRefVariant                                 globalTransitionData;             // 0B0
+    hkRefVariant                                 eventIDMap;                       // 0B8
+    hkRefVariant                                 attributeIDMap;                   // 0C0
+    hkRefVariant                                 variableIDMap;                    // 0C8
+    hkRefVariant                                 characterPropertyIDMap;           // 0D0
+    hkRefVariant variableValueSet;                 // 0D8
+    hkRefVariant nodeTemplateToCloneMap;           // 0E0
+    hkRefVariant nodeCloneToTemplateMap;           // 0E8
+    hkRefVariant stateListenerTemplateToCloneMap;  // 0F0
+    hkRefVariant                                 nodePartitionInfo;                // 0F8
+    int32_t                                 numIntermediateOutputs;           // 100
+    uint32_t                                pad104;                           // 104
+    hkArray<hkRefVariant>                   jobs;                             // 108
+    hkArray<hkRefVariant>                   allPartitionMemory;               // 118
+    int16_t                                 numStaticNodes;                   // 128
+    int16_t                                 nextUniqueID;                     // 12A
+    bool                                         isActive;                         // 12C
+    bool                                         isLinked;                         // 12D
+    bool                                         updateActiveNodes;                // 12E
+    bool                                         stateOrTransitionChanged;         // 12F
+};
 
 struct hkbTransitionEffect : hkbGenerator
 {
