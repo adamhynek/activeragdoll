@@ -2186,29 +2186,56 @@ struct PhysicsListener :
         bool isAheld = IsHeldRigidBody(rigidBodyA);
         bool isBheld = IsHeldRigidBody(rigidBodyB);
 
+        // There are 5 possible combinations of collisions at this point:
+        // 1. Hand/weapon vs hand/weapon
+        // 2. Hand/weapon vs held object
+        // 3. Hand/weapon vs other object
+        // 4. Held object vs held object
+        // 5. Held object vs other object
+
         if (isAhiggs && isBhiggs) {
             // Both objects are higgs rigidbodies - don't let them hit each other
             if (!IsMoveableEntity(rigidBodyA) && !IsMoveableEntity(rigidBodyB)) {
+                // 1. Hand/weapon vs hand/weapon
                 // Both nonmoveable likely implies hand vs hand, or weapon vs hand, or weapon vs weapon
                 // We set those to keyframed_reporting and if we don't disable contact, it'll trigger haptics and such
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                 return;
             }
             else if (isAheld && isBheld) {
+                // 4. Held object vs held object
                 // Both are held objects - don't let them hit each other
                 // TODO: We could try to handle this properly
                 return;
             }
             else if (!isAheld && !isBheld) {
+                // 1. Hand/weapon vs hand/weapon (if not handled by above case)
                 // Only allow hits vs held objects. Still let the collision happen though.
                 return;
             }
         }
 
-        // Since neither object is held, this means at least one of them is a weapon or hand
+        // Possible cases remaining:
+        // 2. Hand/weapon vs held object
+        // 3. Hand/weapon vs other object
+        // 5. Held object vs other object
+
         bool isAhandOrWeapon = isAhiggs && !isAheld;
-        hkpRigidBody *hitRigidBody = isAhandOrWeapon ? rigidBodyB : rigidBodyA;
-        hkpRigidBody *hittingRigidBody = hitRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
+        bool isBhandOrWeapon = isBhiggs && !isBheld;
+        bool isAhitting;
+        if (!isAhandOrWeapon && !isBhandOrWeapon) {
+            // Neither object is a hand/weapon, so exactly one of them must be held. This is because we checked for both held objects earlier.
+            // 5. Held object vs other object
+            isAhitting = isAheld;
+        }
+        else {
+            // Exactly one of the objects is a hand/weapon, so it should be the one hitting.
+            // 2. Hand/weapon vs held object
+            // 3. Hand/weapon vs other object
+            isAhitting = isAhandOrWeapon;
+        }
+        hkpRigidBody *hittingRigidBody = isAhitting ? rigidBodyA : rigidBodyB;
+        hkpRigidBody *hitRigidBody = hittingRigidBody == rigidBodyA ? rigidBodyB : rigidBodyA;
 
         bhkRigidBody *hittingRigidBodyWrapper = (bhkRigidBody *)hittingRigidBody->m_userData;
         if (!hittingRigidBodyWrapper) {
