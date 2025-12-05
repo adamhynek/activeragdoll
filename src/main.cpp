@@ -5026,6 +5026,19 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
         ragdoll->worldFromModel = worldFromModel;
     }
 
+
+    bool isKeepOffset = false;
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+        isKeepOffset = g_keepOffsetActors.find(actor) != g_keepOffsetActors.end();
+    }
+
+
+    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isKeepOffset && poseHeader && poseHeader->m_onFraction > 0.f) {
+        hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+        highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
+    }
+
     bool wasInRagdollState = ragdoll->isInRagdollState;
     ragdoll->isInRagdollState = Actor_IsInRagdollState(actor);
 
@@ -5330,9 +5343,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
             BShkbAnimationGraph *graph = GetAnimationGraph(character);
             if (graph && graph->doFootIK) {
                 if (character->footIkDriver && character->setup && character->setup->m_data && character->setup->m_data->m_footIkDriverInfo) {
-                    hkQsTransform *poseLocal = hkbCharacter_getPoseLocal(character);
+                    hkQsTransform *characterPoseLocal = hkbCharacter_getPoseLocal(character);
+                    hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
                     hkInt16 numPoses = poseHeader->m_numData;
-                    memcpy(Track_getData(generatorOutput, *poseHeader), poseLocal, numPoses * sizeof(hkQsTransform));
+                    memcpy(highResPoseLocal, characterPoseLocal, numPoses * sizeof(hkQsTransform));
+
+                    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isKeepOffset) {
+                        highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
+                    }
                 }
             }
         }
@@ -6470,85 +6488,6 @@ struct MovementUpdateData
 }; // size == 0x58 ??
 
 
-
-/*
-* struct AnimUpdateData
-{
-    MovementVector movementVector; // 00
-    NiPoint3 rotSpeedEuler; // 10
-};
-
-struct MovementHandlerUpdateDataSmallDelta
-{
-    UInt64 unk00;
-    tArray<void *> unk08;
-    UInt64 unk20;
-    tArray<void *> unk30;
-    MovementVector movementVector; // 40
-    NiPoint3 actorRot; // 50
-    bool unk5C;
-    UInt64 unk60;
-    bool unk68;
-    float deltaTime; // 6C
-    float acceleratedRunSpeed; // 70
-    float deceleratedRunSpeed; // 74
-    float rotSpeedClamed; // 78
-    float rotSpeedUnclamped; // 7C
-    float acceleratedRotSpeed; // 80
-    UInt32 pad84;
-};
-
-struct MovementHandlerOutputDataSmallDelta
-{
-    NiPoint3 eulerRot; // 00
-    float moveAmt; // 0C
-    NiPoint3 moveDir; // 10
-    float deltaTime; // 1C
-};
-
-struct MovementHandlerAgentUpdateDataSmallDelta
-{
-    MovementHandlerUpdateDataSmallDelta *updateData; // 00
-    MovementHandlerOutputDataSmallDelta *outputData; // 08
-};
-
-struct MovementUpdateDataSmallDelta
-{
-    float deltaTime0; // 00
-    UInt32 unk04;
-    float deltaTime1; // 08
-    UInt32 pad0C;
-    MovementHandlerUpdateDataSmallDelta updateData; // 10
-    MovementHandlerOutputDataSmallDelta outputData; // 98
-    AnimUpdateData animUpdateData; // B8
-};
-
-struct MovementParametersData
-{
-    float unk00;
-    UInt32 pad04;
-    struct IMovementParameters *data; // 08
-};
-
-struct MovementPlannerAgentReturnDataSmallDelta
-{
-    float targetDisplacementMultiplier; // 00
-    MovementVector movementVector; // 04
-    float unk14;
-    NiPoint3 targetAngle; // 18
-    UInt32 unk24;
-    MovementParametersData movementParams; // 28
-    MovementHandlerUpdateDataSmallDelta *updateData; // 38
-    void *unk40;
-    UInt64 unk48;
-    UInt16 unk50;
-    UInt16 pad52;
-    UInt32 pad54;
-}; // size == 0x58 ??
-*/
-
-
-
 NiPoint3 GetForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
 {
     NiMatrix33 rot = EulerToMatrix(eulerRot);
@@ -6981,7 +6920,7 @@ void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *
     for (UInt32 i = 0; i < a_nodeInfoOut->m_size; i++) {
         hkbNodeInfo &nodeInfo = a_nodeInfoOut->m_data[i];
         if (BSCyclicBlendTransitionGenerator *cyclicBlendGenerator = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, BSCyclicBlendTransitionGenerator)) {
-            // The event we care about not ignoring is CyclicFreeze. This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
+            // The event we care about not ignoring is CyclicFreeze/CyclicCrossBlend. This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
             nodeInfo.ignoreEvents = false;
             nodeInfo.ignoreEventsParentIdx = -1;
         }
@@ -7029,30 +6968,6 @@ void ActorProcess_QueueAction_Hook(ActorProcessManager *process, UInt32 *default
     ActorProcess_QueueAction_Original(process, defaultObject);
 }
 
-
-
-struct MovementHandlerAgentTranslationController
-{
-    enum ControllerType : UInt32
-    {
-        kControllerType_Strafing = 0,
-        kControllerType_NoStrafing = 1,
-        kControllerType_Horse = 2
-    };
-
-    void *vftable_MovementHandlerAgentTranslationController_0;
-    SInt32 refCount_8;
-    char _pad_C[0x4];
-    IMovementState *movementState; // 10
-    void *vftable_IMovementHandlerAgent_18;
-    void *vftable_IMovementSetTranslationControllerType_20;
-    bool isSwitchingDirection; // 28
-    UInt32 unk2C; // 2C
-    MovementControllerNPC *movementController; // 30
-    ControllerType controlType; // 38
-    UInt32 unk3C; // 3C
-    UInt64 unk40; // 40
-};
 
 typedef void(*_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage)(MovementHandlerAgentTranslationController *_this, void *a2, UInt32 a_freezeType);
 _MovementHandlerAgentTranslationController_SendFreezeDirectionMessage MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original = 0;

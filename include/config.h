@@ -183,6 +183,8 @@ namespace Config {
         float zeroSpeedThreshold = 5.f;
         double holdZeroSpeedTime = 0.0;
 
+        bool zeroOutRootTranslationWhenKeepingOffset = true;
+
         bool doContinuousSlerp = true;
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units

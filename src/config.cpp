@@ -344,6 +344,8 @@ namespace Config {
         if (!RegisterFloat("zeroSpeedThreshold", options.zeroSpeedThreshold)) success = false;
         if (!RegisterDouble("holdZeroSpeedTime", options.holdZeroSpeedTime)) success = false;
 
+        if (!RegisterBool("zeroOutRootTranslationWhenKeepingOffset", options.zeroOutRootTranslationWhenKeepingOffset)) success = false;
+
         if (!RegisterBool("doContinuousSlerp", options.doContinuousSlerp)) success = false;
 
         if (!RegisterFloat("collisionDamageMinSpeedPlayerInflicted", options.collisionDamageMinSpeedPlayerInflicted)) success = false;

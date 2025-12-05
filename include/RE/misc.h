@@ -503,6 +503,29 @@ static_assert(offsetof(MovementControllerNPC, actor) == 0x1B8);
 static_assert(offsetof(MovementControllerNPC, isHighProcess) == 0x1C9);
 static_assert(sizeof(MovementControllerNPC) == 0x1D0);
 
+struct MovementHandlerAgentTranslationController
+{
+    enum class ControllerType : UInt32
+    {
+        kControllerType_Strafing = 0,
+        kControllerType_NoStrafing = 1,
+        kControllerType_Horse = 2
+    };
+
+    void *vftable_MovementHandlerAgentTranslationController_0;
+    SInt32 refCount_8;
+    char _pad_C[0x4];
+    IMovementState *movementState; // 10
+    void *vftable_IMovementHandlerAgent_18;
+    void *vftable_IMovementSetTranslationControllerType_20;
+    bool isSwitchingDirection; // 28
+    UInt32 unk2C; // 2C
+    MovementControllerNPC *movementController; // 30
+    ControllerType controlType; // 38
+    UInt32 unk3C; // 3C
+    UInt64 unk40; // 40
+};
+
 enum class KnockState : UInt8
 {
     Normal = 0,
