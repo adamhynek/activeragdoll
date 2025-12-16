@@ -137,7 +137,7 @@ struct hkbCharacter : hkReferencedObject
     hkRefVariant                world;                      // 78
     hkRefVariant                eventQueue;                 // 80
     hkRefPtr<hkQsTransform>     worldFromModel;             // 88
-    const void **poseLocal;                  // 90 - hkSimpleArray<hkRefVariant>
+    const hkQsTransform *poseLocal;                  // 90 - hkSimpleArray<hkRefVariant>
     std::int32_t                numPoseLocal;               // 98
     bool                        deleteWorldFromModel;       // 9C
     bool                        deletePoseLocal;            // 9D
@@ -529,23 +529,23 @@ struct BShkbAnimationGraph
     struct UpdateData
     {
         float deltaTime; // 00
-        void *unk08; // function pointer to some Character function
+        void *unkFunctionPtr08; // function pointer to some Character function
         Character *character; // 10
         NiPoint3 *cameraPos; // 18 - literally points to the pos within the worldTransform of the WorldRoot NiCamera node
         IPostAnimationChannelUpdateFunctor *unk20; // points to the IPostAnimationChannelUpdateFunctor part of the Character
         UInt8 unk28;
         UInt8 unk29;
-        UInt8 unk2A;
+        UInt8 forceUpdate; // 2A
         UInt8 unk2B;
         UInt8 unk2C;
-        UInt8 unk2D; // if 0, call generate(). If not 0, do something else?
-        UInt8 unk2E;
+        UInt8 useGenerateJob; // 2D - if 0, call generate(). If not 0, queue up a job for it
+        UInt8 doFootIK; // 2E
         UInt8 unk2F;
         float scale1; // 30 - for rabbit, 1.3f
         float scale2; // 34 - for rabbit, 1.3f
         // ...
     };
-    static_assert(offsetof(UpdateData, unk2A) == 0x2A);
+    static_assert(offsetof(UpdateData, forceUpdate) == 0x2A);
     static_assert(offsetof(UpdateData, scale1) == 0x30);
 
     struct FootIKData

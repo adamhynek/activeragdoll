@@ -560,8 +560,11 @@ extern RelocAddr<_bhkRagdollConstraint_ctor> bhkRagdollConstraint_ctor;
 typedef bool(*_hkbBehaviorGraph_generate)(hkbBehaviorGraph *_this, const hkbContext &context, hkbGeneratorOutput &output, bool setCharacterPose, hkReal timeOffset, bool doUpdateActiveNodesFirst);
 extern RelocAddr<_hkbBehaviorGraph_generate> hkbBehaviorGraph_generate;
 
-typedef bool(*_BShkbAnimationGraph_UpdateAnimation)(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3);
-extern RelocAddr<_BShkbAnimationGraph_UpdateAnimation> BShkbAnimationGraph_UpdateAnimation;
+typedef bool(*_BShkbAnimationGraph_PreGenerate)(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3);
+extern RelocAddr<_BShkbAnimationGraph_PreGenerate> BShkbAnimationGraph_PreGenerate;
+
+typedef bool(*_BShkbAnimationGraph_Generate)(BShkbAnimationGraph *_this, bool *a_useGenerateJob);
+extern RelocAddr<_BShkbAnimationGraph_Generate> BShkbAnimationGraph_Generate;
 
 typedef bool(*_hkaRagdollRigidBodyController_driveToPose)(hkaRagdollRigidBodyController *_this, hkReal deltaTime, const hkQsTransform *poseLocalSpace, const hkQsTransform &worldFromModel, hkaKeyFrameHierarchyUtility::Output *stressOut);
 extern RelocAddr<_hkaRagdollRigidBodyController_driveToPose> hkaRagdollRigidBodyController_driveToPose;

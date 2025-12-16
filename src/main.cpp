@@ -1,14 +1,7 @@
-﻿#include <numeric>
-#include <functional>
+﻿#include <functional>
 #include <string>
 #include <regex>
-#include <sstream>
-#include <iostream>
-#include <fstream>
-#include <chrono>
 #include <limits>
-#include <atomic>
-#include <set>
 #include <deque>
 #include <shared_mutex>
 
@@ -26,10 +19,8 @@
 #include "skse64/GameSettings.h"
 #include "skse64/NiNodes.h"
 #include "skse64/NiObjects.h"
-#include "skse64/NiExtraData.h"
 #include "skse64/GameData.h"
 #include "skse64/GameForms.h"
-#include "skse64/PapyrusActor.h"
 #include "skse64/PapyrusKeyword.h"
 #include "skse64/GameVR.h"
 #include "skse64_common/SafeWrite.h"
@@ -3325,6 +3316,14 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 
 int g_lastActorAddedToWorldFrame = 0;
 
+struct AnimGraphPoseData
+{
+    hkQsTransform worldFromModel;
+    std::vector<hkQsTransform> highResPoseLocal;
+};
+std::unordered_map<BShkbAnimationGraph *, AnimGraphPoseData> g_animGraphPoseData{};
+std::mutex g_animGraphPoseDataLock{};
+
 bool AddRagdollToWorld(Actor *actor)
 {
     if (!Config::options.processRagdolledActors && Actor_IsInRagdollState(actor)) return false;
@@ -3386,8 +3385,72 @@ bool AddRagdollToWorld(Actor *actor)
 
                     BSWriteLocker lock(&world->worldLock);
 
+                    bool resetRagdoll = false;
+
+                    {
+                        SimpleLocker lock(&manager->updateLock);
+                        for (int i = 0; i < manager->graphs.size; i++) {
+                            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
+                            if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                                if (hkbCharacter *character = driver->character) {
+
+                                    std::scoped_lock lock(g_animGraphPoseDataLock);
+
+                                    auto it = g_animGraphPoseData.find(graph.ptr);
+                                    if (it != g_animGraphPoseData.end()) {
+                                        AnimGraphPoseData &poseData = it->second;
+
+                                        hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
+                                        MapHighResPoseLocalToLowResPoseWorld(driver, poseData.worldFromModel, poseData.highResPoseLocal.data(), lowResPoseWorld.m_data);
+
+                                        // Set rigidbody transforms to the anim pose ones
+                                        for (int i = 0; i < lowResPoseWorld.m_size; i++) {
+                                            hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
+                                            if (!rb) continue;
+
+                                            hkQsTransform &transform = lowResPoseWorld[i];
+
+                                            hkTransform newTransform;
+                                            newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));
+                                            hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
+
+                                            // Create a unique color from a hash of the address of the Actor ptr
+                                            UInt64 actorPtrHash = std::hash<Actor *>()(actor);
+                                            NiColorA debugColor = {
+                                                ((actorPtrHash & 0x00000000000000FF) >> 0) / 255.0f,
+                                                ((actorPtrHash & 0x000000000000FF00) >> 8) / 255.0f,
+                                                ((actorPtrHash & 0x00000000FF000000) >> 24) / 255.0f,
+                                                1.0f
+                                            };
+                                            RegisterDebugTransform(std::to_string((UInt64)rb), { hkTransformToNiTransform(newTransform, 5.f), debugColor });
+
+                                            PrintVector(HkVectorToNiPoint(newTransform.m_translation));
+
+                                            rb->getRigidMotion()->setTransform(newTransform);
+                                            hkpEntity_updateMovedBodyInfo(rb);
+
+                                            rb->getRigidMotion()->setLinearVelocity(NiPointToHkVector(NiPoint3()));
+                                            rb->getRigidMotion()->setAngularVelocity(NiPointToHkVector(NiPoint3()));
+                                        }
+
+                                        resetRagdoll = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     bool x = false;
                     BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
+
+                    if (resetRagdoll) {
+                        ForEachRagdollDriver(manager, [](hkbRagdollDriver *driver) {
+                            // shouldReinitializeRagdollController is reset to 0 by hkbRagdollDriver::reset(), so we need to set this to true after that is called.
+                            // hkbRagdollDriver::reset() is called within BShkbAnimationGraph::AddRagdollToWorld() in a subfunction.
+                            // What setting this to true does, is that in the next call to hkbRagdollDriver::driveToPose(), hkaRagdollRigidBodyController::reinitialize() will be called before driving to pose.
+                            driver->shouldReinitializeRagdollController = true;
+                        });
+                    }
 
                     ModifyConstraints(actor);
 
@@ -5770,15 +5833,49 @@ void PreCullActorsHook(Actor *actor)
     actor->unk274 |= cullState & 0xF;
 }
 
-_BShkbAnimationGraph_UpdateAnimation BShkbAnimationGraph_UpdateAnimation_Original = 0;
-void BShkbAnimationGraph_UpdateAnimation_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
+_BShkbAnimationGraph_PreGenerate BShkbAnimationGraph_PreGenerate_Original = 0;
+void BShkbAnimationGraph_PreGenerate_Hook(BShkbAnimationGraph *_this, BShkbAnimationGraph::UpdateData *updateData, void *a3)
 {
     Actor *actor = _this->holder;
     if (a3 && actor && IsActiveActor(actor)) { // a3 is null if the graph is not active
-        updateData->unk2A = true; // forces animation update (hkbGenerator::generate()) without skipping frames
+        updateData->forceUpdate = true; // forces animation update (hkbGenerator::generate()) without skipping frames
     }
 
-    BShkbAnimationGraph_UpdateAnimation_Original(_this, updateData, a3);
+    BShkbAnimationGraph_PreGenerate_Original(_this, updateData, a3);
+}
+
+_BShkbAnimationGraph_Generate BShkbAnimationGraph_Generate_Original = 0;
+void BShkbAnimationGraph_Generate_Hook(BShkbAnimationGraph *_this, bool *a_useGenerateJob)
+{
+    BShkbAnimationGraph_Generate_Original(_this, a_useGenerateJob);
+
+    if (TESObjectREFR *holder = _this->holder) {
+        if (holder->formType == kFormType_Character) {
+            if (hkbGeneratorOutput *generatorOutput = _this->generatorOutputs[0]) {
+                hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(*generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+                hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(*generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
+
+                if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
+                    if (worldFromModelHeader->m_numData > 0 && poseHeader->m_numData > 1) {
+                        hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(*generatorOutput, *worldFromModelHeader);
+                        hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(*generatorOutput, *poseHeader);
+
+                        std::scoped_lock lock(g_animGraphPoseDataLock);
+                        g_animGraphPoseData[_this] = { worldFromModel, std::vector<hkQsTransform>(highResPoseLocal, highResPoseLocal + poseHeader->m_numData) };
+                    }
+                    else if (worldFromModelHeader->m_numData > 0) {
+                        hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(*generatorOutput, *worldFromModelHeader);
+                        std::scoped_lock lock(g_animGraphPoseDataLock);
+                        auto it = g_animGraphPoseData.find(_this);
+                        if (it != g_animGraphPoseData.end()) {
+                            it->second.worldFromModel = worldFromModel;
+                        }
+                    }
+
+                }
+            }
+        }
+    }
 }
 
 _Actor_GetHit Actor_TakePhysicsDamage_Original = 0;
@@ -7083,7 +7180,8 @@ auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 
 auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 
-auto BShkbAnimationGraph_UpdateAnimation_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
+auto BShkbAnimationGraph_PreGenerate_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
+auto BShkbAnimationGraph_Generate_HookLoc = RelocAddr<uintptr_t>(0xB1CCC7);
 
 auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
 
@@ -7145,9 +7243,15 @@ void PerformHooks(void)
     }
 
     if (Config::options.forceGenerateForActiveRagdolls) {
-        std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_UpdateAnimation_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_UpdateAnimation_Hook));
-        BShkbAnimationGraph_UpdateAnimation_Original = (_BShkbAnimationGraph_UpdateAnimation)originalFunc;
-        _MESSAGE("BShkbAnimationGraph::UpdateAnimation hook complete");
+        std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_PreGenerate_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_PreGenerate_Hook));
+        BShkbAnimationGraph_PreGenerate_Original = (_BShkbAnimationGraph_PreGenerate)originalFunc;
+        _MESSAGE("BShkbAnimationGraph::PreGenerate hook complete");
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_Generate_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_Generate_Hook));
+        BShkbAnimationGraph_Generate_Original = (_BShkbAnimationGraph_Generate)originalFunc;
+        _MESSAGE("BShkbAnimationGraph::Generate hook complete");
     }
 
     {
