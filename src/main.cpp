@@ -3181,11 +3181,18 @@ void ModifyConstraints(Actor *actor)
                             if (constraint->constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_LIMITEDHINGE) {
                                 bhkRagdollConstraint *ragdollConstraint = ConvertToRagdollConstraint(constraint);
                                 if (ragdollConstraint) {
+                                    bool wasConstraintEnabled; hkpConstraintInstance_isEnabled(constraint->constraint, &wasConstraintEnabled);
+
                                     constraint->RemoveFromCurrentWorld();
 
                                     bhkWorld *world = wrapper->GetHavokWorld_1()->m_userData;
                                     ragdollConstraint->MoveToWorld(world);
                                     wrapper->constraints.entries[i] = ragdollConstraint;
+
+                                    if (!wasConstraintEnabled && world) {
+                                        // This needs to be done after adding to the world
+                                        hkpConstraintInstance_setEnabled(ragdollConstraint->constraint, false);
+                                    }
                                 }
                             }
                         }
