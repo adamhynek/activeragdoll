@@ -1043,3 +1043,6 @@ struct UnkSwingData
 
 typedef void(*_sub_1406EC5C0)(void *a1, UnkSwingData *a2);
 extern RelocAddr<_sub_1406EC5C0> sub_1406EC5C0;
+
+extern RelocPtr<ProcessLists *> g_processLists;
+

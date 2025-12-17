@@ -3113,8 +3113,15 @@ bool IsAddedToWorld(Actor *actor)
     return true;
 }
 
+bool IsAIActive(Actor *actor)
+{
+    return (actor->flags1 & 2);
+}
+
 bool IsAddableToWorld(Actor *actor)
 {
+    if (!IsAIActive(actor)) return false;
+
     if (TESRace *race = actor->race) {
         const char *name = race->editorId;
         if (name && Config::options.excludeRaces.count(std::string_view(name))) {
@@ -4586,11 +4593,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }*/
 #endif // _DEBUG
-
-            if ((actor->flags1 & 2) == 0) {
-                // AI is not on for this actor
-                // TODO: Handle the ragdoll somehow. Maybe remove the ragdoll and fallback to the CC? Can just make shouldAddToWorld false maybe??
-            }
 
             UInt32 filterInfo; Actor_GetCollisionFilterInfo(actor, filterInfo);
             UInt16 collisionGroup = GetCollisionGroup(filterInfo);

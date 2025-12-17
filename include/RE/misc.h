@@ -813,6 +813,14 @@ struct ConditionCheckParams
 };
 static_assert(sizeof(ConditionCheckParams) == 0x38);
 
+struct ProcessLists
+{
+    UInt8 unk00[0x1E4];
+    bool runSchedules; // 1E4
+    // more...
+};
+static_assert(offsetof(ProcessLists, runSchedules) == 0x1E4);
+
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, SInt32 &a_out); // 11
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, bool &a_out); // 12

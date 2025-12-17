@@ -415,3 +415,6 @@ RelocAddr<_DispatchTransformDeltaEvent> DispatchTransformDeltaEvent(0xB362D0);
 RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_GetWorldFromModel(0x61D4C0);
 RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp(0x600DF0);
 RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);
+
+RelocPtr<ProcessLists *> g_processLists(0x1F831B0);
+
