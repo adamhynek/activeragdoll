@@ -6542,10 +6542,10 @@ MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2)
 }
 
 
-typedef void(*_Character_FinishLoadGame)(Actor *character, void *loadGameBuffer);
-_Character_FinishLoadGame g_Character_FinishLoadGame_Original = 0;
-static RelocPtr<_Character_FinishLoadGame> Character_FinishLoadGame_vtbl(0x16D6E68);
-void Character_FinishLoadGame_Hook(Actor *actor, void *loadGameBuffer)
+typedef void(*_Character_InitLoadGame)(Actor *character, void *loadGameBuffer);
+_Character_InitLoadGame g_Character_InitLoadGame_Original = 0;
+static RelocPtr<_Character_InitLoadGame> Character_InitLoadGame_vtbl(0x16D6E60);
+void Character_InitLoadGame_Hook(Actor *actor, void *loadGameBuffer)
 {
     if (Config::options.removeActiveActorsOnLoad) {
         // This runs here since it runs before ResetObjects() (i.e. g_activeActors is not cleared yet).
@@ -6553,7 +6553,7 @@ void Character_FinishLoadGame_Hook(Actor *actor, void *loadGameBuffer)
         RemoveActorFromWorldIfActive(actor);
     }
 
-    g_Character_FinishLoadGame_Original(actor, loadGameBuffer);
+    g_Character_InitLoadGame_Original(actor, loadGameBuffer);
 }
 
 
@@ -7306,8 +7306,8 @@ void PerformHooks(void)
     }
 
     {
-        g_Character_FinishLoadGame_Original = *Character_FinishLoadGame_vtbl;
-        SafeWrite64(Character_FinishLoadGame_vtbl.GetUIntPtr(), uintptr_t(Character_FinishLoadGame_Hook));
+        g_Character_InitLoadGame_Original = *Character_InitLoadGame_vtbl;
+        SafeWrite64(Character_InitLoadGame_vtbl.GetUIntPtr(), uintptr_t(Character_InitLoadGame_Hook));
     }
 
     {
