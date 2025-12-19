@@ -3330,13 +3330,6 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 
 int g_lastActorAddedToWorldFrame = 0;
 
-struct AnimGraphPoseData
-{
-    hkQsTransform worldFromModel;
-    std::vector<hkQsTransform> highResPoseLocal;
-};
-std::unordered_map<BShkbAnimationGraph *, AnimGraphPoseData> g_animGraphPoseData{};
-std::mutex g_animGraphPoseDataLock{};
 
 bool AddRagdollToWorld(Actor *actor)
 {
@@ -3399,72 +3392,8 @@ bool AddRagdollToWorld(Actor *actor)
 
                     BSWriteLocker lock(&world->worldLock);
 
-                    bool resetRagdoll = false;
-
-                    {
-                        SimpleLocker lock(&manager->updateLock);
-                        for (int i = 0; i < manager->graphs.size; i++) {
-                            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                            if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-                                if (hkbCharacter *character = driver->character) {
-
-                                    std::scoped_lock lock(g_animGraphPoseDataLock);
-
-                                    auto it = g_animGraphPoseData.find(graph.ptr);
-                                    if (it != g_animGraphPoseData.end()) {
-                                        AnimGraphPoseData &poseData = it->second;
-
-                                        hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
-                                        MapHighResPoseLocalToLowResPoseWorld(driver, poseData.worldFromModel, poseData.highResPoseLocal.data(), lowResPoseWorld.m_data);
-
-                                        // Set rigidbody transforms to the anim pose ones
-                                        for (int i = 0; i < lowResPoseWorld.m_size; i++) {
-                                            hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
-                                            if (!rb) continue;
-
-                                            hkQsTransform &transform = lowResPoseWorld[i];
-
-                                            hkTransform newTransform;
-                                            newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));
-                                            hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
-
-                                            // Create a unique color from a hash of the address of the Actor ptr
-                                            UInt64 actorPtrHash = std::hash<Actor *>()(actor);
-                                            NiColorA debugColor = {
-                                                ((actorPtrHash & 0x00000000000000FF) >> 0) / 255.0f,
-                                                ((actorPtrHash & 0x000000000000FF00) >> 8) / 255.0f,
-                                                ((actorPtrHash & 0x00000000FF000000) >> 24) / 255.0f,
-                                                1.0f
-                                            };
-                                            RegisterDebugTransform(std::to_string((UInt64)rb), { hkTransformToNiTransform(newTransform, 5.f), debugColor });
-
-                                            PrintVector(HkVectorToNiPoint(newTransform.m_translation));
-
-                                            rb->getRigidMotion()->setTransform(newTransform);
-                                            hkpEntity_updateMovedBodyInfo(rb);
-
-                                            rb->getRigidMotion()->setLinearVelocity(NiPointToHkVector(NiPoint3()));
-                                            rb->getRigidMotion()->setAngularVelocity(NiPointToHkVector(NiPoint3()));
-                                        }
-
-                                        resetRagdoll = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
                     bool x = false;
                     BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
-
-                    if (resetRagdoll) {
-                        ForEachRagdollDriver(manager, [](hkbRagdollDriver *driver) {
-                            // shouldReinitializeRagdollController is reset to 0 by hkbRagdollDriver::reset(), so we need to set this to true after that is called.
-                            // hkbRagdollDriver::reset() is called within BShkbAnimationGraph::AddRagdollToWorld() in a subfunction.
-                            // What setting this to true does, is that in the next call to hkbRagdollDriver::driveToPose(), hkaRagdollRigidBodyController::reinitialize() will be called before driving to pose.
-                            driver->shouldReinitializeRagdollController = true;
-                        });
-                    }
 
                     ModifyConstraints(actor);
 
@@ -5451,6 +5380,34 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
                             ragdoll->lowResAnimPoseWS.assign(lowResPoseWorld.m_data, lowResPoseWorld.m_data + lowResPoseWorld.m_size);
 
+                            if (ragdoll->warpAllBones) {
+                                // Set rigidbody transforms to the anim pose ones
+                                for (int i = 0; i < lowResPoseWorld.m_size; i++) {
+                                    hkpRigidBody *rb = driver->ragdoll->getRigidBodyOfBone(i);
+                                    if (!rb) continue;
+
+                                    hkQsTransform &transform = lowResPoseWorld[i];
+
+                                    hkTransform newTransform;
+                                    newTransform.m_translation = NiPointToHkVector(HkVectorToNiPoint(transform.m_translation));
+                                    hkRotation_setFromQuat(&newTransform.m_rotation, transform.m_rotation);
+
+                                    rb->getRigidMotion()->setTransform(newTransform);
+                                    hkpEntity_updateMovedBodyInfo(rb);
+
+                                    rb->getRigidMotion()->setLinearVelocity(NiPointToHkVector(NiPoint3()));
+                                    rb->getRigidMotion()->setAngularVelocity(NiPointToHkVector(NiPoint3()));
+                                }
+
+                                // shouldReinitializeRagdollController is reset to 0 by hkbRagdollDriver::reset(), so we need to set this to true after that is called.
+                                // hkbRagdollDriver::reset() is called within BShkbAnimationGraph::AddRagdollToWorld() in a subfunction.
+                                // What setting this to true does, is that in the next call to hkbRagdollDriver::driveToPose(), hkaRagdollRigidBodyController::reinitialize() will be called before driving to pose.
+                                hkbRagdollDriver_reset(driver);
+                                driver->shouldReinitializeRagdollController = true;
+
+                                ragdoll->warpAllBones = false;
+                            }
+
                             hkQsTransform poseT = lowResPoseWorld[0];
 
                             if (ragdoll->rootBoneTransform) { // We compare against last frame's pose transform since the rigidbody transforms aren't updated yet for this frame until after the physics step.
@@ -5857,34 +5814,6 @@ _BShkbAnimationGraph_Generate BShkbAnimationGraph_Generate_Original = 0;
 void BShkbAnimationGraph_Generate_Hook(BShkbAnimationGraph *_this, bool *a_useGenerateJob)
 {
     BShkbAnimationGraph_Generate_Original(_this, a_useGenerateJob);
-
-    if (TESObjectREFR *holder = _this->holder) {
-        if (holder->formType == kFormType_Character) {
-            if (hkbGeneratorOutput *generatorOutput = _this->generatorOutputs[0]) {
-                hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(*generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
-                hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(*generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-
-                if (poseHeader && poseHeader->m_onFraction > 0.f && worldFromModelHeader && worldFromModelHeader->m_onFraction > 0.f) {
-                    if (worldFromModelHeader->m_numData > 0 && poseHeader->m_numData > 1) {
-                        hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(*generatorOutput, *worldFromModelHeader);
-                        hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(*generatorOutput, *poseHeader);
-
-                        std::scoped_lock lock(g_animGraphPoseDataLock);
-                        g_animGraphPoseData[_this] = { worldFromModel, std::vector<hkQsTransform>(highResPoseLocal, highResPoseLocal + poseHeader->m_numData) };
-                    }
-                    else if (worldFromModelHeader->m_numData > 0) {
-                        hkQsTransform &worldFromModel = *(hkQsTransform *)Track_getData(*generatorOutput, *worldFromModelHeader);
-                        std::scoped_lock lock(g_animGraphPoseDataLock);
-                        auto it = g_animGraphPoseData.find(_this);
-                        if (it != g_animGraphPoseData.end()) {
-                            it->second.worldFromModel = worldFromModel;
-                        }
-                    }
-
-                }
-            }
-        }
-    }
 }
 
 _Actor_GetHit Actor_TakePhysicsDamage_Original = 0;

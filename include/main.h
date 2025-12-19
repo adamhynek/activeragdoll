@@ -47,6 +47,7 @@ struct ActiveRagdoll
     bool shouldNullOutWorldWhenRemovingFromWorld = false;
     bool disableConstraintMotorsForOneFrame = false;
     bool isInRagdollState = false;
+    bool warpAllBones = true; // Initialize to true for the first driveToPose after adding
 };
 
 struct DebugTransform
