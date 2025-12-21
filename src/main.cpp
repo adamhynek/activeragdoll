@@ -4584,8 +4584,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
             bool isHittableCharController = g_hittableCharControllerGroups.size() > 0 && g_hittableCharControllerGroups.count(collisionGroup);
 
-            bool shouldBeActive = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
-            bool shouldBeInactive = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
+            bool isWithinStartDistance = VectorLength(actor->pos - player->pos) * *g_havokWorldScale < Config::options.activeRagdollStartDistance;
+            bool isBeyondEndDistance = VectorLength(actor->pos - player->pos) * *g_havokWorldScale > Config::options.activeRagdollEndDistance;
 
             bool isAddedToWorld = IsAddedToWorld(actor);
             bool isActiveActor = IsActiveActor(actor);
@@ -4594,87 +4594,80 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
             bool isAllowedToAddToWorld = *g_currentFrameCounter - g_lastActorAddedToWorldFrame > Config::options.minFramesBetweenActorAdds;
 
-            if (shouldBeActive) {
-                if ((!isAddedToWorld || !isProcessedActor) && isAddableToWorld && isAllowedToAddToWorld) {
-                    AddRagdollToWorld(actor);
-                    if (collisionGroup != 0) {
-                        g_activeBipedGroups.insert(collisionGroup);
-                        if (isHittableCharController) {
-                            g_hittableCharControllerGroups.erase(collisionGroup);
-                        }
+            // Determine desired state for this actor
+            bool shouldBeActive = isWithinStartDistance && isAddableToWorld && isAllowedToAddToWorld;
+            bool shouldBeInactive = isBeyondEndDistance || !isAddableToWorld;
+
+            // If actor is active but shouldn't be, deactivate it
+            if (isActiveActor && shouldBeInactive) {
+                if (isAddedToWorld) {
+                    RemoveRagdollFromWorld(actor);
+                }
+                CleanupActiveGroupTracking(collisionGroup);
+                isActiveActor = false;
+            }
+
+            // If actor is not active but should be, activate it
+            if ((!isAddedToWorld || !isProcessedActor) && shouldBeActive) {
+                AddRagdollToWorld(actor);
+                isActiveActor = true;
+            }
+
+            if (!isHittableCharController && isWithinStartDistance && !isActiveActor && collisionGroup != 0) {
+                // There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
+                // In this case, we need to register collisions against their charcontroller.
+                g_hittableCharControllerGroups.insert(collisionGroup);
+            }
+            else if (isHittableCharController && (isActiveActor || isBeyondEndDistance)) {
+                g_hittableCharControllerGroups.erase(collisionGroup);
+            }
+
+            // Maintain currently active actors
+            if (isActiveActor) {
+                if (collisionGroup != 0) {
+                    g_activeBipedGroups.insert(collisionGroup);
+
+                    if (
+                        (Config::options.dontCollidePlayerWithSmallRaces && IsSmall(actor)) ||
+                        (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
+                        (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
+                    ) {
+                        g_noPlayerCharControllerCollideGroups.insert(collisionGroup);
+                    }
+                    else {
+                        g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
                     }
                 }
 
-                if (!isAddableToWorld) {
-                    if (isActiveActor) {
-                        // Someone in range went from having a ragdoll or not being excluded, to not having a ragdoll or being excluded
-                        RemoveRagdollFromWorld(actor);
-                        CleanupActiveGroupTracking(collisionGroup);
-                        isActiveActor = false;
-                    }
+                // Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
+                DisableOrEnableSyncOnUpdate(actor, true);
 
-                    // There is no ragdoll instance, but we still need a way to hit the enemy, e.g. for the wisp (witchlight).
-                    // In this case, we need to register collisions against their charcontroller.
-                    if (collisionGroup != 0) {
-                        g_hittableCharControllerGroups.insert(collisionGroup);
-                    }
+                if (Config::options.forceAnimationUpdateForActiveActors) {
+                    // Force the game to run the animation graph update (and hence driveToPose, etc.)
+                    actor->flags2 |= (1 << 8);
                 }
 
-                if (isActiveActor) {
-                    if (collisionGroup != 0) {
-                        g_activeBipedGroups.insert(collisionGroup);
+                // Set whether we want biped self-collision for this actor
+                if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
+                    if (TESRace *race = actor->race) {
+                        const char *name = race->editorId;
+                        if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
+                            (name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
 
-                        if (
-                            (Config::options.dontCollidePlayerWithSmallRaces && IsSmall(actor)) ||
-                            (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
-                            (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
-                        ) {
-                            g_noPlayerCharControllerCollideGroups.insert(collisionGroup);
-                        }
-                        else {
-                            g_noPlayerCharControllerCollideGroups.erase(collisionGroup);
-                        }
-                    }
-
-                    // Sometimes the game re-enables sync-on-update e.g. when switching outfits, so we need to make sure it's disabled.
-                    DisableOrEnableSyncOnUpdate(actor, true);
-
-                    if (Config::options.forceAnimationUpdateForActiveActors) {
-                        // Force the game to run the animation graph update (and hence driveToPose, etc.)
-                        actor->flags2 |= (1 << 8);
-                    }
-
-                    // Set whether we want biped self-collision for this actor
-                    if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
-                        if (TESRace *race = actor->race) {
-                            const char *name = race->editorId;
-                            if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
-                                (name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
-
-                                if (g_physicsListener.IsCollided(actor) || isHeld) {
-                                    if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
-                                        g_selfCollidableBipedGroups.insert(collisionGroup);
-                                        UpdateCollisionFilterOnAllBones(actor);
-                                    }
+                            if (g_physicsListener.IsCollided(actor) || isHeld) {
+                                if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
+                                    g_selfCollidableBipedGroups.insert(collisionGroup);
+                                    UpdateCollisionFilterOnAllBones(actor);
                                 }
-                                else {
-                                    if (g_selfCollidableBipedGroups.count(collisionGroup)) {
-                                        g_selfCollidableBipedGroups.erase(collisionGroup);
-                                        UpdateCollisionFilterOnAllBones(actor);
-                                    }
+                            }
+                            else {
+                                if (g_selfCollidableBipedGroups.count(collisionGroup)) {
+                                    g_selfCollidableBipedGroups.erase(collisionGroup);
+                                    UpdateCollisionFilterOnAllBones(actor);
                                 }
                             }
                         }
                     }
-                }
-            }
-            else if (shouldBeInactive) {
-                if (isAddedToWorld && isAddableToWorld && isActiveActor) {
-                    RemoveRagdollFromWorld(actor);
-                    CleanupActiveGroupTracking(collisionGroup);
-                }
-                else if (isHittableCharController) {
-                    g_hittableCharControllerGroups.erase(collisionGroup);
                 }
             }
         }
