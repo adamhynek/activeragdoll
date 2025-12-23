@@ -161,6 +161,22 @@ struct hkbContext
 };
 static_assert(offsetof(hkbContext, world) == 0x38);
 
+struct hkbEventPayload : hkReferencedObject {};
+
+struct hkbEventBase
+{
+    UInt32 id; // 00
+    UInt32 pad04; // 04
+    hkbEventPayload *payload; // 08
+};
+
+struct hkbEventProperty : hkbEventBase {};
+
+struct hkbEvent : hkbEventBase
+{
+    hkRefVariant sender; // 10
+};
+
 struct hkbBindable : hkReferencedObject
 {
     hkRefPtr<struct hkbVariableBindingSet> variableBindingSet;  // 10
@@ -277,6 +293,139 @@ struct hkbBehaviorGraph : hkbGenerator
     bool                                         stateOrTransitionChanged;         // 12F
 };
 
+struct hkbStateMachine : hkbGenerator
+{
+    struct EventPropertyArray
+	{
+		void* vtbl;
+		UInt16 m_memSizeAndFlags_8;
+		SInt16 m_referenceCount_A;
+		char _pad_C [0x4];
+		hkArray<hkbEventProperty> events; // 10
+	};
+
+	struct TimeInterval
+	{
+		SInt32 enterEventId; // 00
+		SInt32 exitEventId; // 04
+		float enterTime; // 08
+		float exitTime; // 0C
+	};
+
+	struct TransitionInfo
+	{
+		TimeInterval triggerInterval; // 00
+		TimeInterval initiateInterval; // 10
+		struct hkbTransitionEffect * transition; // 20
+		void * condition; // 28
+		SInt32 eventId; // 30
+		SInt32 toStateId; // 34
+		SInt32 fromNestedStateId; // 38
+		SInt32 toNestedStateId; // 3C
+		SInt16 priority; // 40
+		UInt16 flags; // 42
+	};
+	
+	struct hkArray_TransitionInfo_
+	{
+		TransitionInfo * m_data_0;
+		SInt32 m_size_8;
+		SInt32 m_capacityAndFlags_C;
+	};
+
+	struct TransitionInfoArray
+	{
+		void* vtbl;
+		UInt16 m_memSizeAndFlags_8;
+		SInt16 m_referenceCount_A;
+		char _pad_C [0x4];
+		hkArray_TransitionInfo_ transitions; // 10
+	};
+
+	struct StateInfo
+	{
+		void* vtbl;
+		UInt16 m_memSizeAndFlags_8;
+		SInt16 m_referenceCount_A;
+		char _pad_C [0x4];
+		hkbVariableBindingSet * variableBindingSet;  // 10
+		hkArray<void *>           cachedBindables;     // 18
+		bool                            areBindablesCached;  // 28
+		UInt8                    pad29;               // 29
+		UInt16                   pad2A;               // 2A
+		UInt32                   pad2C;               // 2C
+		hkArray<void *> listeners;  // 30
+		EventPropertyArray * enterNotifyEvents; // 40
+		EventPropertyArray * exitNotifyEvents;  // 48
+		TransitionInfoArray * transitions; // 50
+		hkbGenerator *generator; // 58
+		hkStringPtr name; // 60
+		SInt32 stateId; // 68
+		float probability; // 6C
+		bool enable; // 70
+		bool hasEventlessTransitions; // 71
+		UInt32 pad74; // 74
+	};
+
+	struct TransitionInfoReference
+	{
+		hkInt16 m_fromStateIndex; // 00
+		hkInt16 m_transitionIndex; // 02
+		hkInt16 m_stateMachineId; // 04
+	};
+
+	struct ActiveTransitionInfo
+	{
+		struct hkbTransitionEffect * m_transitionEffect; // 00
+		void * m_transitionEffectInternalStateInfo; // 08
+		TransitionInfoReference m_transitionInfoReference; // 10
+		TransitionInfoReference m_transitionInfoReferenceForTE; // 1C
+		hkInt32 m_fromStateId; // 28
+		hkInt32 m_toStateId; // 2C
+		hkBool m_isReturnToPreviousState; // 30
+	};
+	
+	struct ProspectiveTransitionInfo
+	{
+		TransitionInfoReference m_transitionInfoReference;
+		TransitionInfoReference m_transitionInfoReferenceForTE;
+		hkInt32 m_toStateId;
+	};
+
+	hkbEvent                                                   eventToSendWhenStateOrTransitionChanges;  // 048
+	void *                                  startStateChooser;                        // 060
+	SInt32                                               startStateID;                             // 068
+	SInt32                                               returnToPreviousStateEventID;             // 06C
+	SInt32                                               randomTransitionEventID;                  // 070
+	SInt32                                               transitionToNextHigherStateEventID;       // 074
+	SInt32                                               transitionToNextLowerStateEventID;        // 078
+	SInt32                                               syncVariableIndex;                        // 07C
+	SInt32                                               currentStateID;                           // 080
+	bool                                                       wrapAroundStateID;                        // 084
+	std::int8_t                                                maxSimultaneousTransitions;               // 085
+	UInt8                 startStateMode;                           // 086
+	UInt8 selfTransitionMode;                       // 087
+	bool                                                       isActive;                                 // 088
+	UInt8                                               pad89;                                    // 089
+	UInt16                                              pad8A;                                    // 08A
+	UInt32                                              pad8C;                                    // 08C
+	hkArray<StateInfo *>                                        states;                                   // 090
+	TransitionInfoArray *                              wildcardTransitions;                      // 0A0
+	hkRefVariant                                               stateIDToIndexMap;                        // 0A8
+	hkArray<ActiveTransitionInfo>                                      activeTransitions;                        // 0B0
+	hkArray<void *>                                      transitionFlags;                          // 0C0
+	hkArray<void *>                                      wildcardTransitionFlags;                  // 0D0
+	hkArray<void *>                                      delayedTransitions;                       // 0E0
+	float                                                      timeInState;                              // 0F0
+	float                                                      lastLocalTime;                            // 0F4
+	SInt32                                               previousStateID;                          // 0F8
+	SInt32                                               nextStartStateIndexOverride;              // 0FC
+	bool                                                       stateOrTransitionChanged;                 // 100
+	bool                                                       echoNextUpdate;                           // 101
+	UInt16                                              currentStateIndexAndEntered;              // 102
+	UInt32                                              pad0BC;                                   // 104
+};
+
 struct hkbTransitionEffect : hkbGenerator
 {
     UInt8 selfTransitionMode; // 48
@@ -333,22 +482,6 @@ struct BSCyclicBlendTransitionGenerator : hkbGenerator
     State state; // A8
 };
 static_assert(offsetof(BSCyclicBlendTransitionGenerator, state) == 0xA8);
-
-struct hkbEventPayload : hkReferencedObject {};
-
-struct hkbEventBase
-{
-    UInt32 id; // 00
-    UInt32 pad04; // 04
-    hkbEventPayload *payload; // 08
-};
-
-struct hkbEventProperty : hkbEventBase {};
-
-struct hkbEvent : hkbEventBase
-{
-    hkRefVariant sender; // 10
-};
 
 struct bhkCharacterController : NiRefObject
 {

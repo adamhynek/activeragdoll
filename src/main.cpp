@@ -6968,6 +6968,27 @@ void BSCyclicBlendTransitionGenerator_handleEvent_Hook(BSCyclicBlendTransitionGe
     BSCyclicBlendTransitionGenerator_handleEvent_Original(_this, context, evnt);
 }
 
+typedef void(*_hkbStateMachine_beginTransition)(hkbStateMachine *_this, const hkbContext& context, void *prospectiveTransitionInfo, bool isReturnToPreviousState );
+_hkbStateMachine_beginTransition hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Original = nullptr;
+RelocAddr<uintptr_t> hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_HookLoc(0xA55AC1);
+void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkbStateMachine *_this, const hkbContext& context, void *prospectiveTransitionInfo, bool isReturnToPreviousState )
+{
+    hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Original(_this, context, prospectiveTransitionInfo, isReturnToPreviousState);
+
+    for (hkbStateMachine::ActiveTransitionInfo &transitionInfo : _this->activeTransitions) {
+        if (hkbTransitionEffect *transition = transitionInfo.m_transitionEffect) {
+            if (transition->selfTransitionMode != 0) {
+                if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
+                    if (blendingTransitionEffect->toGenerator && DYNAMIC_CAST(blendingTransitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) {
+                        // There are some transition effects that are set to SELF_TRANSITION_MODE_RESET, such as for the Wispmother. This causes a snap when trying to do a CyclicCrossBlend in some cases.
+                        blendingTransitionEffect->selfTransitionMode = 0; // SELF_TRANSITION_MODE_CONTINUE_IF_CYCLIC_BLEND_IF_ACYCLIC
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 typedef void(*_ActorProcess_QueueAction)(ActorProcessManager *process, UInt32 *defaultObject);
 _ActorProcess_QueueAction ActorProcess_QueueAction_Original = 0;
@@ -7331,6 +7352,11 @@ void PerformHooks(void)
     {
         BSCyclicBlendTransitionGenerator_handleEvent_Original = *BSCyclicBlendTransitionGenerator_handleEvent_vtbl;
         SafeWrite64(BSCyclicBlendTransitionGenerator_handleEvent_vtbl.GetUIntPtr(), uintptr_t(BSCyclicBlendTransitionGenerator_handleEvent_Hook));
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_HookLoc.GetUIntPtr(), uintptr_t(hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook));
+        hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Original = (_hkbStateMachine_beginTransition)originalFunc;
     }
 
     {
