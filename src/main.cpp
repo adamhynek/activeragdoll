@@ -6984,118 +6984,6 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
     }
 }
 
-struct MovementHandlerUpdateDataSmallDelta
-{
-	UInt64 unk00;
-	tArray<void *> unk08;
-	UInt64 unk20;
-	tArray<void *> unk30;
-	MovementVector movementVector; // 40
-	NiPoint3 actorRot; // 50
-	bool modifyMovementVectorForTargetSpeedDistance; // 5C
-	float distanceToCover; // 60
-	float targetSpeed; // 64
-	bool dontLimitTargetSpeed; // 68
-	float deltaTime; // 6C
-	float accelerationRate; // 70
-	float decelerationRate; // 74
-	float rotSpeedClamed; // 78
-	float rotSpeedUnclamped; // 7C
-	float rotAcceleration; // 80
-	UInt32 pad84;
-};
-
-struct MovementHandlerOutputDataSmallDelta
-{
-	NiPoint3 moveDirEuler; // 00
-	float moveAmt; // 0C
-	NiPoint3 rotSpeedEuler; // 10
-	float deltaTime; // 1C
-};
-
-struct MovementHandlerAgentUpdateDataSmallDelta
-{
-	MovementHandlerUpdateDataSmallDelta * updateData; // 00
-	MovementHandlerOutputDataSmallDelta * outputData; // 08
-};
-
-struct MovementHandlerAgentAngleController
-{
-	void *vtbl; // 00
-	SInt32 refCount_8;
-	char _pad_C [0x4];
-	ActorState *owner; // 10
-	void *vtbl2; // 18
-};
-
-
-// void MovementHandlerAgentAngleController_UpdateSmallDeltaEx(MovementHandlerAgentAngleController *controller, MovementHandlerAgentUpdateDataSmallDelta *update)
-// {
-//     ActorState *actorState = controller->owner;
-//     NiPoint3 currentEuler; get_vfunc<_MovementState_GetActorRotationEuler>(actorState, 4)(actorState, currentEuler);
-//     float currentYawSpeed = get_vfunc<_MovementState_GetRotationSpeed>(actorState, 6)(actorState);
-
-//     float currentYaw = ConstrainAngle180(currentEuler.z);
-
-//     float targetYaw = ConstrainAngle180(update->updateData->actorRot.z);
-//     float yawError = ConstrainAngle180(targetYaw - currentYaw);
-
-//     float newYawSpeed = 0.f;
-//     if (abs(yawError) < 1deg && abs(currentYawSpeed) < 1deg)
-//         newYawSpeed = 0;
-//     else
-//         newYawSpeed = accelLimitedArriveController(
-//             yawError, currentYawSpeed,
-//             accel = update.acceleratedRotSpeed,
-//             dt = update.deltaTime
-//         );
-
-//     newYawSpeed = std::clamp(newYawSpeed, -update->updateData->rotSpeedUnclamped, update->updateData->rotSpeedUnclamped);
-
-//     update->outputData->rotSpeedEuler.z = newYawSpeed;
-//     update->outputData->rotSpeedEuler.x = MovementUtils_ComputeRotationFromDelta(currentEuler.x, update->updateData->actorRot.x, update->updateData->deltaTime);
-//     update->outputData->rotSpeedEuler.y = 0;
-// }
-
-typedef void(*_MovementHandlerAgentAngleController_UpdateSmallDelta)(MovementHandlerAgentAngleController *a1, MovementHandlerAgentUpdateDataSmallDelta *a2);
-_MovementHandlerAgentAngleController_UpdateSmallDelta MovementHandlerAgentAngleController_UpdateSmallDelta_Original = 0;
-static RelocPtr<_MovementHandlerAgentAngleController_UpdateSmallDelta> MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl(0x18AF728);
-void MovementHandlerAgentAngleController_UpdateSmallDelta_Hook(MovementHandlerAgentAngleController *a1, MovementHandlerAgentUpdateDataSmallDelta *updateData)
-{
-    MovementHandlerAgentAngleController_UpdateSmallDelta_Original(a1, updateData);
-
-    MovementHandlerAgentAngleController *controller = (MovementHandlerAgentAngleController *)((UInt64)a1 - 0x18);
-
-    ActorState *actorState = controller->owner;
-    if (!actorState) {
-        return;
-    }
-
-    Actor *actor = DYNAMIC_CAST(actorState, ActorState, Actor);
-    if (!actor) {
-        return;
-    }
-
-    bool foundActor = false;
-    {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
-
-        auto it = g_keepOffsetActors.find(actor);
-        if (it != g_keepOffsetActors.end()) {
-            foundActor = true;
-        }
-    }
-
-    if (foundActor) {
-        float deltaZ = ConstrainAngle180(updateData->updateData->actorRot.z - actor->rot.z);
-        PrintToFile(std::to_string(deltaZ), "keepOffsetAngleControllerDeltaZ.txt");
-        if (fabs(deltaZ) >= Config::options.dummyFloat1) {
-            // updateData->outputData->rotSpeedEuler.z = deltaZ / updateData->updateData->deltaTime;
-        }
-    }
-}
-
-
 
 typedef void(*_MovementUtils_DampenMovementVector)(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut);
 _MovementUtils_DampenMovementVector MovementUtils_DampenMovementVector_Original = 0;
@@ -7527,11 +7415,6 @@ void PerformHooks(void)
     {
         BSCyclicBlendTransitionGenerator_handleEvent_Original = *BSCyclicBlendTransitionGenerator_handleEvent_vtbl;
         SafeWrite64(BSCyclicBlendTransitionGenerator_handleEvent_vtbl.GetUIntPtr(), uintptr_t(BSCyclicBlendTransitionGenerator_handleEvent_Hook));
-    }
-
-    {
-        MovementHandlerAgentAngleController_UpdateSmallDelta_Original = *MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl;
-        SafeWrite64(MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl.GetUIntPtr(), uintptr_t(MovementHandlerAgentAngleController_UpdateSmallDelta_Hook));
     }
 
     {
