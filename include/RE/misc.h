@@ -628,6 +628,12 @@ struct PackageTarget
 };
 static_assert(sizeof(PackageTarget) == 0x18);
 
+struct MovementVector
+{
+    NiPoint3 eulerRot; // 00
+    float magnitude; // 0C
+};
+
 struct IMovementPlannerAgent
 {
     void *vtbl; // 00
@@ -668,6 +674,16 @@ struct MovementPlannerAgentKeepOffset : MovementPlannerAgent
     KeepOffsetData keepOffsetData; // 38
 };
 static_assert(sizeof(MovementPlannerAgentKeepOffset) == 0x60);
+
+struct MovementPlannerAgentDirectControl : MovementPlannerAgent
+{
+	UInt64 unk20;
+	BSReadWriteLock lock; // 28
+	MovementVector targetMovementVector; // 30
+	NiPoint3 targetAngle; // 40
+	UInt32 pad4C;
+};
+static_assert(sizeof(MovementPlannerAgentDirectControl) == 0x50);
 
 enum class EnabledInputs : UInt32
 {
@@ -842,4 +858,6 @@ typedef void(*_Actor_SetPosition)(Actor *actor, const NiPoint3 &position, bool s
 typedef void(*_Actor_DetachHavok)(Actor *actor);
 typedef void(*_Actor_MoveHavok)(Actor *actor);
 typedef void (*_bhkWorld_dtor)(bhkWorld *);
+typedef void(*_ActorState_GetActorRotationEuler)(ActorState *actorState, NiPoint3 &outEuler); // 4
+typedef float(*_ActorState_GetRotationSpeedZ)(ActorState *actorState); // 6
 

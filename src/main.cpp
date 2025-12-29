@@ -6386,6 +6386,37 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 
         if (!motionDrivenControl->IsMotionDriven()) return;
 
+        
+        if (!IMovementState_CanStrafe(&actor->actorState)) {
+            // Nostrafe only
+
+            bool isPlannerDirectControl = movementController->isHighProcess && movementController->movementType == MovementControllerNPC::MovementType::kPlannerDirectControl && movementController->isPlannerDirectControl;
+            if (!isPlannerDirectControl) return;
+
+            static BSFixedString sPlannerDirectControl("Planner Direct Control");
+            BSTSmartPointer<MovementAgent> movementAgent{ 0 };
+            if (!MovementControllerNPC_GetMovementAgent(movementController, sPlannerDirectControl, movementAgent)) return;
+
+            MovementPlannerAgentDirectControl *plannerAgentDirectControl = DYNAMIC_CAST(movementAgent.ptr, MovementAgent, MovementPlannerAgentDirectControl);
+            if (!plannerAgentDirectControl) return;
+
+            NiPoint3 targetAngle = plannerAgentDirectControl->targetAngle;
+            if (ActorProcessManager *process = actor->processManager) {
+                float currentRotZ = actor->rot.z;
+                float targetRotZ = targetAngle.z;
+                float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
+                float rotZ = 0.f;
+                if (fabs(deltaZ) >= Config::options.dummyFloat1) {
+                    rotZ = deltaZ;
+                }
+
+                // Force the rotation amount to be what we want.
+                // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
+                ActorProcess_SetRotationSpeedZ(process, rotZ / a_deltaTime);
+                a_rotAmt.z = rotZ;
+            }
+        }
+
         // TODO: Perhaps for quadrupeds we limit movement to their forward axis? Or perhaps not just for quadrupeds, but for everyone?? Humanoids/bipeds kind of walk floatily sideways too.
         //       We could use the forward/back/left/right values from the current movement type to limit movement to those directions.
         // TODO: We could probably use ApplyVelocityForDuration instead of using this hook.
@@ -6446,11 +6477,7 @@ void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *
 }
 
 
-struct MovementVector
-{
-    NiPoint3 eulerRot; // 00
-    float magnitude; // 0C
-};
+
 
 struct AnimUpdateData
 {
@@ -6666,6 +6693,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
         // TODO: What if each hand is grabbing different bones ???
         NiPoint3 centroidToGrabbedNode = HkVectorToNiPoint(data.grabbedBoneAnimPoseWS.m_translation) - data.animCentroidWS; // anim centroid - havok coords
+
+#ifdef _DEBUG
+        NiTransform debugT;
+        debugT.pos = data.ragdollCentroidWS * *g_inverseHavokWorldScale;
+        debugT.scale = 2.5f;
+        RegisterDebugTransform("animCentroidWS", { debugT, { 1, 0, 0, 1 } });
+#endif // _DEBUG
         
         // TODO: We could make this a "percent of the size of the creature" instead of a fixed value
         NiPoint3 centroidToHandOnNode = (data.handPosOnGrabbedNode * *g_havokWorldScale) - data.ragdollCentroidWS; // physics centroid - havok coords
@@ -6687,7 +6721,36 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             bool isRight = rightDot >= 0.f;
             lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
 
-            offsetAngle.z += VectorLength(lateralComponent) * lateralYawMult;
+            NiPoint3 playerPos = g_prevPlayerPos;
+            NiPoint3 prevPlayerPos = g_prevPlayerPos - g_playerPosDelta;
+            NiPoint3 prevActorToPlayerXY = prevPlayerPos - actor->pos;
+            prevActorToPlayerXY.z = 0.f;
+            NiPoint3 currActorToPlayerXY = playerPos - actor->pos;
+            currActorToPlayerXY.z = 0.f;
+            float prevRadius = VectorLength(prevActorToPlayerXY);
+            float currRadius = VectorLength(currActorToPlayerXY);
+            float radiusChange = currRadius - prevRadius;
+            float radius = currRadius;
+            float angleBetweenCurrAndPrev = 0.f;
+            if (prevRadius > 0.001f && currRadius > 0.001f) {
+                float dot = DotProductSafe(VectorNormalized(prevActorToPlayerXY), VectorNormalized(currActorToPlayerXY));
+                angleBetweenCurrAndPrev = ConstrainAngle180(acosf(dot));
+                NiPoint3 cross = CrossProduct(prevActorToPlayerXY, currActorToPlayerXY);
+                if (cross.z > 0.f) {
+                    angleBetweenCurrAndPrev = -angleBetweenCurrAndPrev;
+                }
+                PrintToFile(std::to_string(angleBetweenCurrAndPrev), "keepOffsetAngleBetweenCurrAndPrev.txt");
+            }
+            headingAdd += angleBetweenCurrAndPrev * Config::options.keepOffsetLateralPlayerMovementInfluence;
+            
+
+            // NiPoint3 actorToPlayerXY = (*g_thePlayer)->pos - actor->pos;
+            // actorToPlayerXY.z = 0.f;
+            // float radius = VectorLength(actorToPlayerXY);
+            // float lateral = VectorLength(lateralComponent);
+            // float deltaAngle = (radius > 0.001f) ? atan2f(lateral, radius) : 0.f;
+
+            // headingAdd += deltaAngle * lateralYawMult;
         }
 
         NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
@@ -6839,7 +6902,7 @@ struct OverwriteMovementParameters
         acceleration = Config::options.dummyFloat2;
         deceleration = Config::options.dummyFloat2;
         rotationPercent = Config::options.dummyFloat3;
-        angleAcceleration = params->GetAngleAcceleration();
+        angleAcceleration = Config::options.dummyFloat4;
         type = params->GetType();
     }
 
@@ -6920,6 +6983,118 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, movementParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }
 }
+
+struct MovementHandlerUpdateDataSmallDelta
+{
+	UInt64 unk00;
+	tArray<void *> unk08;
+	UInt64 unk20;
+	tArray<void *> unk30;
+	MovementVector movementVector; // 40
+	NiPoint3 actorRot; // 50
+	bool modifyMovementVectorForTargetSpeedDistance; // 5C
+	float distanceToCover; // 60
+	float targetSpeed; // 64
+	bool dontLimitTargetSpeed; // 68
+	float deltaTime; // 6C
+	float accelerationRate; // 70
+	float decelerationRate; // 74
+	float rotSpeedClamed; // 78
+	float rotSpeedUnclamped; // 7C
+	float rotAcceleration; // 80
+	UInt32 pad84;
+};
+
+struct MovementHandlerOutputDataSmallDelta
+{
+	NiPoint3 moveDirEuler; // 00
+	float moveAmt; // 0C
+	NiPoint3 rotSpeedEuler; // 10
+	float deltaTime; // 1C
+};
+
+struct MovementHandlerAgentUpdateDataSmallDelta
+{
+	MovementHandlerUpdateDataSmallDelta * updateData; // 00
+	MovementHandlerOutputDataSmallDelta * outputData; // 08
+};
+
+struct MovementHandlerAgentAngleController
+{
+	void *vtbl; // 00
+	SInt32 refCount_8;
+	char _pad_C [0x4];
+	ActorState *owner; // 10
+	void *vtbl2; // 18
+};
+
+
+// void MovementHandlerAgentAngleController_UpdateSmallDeltaEx(MovementHandlerAgentAngleController *controller, MovementHandlerAgentUpdateDataSmallDelta *update)
+// {
+//     ActorState *actorState = controller->owner;
+//     NiPoint3 currentEuler; get_vfunc<_MovementState_GetActorRotationEuler>(actorState, 4)(actorState, currentEuler);
+//     float currentYawSpeed = get_vfunc<_MovementState_GetRotationSpeed>(actorState, 6)(actorState);
+
+//     float currentYaw = ConstrainAngle180(currentEuler.z);
+
+//     float targetYaw = ConstrainAngle180(update->updateData->actorRot.z);
+//     float yawError = ConstrainAngle180(targetYaw - currentYaw);
+
+//     float newYawSpeed = 0.f;
+//     if (abs(yawError) < 1deg && abs(currentYawSpeed) < 1deg)
+//         newYawSpeed = 0;
+//     else
+//         newYawSpeed = accelLimitedArriveController(
+//             yawError, currentYawSpeed,
+//             accel = update.acceleratedRotSpeed,
+//             dt = update.deltaTime
+//         );
+
+//     newYawSpeed = std::clamp(newYawSpeed, -update->updateData->rotSpeedUnclamped, update->updateData->rotSpeedUnclamped);
+
+//     update->outputData->rotSpeedEuler.z = newYawSpeed;
+//     update->outputData->rotSpeedEuler.x = MovementUtils_ComputeRotationFromDelta(currentEuler.x, update->updateData->actorRot.x, update->updateData->deltaTime);
+//     update->outputData->rotSpeedEuler.y = 0;
+// }
+
+typedef void(*_MovementHandlerAgentAngleController_UpdateSmallDelta)(MovementHandlerAgentAngleController *a1, MovementHandlerAgentUpdateDataSmallDelta *a2);
+_MovementHandlerAgentAngleController_UpdateSmallDelta MovementHandlerAgentAngleController_UpdateSmallDelta_Original = 0;
+static RelocPtr<_MovementHandlerAgentAngleController_UpdateSmallDelta> MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl(0x18AF728);
+void MovementHandlerAgentAngleController_UpdateSmallDelta_Hook(MovementHandlerAgentAngleController *a1, MovementHandlerAgentUpdateDataSmallDelta *updateData)
+{
+    MovementHandlerAgentAngleController_UpdateSmallDelta_Original(a1, updateData);
+
+    MovementHandlerAgentAngleController *controller = (MovementHandlerAgentAngleController *)((UInt64)a1 - 0x18);
+
+    ActorState *actorState = controller->owner;
+    if (!actorState) {
+        return;
+    }
+
+    Actor *actor = DYNAMIC_CAST(actorState, ActorState, Actor);
+    if (!actor) {
+        return;
+    }
+
+    bool foundActor = false;
+    {
+        std::scoped_lock lock(g_keepOffsetActorsLock);
+
+        auto it = g_keepOffsetActors.find(actor);
+        if (it != g_keepOffsetActors.end()) {
+            foundActor = true;
+        }
+    }
+
+    if (foundActor) {
+        float deltaZ = ConstrainAngle180(updateData->updateData->actorRot.z - actor->rot.z);
+        PrintToFile(std::to_string(deltaZ), "keepOffsetAngleControllerDeltaZ.txt");
+        if (fabs(deltaZ) >= Config::options.dummyFloat1) {
+            // updateData->outputData->rotSpeedEuler.z = deltaZ / updateData->updateData->deltaTime;
+        }
+    }
+}
+
 
 
 typedef void(*_MovementUtils_DampenMovementVector)(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut);
@@ -7352,6 +7527,11 @@ void PerformHooks(void)
     {
         BSCyclicBlendTransitionGenerator_handleEvent_Original = *BSCyclicBlendTransitionGenerator_handleEvent_vtbl;
         SafeWrite64(BSCyclicBlendTransitionGenerator_handleEvent_vtbl.GetUIntPtr(), uintptr_t(BSCyclicBlendTransitionGenerator_handleEvent_Hook));
+    }
+
+    {
+        MovementHandlerAgentAngleController_UpdateSmallDelta_Original = *MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl;
+        SafeWrite64(MovementHandlerAgentAngleController_UpdateSmallDelta_vtbl.GetUIntPtr(), uintptr_t(MovementHandlerAgentAngleController_UpdateSmallDelta_Hook));
     }
 
     {

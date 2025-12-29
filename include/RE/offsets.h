@@ -743,6 +743,9 @@ extern RelocAddr<_ActorProcess_GetRotationSpeedZ> ActorProcess_GetRotationSpeedZ
 typedef void(*_ActorProcess_PushActorAway)(ActorProcessManager *_this, Actor *actor, NiPoint3 &from, float force);
 extern RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway;
 
+typedef void(*_ActorProcess_SetRotationSpeedZ)(ActorProcessManager *_this, float speed);
+extern RelocAddr<_ActorProcess_SetRotationSpeedZ> ActorProcess_SetRotationSpeedZ;
+
 typedef void(*_MovementControllerNPC_Update)(MovementControllerNPC *_this);
 extern RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update;
 
@@ -1030,6 +1033,12 @@ extern RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphMan
 
 typedef bool(*_Actor_IsRagdollMovingSlowEnoughToGetUp)(Actor *_this);
 extern RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp;
+
+typedef float(*_MovementUtils_ComputeRotationFromDelta)(float a1, float a2, float a3);
+extern RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeRotationFromDelta;
+
+typedef bool(*_MovementControllerNPC_GetMovementAgent)(MovementControllerNPC *_this, BSFixedString &agentName, BSTSmartPointer<MovementAgent> &movementAgentOut);
+extern RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent;
 
 typedef void(*_Debug_MessageBox)(UInt64 a1, UInt64 a2, UInt64 a3, BSFixedString *messageBoxText);
 extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;

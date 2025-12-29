@@ -317,6 +317,7 @@ RelocAddr<_ActorProcess_SetMovementDirectionEulerY> ActorProcess_SetMovementDire
 RelocAddr<_ActorProcess_GetMovementDirectionEuler> ActorProcess_GetMovementDirectionEuler(0x686440);
 RelocAddr<_ActorProcess_GetRotationSpeedZ> ActorProcess_GetRotationSpeedZ(0x686520);
 RelocAddr<_ActorProcess_PushActorAway> ActorProcess_PushActorAway(0x686920);
+RelocAddr<_ActorProcess_SetRotationSpeedZ> ActorProcess_SetRotationSpeedZ(0x686540);
 RelocAddr<_MovementControllerNPC_Update> MovementControllerNPC_Update(0x716120);
 RelocAddr<_Actor_KeepOffsetFromActor> Actor_KeepOffsetFromActor(0x60C1A0);
 RelocAddr<_Actor_ClearKeepOffsetFromActor> Actor_ClearKeepOffsetFromActor(0x60C2D0);
@@ -414,6 +415,8 @@ RelocAddr<_TESObjectCELL_PlaceParticleEffect> TESObjectCELL_PlaceParticleEffect(
 RelocAddr<_DispatchTransformDeltaEvent> DispatchTransformDeltaEvent(0xB362D0);
 RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_GetWorldFromModel(0x61D4C0);
 RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp(0x600DF0);
+RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeRotationFromDelta(0x1156F00);
+RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent(0x115DB00);
 RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);
 
 RelocPtr<ProcessLists *> g_processLists(0x1F831B0);
