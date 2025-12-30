@@ -721,6 +721,7 @@ struct KeepOffsetData
     NiPoint3 offsetAngle;
     float catchUpRadius;
     float followRadius;
+    std::optional<NiTransform> handFromRoot[2];
     NiPoint3 endMovementDirection;
     double endMovementTime = 0.0;
     std::deque<NiPoint3> offsets{ 500, NiPoint3() };
@@ -4000,7 +4001,25 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
         if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
             // Wasn't grabbed before
             UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-            g_keepOffsetActors[actor] = { actorHandle, NiPoint3(), NiPoint3(), Config::options.keepOffsetCatchUpRadius, Config::options.keepOffsetFollowRadius };
+            std::optional<NiTransform> handFromRoot[2];
+            // TODO: Handle both hands at once? Although initially it will probably only be one hand on this particular frame
+            if (g_rightHeldRefr == actor) {
+                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                handFromRoot[0] = InverseTransform(refrTransform) * g_rawHandTransforms[0];
+            }
+            if (g_leftHeldRefr == actor) {
+                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                handFromRoot[1] = InverseTransform(refrTransform) * g_rawHandTransforms[1];
+            }
+            KeepOffsetData data{};
+            data.target = actorHandle;
+            data.offset = NiPoint3();
+            data.offsetAngle = NiPoint3();
+            data.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
+            data.followRadius = Config::options.keepOffsetFollowRadius;
+            data.handFromRoot[0] = handFromRoot[0];
+            data.handFromRoot[1] = handFromRoot[1];
+            g_keepOffsetActors[actor] = data;
         }
         else {
             // Already in the set, so check if it actually succeeded at first
@@ -4046,6 +4065,15 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                                             t.pos = data.handPosOnGrabbedNode;
                                             t.scale = 1.f;
                                             RegisterDebugTransform("asdf", { t, {0, 0, 1, 1} });
+                                        }
+
+                                        if (data.handFromRoot[isLeft]) {
+                                            NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
+
+                                            NiTransform t;
+                                            t.pos = handFromRoot.pos;
+                                            t.scale = 1.f;
+                                            RegisterDebugTransform(std::string("handFromRoot") + std::to_string(isLeft), { t, {1, 0, 0, 1} });
                                         }
 #endif
                                     }
@@ -6708,49 +6736,33 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         PrintToFile(std::to_string(centroidToHandOnNodeLengthAlongForward), "keepOffsetCentroidToGrabbedNodeXY.txt");
 
         if (centroidToHandOnNodeLengthAlongForward >= Config::options.keepOffsetMinCentroidDistanceForLateralYaw) {
-            NiPoint3 right = RightVector(refrTransform.rot);
-
-            float lateralYawMult = 1.f;
-            if (DotProduct(centroidToGrabbedNode, forward) >= 0.f) {
-                lateralYawMult = -1.f;
-            }
-
             NiPoint3 moveAmtInfluencingRotation = moveAmtFromPlayerMovement * Config::options.keepOffsetLateralPlayerMovementInfluence + moveAmtFromRagdollInfluence * Config::options.keepOffsetLateralRagdollMovementInfluence;
-            float rightDot = DotProduct(moveAmtInfluencingRotation, right);
-            NiPoint3 lateralComponent = right * rightDot;
-            bool isRight = rightDot >= 0.f;
-            lateralYawMult = isRight ? -lateralYawMult : lateralYawMult;
 
-            NiPoint3 playerPos = g_prevPlayerPos;
-            NiPoint3 prevPlayerPos = g_prevPlayerPos - g_playerPosDelta;
-            NiPoint3 prevActorToPlayerXY = prevPlayerPos - actor->pos;
-            prevActorToPlayerXY.z = 0.f;
-            NiPoint3 currActorToPlayerXY = playerPos - actor->pos;
-            currActorToPlayerXY.z = 0.f;
-            float prevRadius = VectorLength(prevActorToPlayerXY);
-            float currRadius = VectorLength(currActorToPlayerXY);
-            float radiusChange = currRadius - prevRadius;
-            float radius = currRadius;
-            float angleBetweenCurrAndPrev = 0.f;
-            if (prevRadius > 0.001f && currRadius > 0.001f) {
-                float dot = DotProductSafe(VectorNormalized(prevActorToPlayerXY), VectorNormalized(currActorToPlayerXY));
-                angleBetweenCurrAndPrev = ConstrainAngle180(acosf(dot));
-                NiPoint3 cross = CrossProduct(prevActorToPlayerXY, currActorToPlayerXY);
-                if (cross.z > 0.f) {
-                    angleBetweenCurrAndPrev = -angleBetweenCurrAndPrev;
+            // TODO: Properly handle both hands at once
+            for (int isLeft = 0; isLeft <= 1; isLeft++) {
+                if (data.handFromRoot[isLeft]) {
+                    NiTransform handTransform = g_rawHandTransforms[isLeft];
+                    NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
+
+                    NiPoint3 rootToGrabbedPoint = handFromRoot.pos - refrTransform.pos;
+                    NiPoint3 rootToHand = handTransform.pos - refrTransform.pos;
+                    rootToGrabbedPoint.z = 0.f;
+                    rootToHand.z = 0.f;
+
+                    if (VectorLength(rootToGrabbedPoint) > 0.001f && VectorLength(rootToHand) > 0.001f) {
+                        NiPoint3 cross = CrossProduct(rootToGrabbedPoint, rootToHand);
+                        float signedAreaZ = cross.z;
+                        float dot = DotProduct(rootToGrabbedPoint, rootToHand);
+                        float deltaAngle = atan2f(signedAreaZ, dot);
+                        deltaAngle = -deltaAngle;
+
+                        PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
+
+                        headingAdd += deltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                    }
                 }
-                PrintToFile(std::to_string(angleBetweenCurrAndPrev), "keepOffsetAngleBetweenCurrAndPrev.txt");
             }
-            headingAdd += angleBetweenCurrAndPrev * Config::options.keepOffsetLateralPlayerMovementInfluence;
-            
 
-            // NiPoint3 actorToPlayerXY = (*g_thePlayer)->pos - actor->pos;
-            // actorToPlayerXY.z = 0.f;
-            // float radius = VectorLength(actorToPlayerXY);
-            // float lateral = VectorLength(lateralComponent);
-            // float deltaAngle = (radius > 0.001f) ? atan2f(lateral, radius) : 0.f;
-
-            // headingAdd += deltaAngle * lateralYawMult;
         }
 
         NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
