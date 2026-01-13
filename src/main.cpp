@@ -4000,25 +4000,30 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
     if (keepOffset) {
         if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
             // Wasn't grabbed before
-            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
-            std::optional<NiTransform> handFromRoot[2];
-            // TODO: Handle both hands at once? Although initially it will probably only be one hand on this particular frame
-            if (g_rightHeldRefr == actor) {
-                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                handFromRoot[0] = InverseTransform(refrTransform) * g_rawHandTransforms[0];
-            }
-            if (g_leftHeldRefr == actor) {
-                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                handFromRoot[1] = InverseTransform(refrTransform) * g_rawHandTransforms[1];
-            }
+
             KeepOffsetData data{};
-            data.target = actorHandle;
+            data.target = GetOrCreateRefrHandle(actor);
             data.offset = NiPoint3();
             data.offsetAngle = NiPoint3();
             data.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
             data.followRadius = Config::options.keepOffsetFollowRadius;
-            data.handFromRoot[0] = handFromRoot[0];
-            data.handFromRoot[1] = handFromRoot[1];
+            
+            // TODO: Handle both hands at once? Although initially it will probably only be one hand on this particular frame
+            for (int isLeft = 0; isLeft < 2; ++isLeft) {
+                TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
+                if (heldRefr == actor) {
+                    NiTransform handTransform = g_rawHandTransforms[isLeft]; // fall back to the actual hand position
+                    if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                        NiTransform nodeToHand = InverseTransform(handToNode);
+                        handTransform = heldNode->m_worldTransform * nodeToHand;
+                    }
+
+                    NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                    data.handFromRoot[isLeft] = InverseTransform(refrTransform) * handTransform;
+                }
+            }
+
             g_keepOffsetActors[actor] = data;
         }
         else {
