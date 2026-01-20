@@ -166,6 +166,7 @@ namespace Config {
         float keepOffsetStartOffsetNoStrafe = 5.f;
         float keepOffsetStopOffsetNoStrafe = 1.f;
         float keepOffsetHeadingSpeedNoStrafe = 2.f;
+        float keepOffsetPlayerDirectionHeadingSpeed = 2.f;
         float keepOffsetMoveSpeedNoStrafe = 100.f;
         float keepOffsetLateralPlayerMovementInfluence = 0.1f;
         float keepOffsetLateralRagdollMovementInfluence = 1.f;

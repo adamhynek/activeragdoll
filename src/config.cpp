@@ -326,6 +326,7 @@ namespace Config {
         if (!RegisterFloat("keepOffsetStartOffsetNoStrafe", options.keepOffsetStartOffsetNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetStopOffsetNoStrafe", options.keepOffsetStopOffsetNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetHeadingSpeedNoStrafe", options.keepOffsetHeadingSpeedNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetPlayerDirectionHeadingSpeed", options.keepOffsetPlayerDirectionHeadingSpeed)) success = false;
         if (!RegisterFloat("keepOffsetMoveSpeedNoStrafe", options.keepOffsetMoveSpeedNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetLateralRagdollMovementInfluence", options.keepOffsetLateralRagdollMovementInfluence)) success = false;

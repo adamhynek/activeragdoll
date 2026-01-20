@@ -6765,12 +6765,30 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
                         PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
 
-                        // Hysteresis for rotation
+                        // Calculate forward translation from hand offset + player movement
+                        NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
+                        float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
+                        float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
+                        float totalForwardAmt = forwardMoveAmt + playerForwardMoveAmt;
+                        float absTotalForward = fabsf(totalForwardAmt);
                         float absAngle = fabsf(deltaAngle);
-                        if (!data.isNoStrafeRotating && absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe) {
+
+                        // Hysteresis for translation: only based on forward translation
+                        if (!data.isNoStrafeTranslating && absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe) {
+                            data.isNoStrafeTranslating = true;
+                        }
+                        else if (data.isNoStrafeTranslating && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+                            data.isNoStrafeTranslating = false;
+                        }
+
+                        // Hysteresis for rotation: if forward translation OR rotation angle is above threshold
+                        bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
+                        bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
+
+                        if (!data.isNoStrafeRotating && rotateStartCondition) {
                             data.isNoStrafeRotating = true;
                         }
-                        else if (data.isNoStrafeRotating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe) {
+                        else if (data.isNoStrafeRotating && rotateStopCondition) {
                             data.isNoStrafeRotating = false;
                         }
 
@@ -6781,20 +6799,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                             headingAdd += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
                         }
 
-                        // Calculate finalMoveAmt based on hand position difference to grabbed point, similar to rotation
-                        NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
-                        float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
-                        float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
-                        bool isPlayerMovingForward = fabsf(playerForwardMoveAmt) > 0.001f;
-
-                        // Hysteresis for translation
-                        float absOffset = fabsf(forwardMoveAmt);
-                        if (!data.isNoStrafeTranslating && (isPlayerMovingForward || absOffset >= Config::options.keepOffsetStartOffsetNoStrafe)) {
-                            data.isNoStrafeTranslating = true;
-                        }
-                        else if (data.isNoStrafeTranslating && !isPlayerMovingForward && absOffset < Config::options.keepOffsetStopOffsetNoStrafe) {
-                            data.isNoStrafeTranslating = false;
-                        }
 
                         if (data.isNoStrafeTranslating) {
                             // Apply speed limit to catch-up movement, plus instant player movement
@@ -6831,13 +6835,15 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
             if (fabsf(movementHeadingDiff) < Config::options.keepOffsetPlayerDirectionHeadingForwardThreshold) {
                 // Player is moving in the same direction as the actor's current heading
-                headingAdd = movementHeadingDiff * Config::options.dummyFloat0; // TODO: Should we use deltatime here? Do we even want a multiplier here or just rely on the rotation speed of the actor?
+                float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
+                headingAdd = std::clamp(movementHeadingDiff, -maxHeadingChange, maxHeadingChange);
             }
             else {
                 // Player is moving in the opposite direction of the actor's current heading
                 float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
                 float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
-                headingAdd = movementHeadingOppositeDiff * Config::options.dummyFloat0;
+                float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
+                headingAdd = std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
             }
         }
     }
