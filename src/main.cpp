@@ -732,6 +732,8 @@ struct KeepOffsetData
     NiPoint3 ragdollCentroidWS{};
     TranslateState translateState = TranslateState::NotMoving;
     bool isRotate = false;
+    bool isNoStrafeRotating = false;
+    bool isNoStrafeTranslating = false;
     float prevSpeed = 0.f;
     NiPoint3 prevDirection{};
     float advanceSpeed = 0.f;
@@ -6763,15 +6765,52 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
                         PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
 
-                        headingAdd += deltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                        // Hysteresis for rotation
+                        float absAngle = fabsf(deltaAngle);
+                        if (!data.isNoStrafeRotating && absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe) {
+                            data.isNoStrafeRotating = true;
+                        }
+                        else if (data.isNoStrafeRotating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe) {
+                            data.isNoStrafeRotating = false;
+                        }
+
+                        if (data.isNoStrafeRotating) {
+                            // Apply speed limit to heading change
+                            float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
+                            float clampedDeltaAngle = std::clamp(deltaAngle, -maxHeadingChange, maxHeadingChange);
+                            headingAdd += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                        }
+
+                        // Calculate finalMoveAmt based on hand position difference to grabbed point, similar to rotation
+                        NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
+                        float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
+                        float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
+                        bool isPlayerMovingForward = fabsf(playerForwardMoveAmt) > 0.001f;
+
+                        // Hysteresis for translation
+                        float absOffset = fabsf(forwardMoveAmt);
+                        if (!data.isNoStrafeTranslating && (isPlayerMovingForward || absOffset >= Config::options.keepOffsetStartOffsetNoStrafe)) {
+                            data.isNoStrafeTranslating = true;
+                        }
+                        else if (data.isNoStrafeTranslating && !isPlayerMovingForward && absOffset < Config::options.keepOffsetStopOffsetNoStrafe) {
+                            data.isNoStrafeTranslating = false;
+                        }
+
+                        if (data.isNoStrafeTranslating) {
+                            // Apply speed limit to catch-up movement, plus instant player movement
+                            float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
+                            float clampedMoveAmt = std::clamp(forwardMoveAmt, -maxMoveAmt, maxMoveAmt);
+                            finalMoveAmt = forward * clampedMoveAmt;
+                        }
                     }
                 }
             }
 
         }
-
-        NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
-        finalMoveAmt = forwardComponent;
+        else {
+            NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
+            finalMoveAmt = forwardComponent;
+        }
 
         // start/end 0.15/0.05, yawmult 1.0, anglediffmult -0.25 feel good for quadrupeds right now
         angleStartThreshold = Config::options.keepOffsetAngleStartThresholdNoStrafe;
@@ -6834,16 +6873,16 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
-    NiPoint3 direction = ForwardVectorToEulerRot(VectorNormalized(finalMoveAmt));
+    NiPoint3 direction = VectorNormalized(finalMoveAmt);
 
     // TODO: This is stupid, we need a more nuanced way to go from player movement to player+ragdoll.
-    NiPoint3 rawSpeed = VectorNormalized(finalMoveAmt) * speed;
+    NiPoint3 rawSpeed = direction * speed;
     it->second.speeds.pop_back();
     it->second.speeds.push_front(rawSpeed);
     NiPoint3 smoothedSpeed = GetAverageVector(it->second.speeds, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
 
     speed = VectorLength(smoothedSpeed);
-    direction = ForwardVectorToEulerRot(VectorNormalized(smoothedSpeed));
+    NiPoint3 directionEuler = ForwardVectorToEulerRot(VectorNormalized(smoothedSpeed));
 
     { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
         float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
@@ -6859,11 +6898,11 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     }
 
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
-    PrintToFile(std::to_string(direction.z), "keepOffsetDirZ.txt");
+    PrintToFile(std::to_string(directionEuler.z), "keepOffsetDirZ.txt");
 
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
     if (speed > Config::options.keepOffsetSpeedDirectionCutoff) {
-        movementController->movementPlannerDirectControl.SetTargetDirection(direction);
+        movementController->movementPlannerDirectControl.SetTargetDirection(directionEuler);
     }
 
     NiPoint3 targetAngle = ConstrainAngle180(actor->rot + offsetAngle);

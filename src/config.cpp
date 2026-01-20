@@ -321,6 +321,12 @@ namespace Config {
         if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetMinCentroidDistanceForLateralYaw", options.keepOffsetMinCentroidDistanceForLateralYaw)) success = false;
+        if (!RegisterFloat("keepOffsetLateralStartAngleNoStrafe", options.keepOffsetLateralStartAngleNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetLateralStopAngleNoStrafe", options.keepOffsetLateralStopAngleNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetStartOffsetNoStrafe", options.keepOffsetStartOffsetNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetStopOffsetNoStrafe", options.keepOffsetStopOffsetNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetHeadingSpeedNoStrafe", options.keepOffsetHeadingSpeedNoStrafe)) success = false;
+        if (!RegisterFloat("keepOffsetMoveSpeedNoStrafe", options.keepOffsetMoveSpeedNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetLateralRagdollMovementInfluence", options.keepOffsetLateralRagdollMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;

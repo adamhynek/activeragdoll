@@ -161,6 +161,12 @@ namespace Config {
         float keepOffsetAngleStopThresholdNoStrafe = 0.25f;
         float keepOffsetAngleDifferenceMultiplier = 0.8f;
         float keepOffsetMinCentroidDistanceForLateralYaw = 0.2f;
+        float keepOffsetLateralStartAngleNoStrafe = 0.05f;
+        float keepOffsetLateralStopAngleNoStrafe = 0.02f;
+        float keepOffsetStartOffsetNoStrafe = 5.f;
+        float keepOffsetStopOffsetNoStrafe = 1.f;
+        float keepOffsetHeadingSpeedNoStrafe = 2.f;
+        float keepOffsetMoveSpeedNoStrafe = 100.f;
         float keepOffsetLateralPlayerMovementInfluence = 0.1f;
         float keepOffsetLateralRagdollMovementInfluence = 1.f;
         float keepOffsetDirectionMultiplier = 1.f;
