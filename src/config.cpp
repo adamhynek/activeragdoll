@@ -320,7 +320,6 @@ namespace Config {
         if (!RegisterFloat("keepOffsetAngleStartThresholdNoStrafe", options.keepOffsetAngleStartThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
-        if (!RegisterFloat("keepOffsetMinCentroidDistanceForLateralYaw", options.keepOffsetMinCentroidDistanceForLateralYaw)) success = false;
         if (!RegisterFloat("keepOffsetLateralStartAngleNoStrafe", options.keepOffsetLateralStartAngleNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralStopAngleNoStrafe", options.keepOffsetLateralStopAngleNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetStartOffsetNoStrafe", options.keepOffsetStartOffsetNoStrafe)) success = false;
@@ -329,7 +328,6 @@ namespace Config {
         if (!RegisterFloat("keepOffsetPlayerDirectionHeadingSpeed", options.keepOffsetPlayerDirectionHeadingSpeed)) success = false;
         if (!RegisterFloat("keepOffsetMoveSpeedNoStrafe", options.keepOffsetMoveSpeedNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
-        if (!RegisterFloat("keepOffsetLateralRagdollMovementInfluence", options.keepOffsetLateralRagdollMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
         if (!RegisterFloat("keepOffsetCatchUpRadius", options.keepOffsetCatchUpRadius)) success = false;

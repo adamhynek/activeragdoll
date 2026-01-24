@@ -6726,9 +6726,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
         NiPoint3 forward = ForwardVector(refrTransform.rot);
 
-        // TODO: What if each hand is grabbing different bones ???
-        NiPoint3 centroidToGrabbedNode = HkVectorToNiPoint(data.grabbedBoneAnimPoseWS.m_translation) - data.animCentroidWS; // anim centroid - havok coords
-
 #ifdef _DEBUG
         NiTransform debugT;
         debugT.pos = data.ragdollCentroidWS * *g_inverseHavokWorldScale;
@@ -6736,84 +6733,68 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         RegisterDebugTransform("animCentroidWS", { debugT, { 1, 0, 0, 1 } });
 #endif // _DEBUG
         
-        // TODO: We could make this a "percent of the size of the creature" instead of a fixed value
-        NiPoint3 centroidToHandOnNode = (data.handPosOnGrabbedNode * *g_havokWorldScale) - data.ragdollCentroidWS; // physics centroid - havok coords
-        float centroidToHandOnNodeLengthAlongForward = fabsf(DotProduct(centroidToHandOnNode, forward));
+        // TODO: Properly handle both hands at once
+        for (int isLeft = 0; isLeft <= 1; isLeft++) {
+            if (data.handFromRoot[isLeft]) {
+                NiTransform handTransform = g_rawHandTransforms[isLeft];
+                NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
 
-        PrintToFile(std::to_string(centroidToHandOnNodeLengthAlongForward), "keepOffsetCentroidToGrabbedNodeXY.txt");
+                NiPoint3 rootToGrabbedPoint = handFromRoot.pos - refrTransform.pos;
+                NiPoint3 rootToHand = handTransform.pos - refrTransform.pos;
+                rootToGrabbedPoint.z = 0.f;
+                rootToHand.z = 0.f;
 
-        if (centroidToHandOnNodeLengthAlongForward >= Config::options.keepOffsetMinCentroidDistanceForLateralYaw) {
-            NiPoint3 moveAmtInfluencingRotation = moveAmtFromPlayerMovement * Config::options.keepOffsetLateralPlayerMovementInfluence + moveAmtFromRagdollInfluence * Config::options.keepOffsetLateralRagdollMovementInfluence;
+                if (VectorLength(rootToGrabbedPoint) > 0.001f && VectorLength(rootToHand) > 0.001f) {
+                    NiPoint3 cross = CrossProduct(rootToGrabbedPoint, rootToHand);
+                    float signedAreaZ = cross.z;
+                    float dot = DotProduct(rootToGrabbedPoint, rootToHand);
+                    float deltaAngle = atan2f(signedAreaZ, dot);
+                    deltaAngle = -deltaAngle;
 
-            // TODO: Properly handle both hands at once
-            for (int isLeft = 0; isLeft <= 1; isLeft++) {
-                if (data.handFromRoot[isLeft]) {
-                    NiTransform handTransform = g_rawHandTransforms[isLeft];
-                    NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
+                    PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
 
-                    NiPoint3 rootToGrabbedPoint = handFromRoot.pos - refrTransform.pos;
-                    NiPoint3 rootToHand = handTransform.pos - refrTransform.pos;
-                    rootToGrabbedPoint.z = 0.f;
-                    rootToHand.z = 0.f;
+                    // Calculate forward translation from hand offset + player movement
+                    NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
+                    float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
+                    float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
+                    float totalForwardAmt = forwardMoveAmt + playerForwardMoveAmt;
+                    float absTotalForward = fabsf(totalForwardAmt);
+                    float absAngle = fabsf(deltaAngle);
 
-                    if (VectorLength(rootToGrabbedPoint) > 0.001f && VectorLength(rootToHand) > 0.001f) {
-                        NiPoint3 cross = CrossProduct(rootToGrabbedPoint, rootToHand);
-                        float signedAreaZ = cross.z;
-                        float dot = DotProduct(rootToGrabbedPoint, rootToHand);
-                        float deltaAngle = atan2f(signedAreaZ, dot);
-                        deltaAngle = -deltaAngle;
+                    // Hysteresis for translation
+                    if (!data.isNoStrafeTranslating && absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe) {
+                        data.isNoStrafeTranslating = true;
+                    }
+                    else if (data.isNoStrafeTranslating && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+                        data.isNoStrafeTranslating = false;
+                    }
 
-                        PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
+                    // Hysteresis for rotation. Check this after computing whether to translate.
+                    bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
+                    bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
 
-                        // Calculate forward translation from hand offset + player movement
-                        NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
-                        float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
-                        float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
-                        float totalForwardAmt = forwardMoveAmt + playerForwardMoveAmt;
-                        float absTotalForward = fabsf(totalForwardAmt);
-                        float absAngle = fabsf(deltaAngle);
+                    if (!data.isNoStrafeRotating && rotateStartCondition) {
+                        data.isNoStrafeRotating = true;
+                    }
+                    else if (data.isNoStrafeRotating && rotateStopCondition) {
+                        data.isNoStrafeRotating = false;
+                    }
 
-                        // Hysteresis for translation: only based on forward translation
-                        if (!data.isNoStrafeTranslating && absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe) {
-                            data.isNoStrafeTranslating = true;
-                        }
-                        else if (data.isNoStrafeTranslating && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
-                            data.isNoStrafeTranslating = false;
-                        }
+                    if (data.isNoStrafeRotating) {
+                        // Apply speed limit to heading change
+                        float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
+                        float clampedDeltaAngle = std::clamp(deltaAngle, -maxHeadingChange, maxHeadingChange);
+                        headingAdd += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                    }
 
-                        // Hysteresis for rotation: if forward translation OR rotation angle is above threshold
-                        bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
-                        bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
-
-                        if (!data.isNoStrafeRotating && rotateStartCondition) {
-                            data.isNoStrafeRotating = true;
-                        }
-                        else if (data.isNoStrafeRotating && rotateStopCondition) {
-                            data.isNoStrafeRotating = false;
-                        }
-
-                        if (data.isNoStrafeRotating) {
-                            // Apply speed limit to heading change
-                            float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
-                            float clampedDeltaAngle = std::clamp(deltaAngle, -maxHeadingChange, maxHeadingChange);
-                            headingAdd += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
-                        }
-
-
-                        if (data.isNoStrafeTranslating) {
-                            // Apply speed limit to catch-up movement, plus instant player movement
-                            float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
-                            float clampedMoveAmt = std::clamp(forwardMoveAmt, -maxMoveAmt, maxMoveAmt);
-                            finalMoveAmt = forward * clampedMoveAmt;
-                        }
+                    if (data.isNoStrafeTranslating) {
+                        // Apply speed limit to catch-up movement, plus instant player movement
+                        float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
+                        float clampedMoveAmt = std::clamp(forwardMoveAmt, -maxMoveAmt, maxMoveAmt);
+                        finalMoveAmt = forward * clampedMoveAmt;
                     }
                 }
             }
-
-        }
-        else {
-            NiPoint3 forwardComponent = forward * DotProduct(finalMoveAmt, forward);
-            finalMoveAmt = forwardComponent;
         }
 
         // start/end 0.15/0.05, yawmult 1.0, anglediffmult -0.25 feel good for quadrupeds right now
