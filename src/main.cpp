@@ -710,12 +710,6 @@ bool ShouldKeepOffset(Actor *actor)
 
 struct KeepOffsetData
 {
-    enum class TranslateState
-    {
-        NotMoving,
-        PlayerAndRagdoll,
-    };
-
     UInt32 target;
     NiPoint3 offset;
     NiPoint3 offsetAngle;
@@ -730,7 +724,7 @@ struct KeepOffsetData
     NiPoint3 handPosOnGrabbedNode{}; // TODO: Probably one for each hand
     NiPoint3 animCentroidWS{};
     NiPoint3 ragdollCentroidWS{};
-    TranslateState translateState = TranslateState::NotMoving;
+    bool isTranslate = false;
     bool isRotate = false;
     bool isNoStrafeRotating = false;
     bool isNoStrafeTranslating = false;
@@ -6660,9 +6654,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
     NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
-    //NiPoint3 offset = refrTransform.rot.Transpose() * playerOffsetXY;
-    NiPoint3 offset = playerOffsetXY;
-
 
     NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
     NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
@@ -6673,53 +6664,11 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
     }
 
-    //{
-    //    NiTransform t;
-    //    t.pos = refrTransform.pos;
-    //    NiPoint3 vec = (refrTransform.rot * moveAmt) * 50.f;
-    //    t.pos += (vec * 0.5f);
-    //    t.pos.z += 50.f;
-    //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-    //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-    //    t.scale = 1.f;
-    //    RegisterDebugTransform("FinalMoveAmt", { t, {0, 1, 0, 1} });
-    //}
-
-    NiPoint3 moveAmtFromPlayerMovement = offset * actorDirectionMultiplier * Config::options.keepOffsetPlayerMovementInfluence;
+    NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * actorDirectionMultiplier * Config::options.keepOffsetPlayerMovementInfluence;
 
 
-    bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
-    bool isRagdollMovementStart = VectorLength(data.offset) >= Config::options.keepOffsetStartThreshold;
-    bool isRagdollMovementStop = VectorLength(data.offset) < Config::options.keepOffsetStopThreshold;
-
-    NiPoint3 moveAmtFromRagdollInfluence = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
-
-    if (data.translateState == KeepOffsetData::TranslateState::NotMoving) {
-        if (isPlayerMoving || isRagdollMovementStart) {
-            data.translateState = KeepOffsetData::TranslateState::PlayerAndRagdoll;
-        }
-    }
-    else if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
-        if (!isPlayerMoving && isRagdollMovementStop) {
-            data.translateState = KeepOffsetData::TranslateState::NotMoving;
-        }
-    }
-
-    NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f }; // not moving
-    if (data.translateState == KeepOffsetData::TranslateState::PlayerAndRagdoll) {
-        // If we are moving both the player and the ragdoll, we apply both movements
-        finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
-    }
-
-
-    //NiPoint3 offsetAngle = data.isRotate ? data.offsetAngle : NiPoint3();
-    NiPoint3 offsetAngle = data.offsetAngle * Config::options.keepOffsetAngleDifferenceMultiplier;
-
-
-    float angleStartThreshold = Config::options.keepOffsetAngleStartThreshold;
-    float angleStopThreshold = Config::options.keepOffsetAngleStopThreshold;
-
-    float headingAdd = 0.f;
+    NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
+    NiPoint3 offsetAngle = {0.f, 0.f, 0.f};
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car. So we only allow forward/backward movement directly.
@@ -6760,12 +6709,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                     float totalForwardAmt = forwardMoveAmt + playerForwardMoveAmt;
                     float absTotalForward = fabsf(totalForwardAmt);
                     float absAngle = fabsf(deltaAngle);
+                    bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
 
                     // Hysteresis for translation
-                    if (!data.isNoStrafeTranslating && absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe) {
+                    if (!data.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
                         data.isNoStrafeTranslating = true;
                     }
-                    else if (data.isNoStrafeTranslating && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+                    else if (data.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
                         data.isNoStrafeTranslating = false;
                     }
 
@@ -6784,7 +6734,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                         // Apply speed limit to heading change
                         float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
                         float clampedDeltaAngle = std::clamp(deltaAngle, -maxHeadingChange, maxHeadingChange);
-                        headingAdd += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                        offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
                     }
 
                     if (data.isNoStrafeTranslating) {
@@ -6796,16 +6746,44 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 }
             }
         }
-
-        // start/end 0.15/0.05, yawmult 1.0, anglediffmult -0.25 feel good for quadrupeds right now
-        angleStartThreshold = Config::options.keepOffsetAngleStartThresholdNoStrafe;
-        angleStopThreshold = Config::options.keepOffsetAngleStopThresholdNoStrafe;
     }
     else {
         // Can Strafe
 
-        float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
+        bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
+        bool isRagdollMovementStart = VectorLength(data.offset) >= Config::options.keepOffsetStartThreshold;
+        bool isRagdollMovementStop = VectorLength(data.offset) < Config::options.keepOffsetStopThreshold;
 
+        NiPoint3 moveAmtFromRagdollInfluence = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
+
+        if (!data.isTranslate) {
+            if (isPlayerMoving || isRagdollMovementStart) {
+                data.isTranslate = true;
+            }
+        }
+        else if (data.isTranslate) {
+            if (!isPlayerMoving && isRagdollMovementStop) {
+                data.isTranslate = false;
+            }
+        }
+        if (data.isTranslate) {
+            // If we are moving both the player and the ragdoll, we apply both movements
+            finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+        }
+
+
+        if (!data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) >= Config::options.keepOffsetAngleStartThreshold) {
+            // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
+            data.isRotate = true;
+        }
+        else if (data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) < Config::options.keepOffsetAngleStopThreshold) {
+            data.isRotate = false;
+        }
+        if (data.isRotate) {
+            offsetAngle = data.offsetAngle * Config::options.keepOffsetAngleDifferenceMultiplier;
+        }
+
+        float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
         if (playerMovementAmt > Config::options.keepOffsetMinPlayerMoveAmtForHeading) {
             NiPoint3 playerMovementDirection = VectorNormalized(moveAmtFromPlayerMovement);
 
@@ -6817,14 +6795,14 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             if (fabsf(movementHeadingDiff) < Config::options.keepOffsetPlayerDirectionHeadingForwardThreshold) {
                 // Player is moving in the same direction as the actor's current heading
                 float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
-                headingAdd = std::clamp(movementHeadingDiff, -maxHeadingChange, maxHeadingChange);
+                offsetAngle.z += std::clamp(movementHeadingDiff, -maxHeadingChange, maxHeadingChange);
             }
             else {
                 // Player is moving in the opposite direction of the actor's current heading
                 float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
                 float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
                 float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
-                headingAdd = std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
+                offsetAngle.z += std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
             }
         }
     }
@@ -6843,26 +6821,10 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
     }
 
-    // Do this after computing the final rotation
-    if (!data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) >= angleStartThreshold) {
-        // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-        data.isRotate = true;
-    }
-    else if (data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) < angleStopThreshold) {
-        data.isRotate = false;
-    }
-    if (!data.isRotate) {
-        offsetAngle = { 0.f, 0.f, 0.f };
-    }
-
-    // Always add headingAdd, even if not over the threshold
-    offsetAngle.z += headingAdd;
-
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
     NiPoint3 direction = VectorNormalized(finalMoveAmt);
 
-    // TODO: This is stupid, we need a more nuanced way to go from player movement to player+ragdoll.
     NiPoint3 rawSpeed = direction * speed;
     it->second.speeds.pop_back();
     it->second.speeds.push_front(rawSpeed);
