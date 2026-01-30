@@ -6688,7 +6688,11 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         RegisterDebugTransform("animCentroidWS", { debugT, { 1, 0, 0, 1 } });
 #endif // _DEBUG
         
-        // TODO: Properly handle both hands at once
+        // Accumulate values from both hands
+        float combinedDeltaAngle = 0.f;
+        float combinedForwardMoveAmt = 0.f;
+        int numHandsGrabbing = 0;
+
         for (int isLeft = 0; isLeft <= 1; isLeft++) {
             if (data.handFromRoot[isLeft]) {
                 NiTransform handTransform = g_rawHandTransforms[isLeft];
@@ -6706,50 +6710,63 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                     float deltaAngle = atan2f(signedAreaZ, dot);
                     deltaAngle = -deltaAngle;
 
-                    PrintToFile(std::to_string(deltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
-
-                    // Calculate forward translation from hand offset + player movement
+                    // Calculate forward translation from hand offset
                     NiPoint3 grabbedPointToHand = handTransform.pos - handFromRoot.pos;
                     float forwardMoveAmt = DotProduct(grabbedPointToHand, forward);
-                    float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
-                    float totalForwardAmt = forwardMoveAmt + playerForwardMoveAmt;
-                    float absTotalForward = fabsf(totalForwardAmt);
-                    float absAngle = fabsf(deltaAngle);
-                    bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
 
-                    // Hysteresis for translation
-                    if (!data.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
-                        data.isNoStrafeTranslating = true;
-                    }
-                    else if (data.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
-                        data.isNoStrafeTranslating = false;
-                    }
-
-                    // Hysteresis for rotation. Check this after computing whether to translate.
-                    bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
-                    bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
-
-                    if (!data.isNoStrafeRotating && rotateStartCondition) {
-                        data.isNoStrafeRotating = true;
-                    }
-                    else if (data.isNoStrafeRotating && rotateStopCondition) {
-                        data.isNoStrafeRotating = false;
-                    }
-
-                    if (data.isNoStrafeRotating) {
-                        // Apply speed limit to heading change
-                        float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
-                        float clampedDeltaAngle = std::clamp(deltaAngle, -maxHeadingChange, maxHeadingChange);
-                        offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
-                    }
-
-                    if (data.isNoStrafeTranslating) {
-                        // Apply speed limit to catch-up movement, plus instant player movement
-                        float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
-                        float clampedMoveAmt = std::clamp(forwardMoveAmt, -maxMoveAmt, maxMoveAmt);
-                        finalMoveAmt = forward * clampedMoveAmt;
-                    }
+                    combinedDeltaAngle += deltaAngle;
+                    combinedForwardMoveAmt += forwardMoveAmt;
+                    numHandsGrabbing++;
                 }
+            }
+        }
+
+        // If both hands are grabbing, average the values
+        if (numHandsGrabbing > 1) {
+            combinedDeltaAngle /= numHandsGrabbing;
+            combinedForwardMoveAmt /= numHandsGrabbing;
+        }
+
+        if (numHandsGrabbing > 0) {
+            PrintToFile(std::to_string(combinedDeltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
+
+            float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
+            float totalForwardAmt = combinedForwardMoveAmt + playerForwardMoveAmt;
+            float absTotalForward = fabsf(totalForwardAmt);
+            float absAngle = fabsf(combinedDeltaAngle);
+            bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
+
+            // Hysteresis for translation
+            if (!data.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
+                data.isNoStrafeTranslating = true;
+            }
+            else if (data.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+                data.isNoStrafeTranslating = false;
+            }
+
+            // Hysteresis for rotation. Check this after computing whether to translate.
+            bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
+            bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
+
+            if (!data.isNoStrafeRotating && rotateStartCondition) {
+                data.isNoStrafeRotating = true;
+            }
+            else if (data.isNoStrafeRotating && rotateStopCondition) {
+                data.isNoStrafeRotating = false;
+            }
+
+            if (data.isNoStrafeRotating) {
+                // Apply speed limit to heading change
+                float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
+                float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
+                offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+            }
+
+            if (data.isNoStrafeTranslating) {
+                // Apply speed limit to catch-up movement, plus instant player movement
+                float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
+                float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
+                finalMoveAmt = forward * clampedMoveAmt;
             }
         }
     }
