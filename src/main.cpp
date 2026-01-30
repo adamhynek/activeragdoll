@@ -4003,28 +4003,34 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
             data.offsetAngle = NiPoint3();
             data.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
             data.followRadius = Config::options.keepOffsetFollowRadius;
-            
-            // TODO: Handle both hands at once? Although initially it will probably only be one hand on this particular frame
-            for (int isLeft = 0; isLeft < 2; ++isLeft) {
-                TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
-                if (heldRefr == actor) {
-                    NiTransform handTransform = g_rawHandTransforms[isLeft]; // fall back to the actual hand position
-                    if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
-                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
-                        NiTransform nodeToHand = InverseTransform(handToNode);
-                        handTransform = heldNode->m_worldTransform * nodeToHand;
-                    }
-
-                    NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-                    data.handFromRoot[isLeft] = InverseTransform(refrTransform) * handTransform;
-                }
-            }
 
             g_keepOffsetActors[actor] = data;
         }
         else {
             // Already in the set, so check if it actually succeeded at first
             KeepOffsetData &data = it->second;
+
+            // Update handFromRoot for each hand - set when grabbing, clear when not grabbing
+            NiTransform refrTransformForHand; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransformForHand);
+            for (int isLeft = 0; isLeft < 2; ++isLeft) {
+                TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
+                bool isHeldByHand = (heldRefr == actor);
+                
+                if (isHeldByHand && !data.handFromRoot[isLeft]) {
+                    // Hand just grabbed but we don't have a stored transform yet - set it now
+                    NiTransform handTransform = g_rawHandTransforms[isLeft];
+                    if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                        NiTransform nodeToHand = InverseTransform(handToNode);
+                        handTransform = heldNode->m_worldTransform * nodeToHand;
+                    }
+                    data.handFromRoot[isLeft] = InverseTransform(refrTransformForHand) * handTransform;
+                }
+                else if (!isHeldByHand && data.handFromRoot[isLeft]) {
+                    // Hand no longer grabbing - clear the stored transform
+                    data.handFromRoot[isLeft] = std::nullopt;
+                }
+            }
 
             if (MovementControllerNPC *controller = GetMovementController(actor); controller && controller->movementMotionDrivenControl.IsMotionDriven()) {
                 ForEachRagdollDriver(actor, [actor, &data](hkbRagdollDriver *driver) {
@@ -6668,7 +6674,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
 
     NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
-    NiPoint3 offsetAngle = {0.f, 0.f, 0.f};
+    NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car. So we only allow forward/backward movement directly.
