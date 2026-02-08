@@ -317,9 +317,7 @@ namespace Config {
         if (!RegisterBool("forceMotionDrivenDuringKeepOffset", options.forceMotionDrivenDuringKeepOffset)) success = false;
         if (!RegisterFloat("keepOffsetAngleStartThreshold", options.keepOffsetAngleStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetAngleStopThreshold", options.keepOffsetAngleStopThreshold)) success = false;
-        if (!RegisterFloat("keepOffsetAngleStartThresholdNoStrafe", options.keepOffsetAngleStartThresholdNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetAngleStopThresholdNoStrafe", options.keepOffsetAngleStopThresholdNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetAngleDifferenceMultiplier", options.keepOffsetAngleDifferenceMultiplier)) success = false;
+        if (!RegisterFloat("keepOffsetTwoHandedRotationSpeed", options.keepOffsetTwoHandedRotationSpeed)) success = false;
         if (!RegisterFloat("keepOffsetLateralStartAngleNoStrafe", options.keepOffsetLateralStartAngleNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralStopAngleNoStrafe", options.keepOffsetLateralStopAngleNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetStartOffsetNoStrafe", options.keepOffsetStartOffsetNoStrafe)) success = false;
@@ -340,6 +338,8 @@ namespace Config {
         if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionActor", options.keepOffsetSpeedReductionInActorDirectionActor)) success = false;
         if (!RegisterFloat("keepOffsetStartThreshold", options.keepOffsetStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
+        if (!RegisterFloat("keepOffsetStartThresholdTwoHanded", options.keepOffsetStartThresholdTwoHanded)) success = false;
+        if (!RegisterFloat("keepOffsetStopThresholdTwoHanded", options.keepOffsetStopThresholdTwoHanded)) success = false;
         if (!RegisterFloat("keepOffsetSpeedDirectionCutoff", options.keepOffsetSpeedDirectionCutoff)) success = false;
         if (!RegisterFloat("keepOffsetMinPlayerMoveAmtForHeading", options.keepOffsetMinPlayerMoveAmtForHeading)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionHeadingForwardThreshold", options.keepOffsetPlayerDirectionHeadingForwardThreshold)) success = false;

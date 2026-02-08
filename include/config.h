@@ -157,9 +157,7 @@ namespace Config {
         bool forceMotionDrivenDuringKeepOffset = true;
         float keepOffsetAngleStartThreshold = 0.25f;
         float keepOffsetAngleStopThreshold = 0.25f;
-        float keepOffsetAngleStartThresholdNoStrafe = 0.25f;
-        float keepOffsetAngleStopThresholdNoStrafe = 0.25f;
-        float keepOffsetAngleDifferenceMultiplier = 0.8f;
+        float keepOffsetTwoHandedRotationSpeed = 2.f;
         float keepOffsetLateralStartAngleNoStrafe = 0.05f;
         float keepOffsetLateralStopAngleNoStrafe = 0.02f;
         float keepOffsetStartOffsetNoStrafe = 5.f;
@@ -180,6 +178,8 @@ namespace Config {
         float keepOffsetSpeedReductionInActorDirectionActor = 0.5f;
         float keepOffsetStartThreshold = 10.f;
         float keepOffsetStopThreshold = 5.f;
+        float keepOffsetStartThresholdTwoHanded = 10.f;
+        float keepOffsetStopThresholdTwoHanded = 5.f;
         float keepOffsetSpeedDirectionCutoff = 0.1;
         float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
         float keepOffsetPlayerDirectionHeadingForwardThreshold = 1.57f;

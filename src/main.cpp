@@ -6773,9 +6773,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     else {
         // Can Strafe
 
+        bool isHeldWithBothHands = g_leftHeldRefr == actor && g_rightHeldRefr == actor;
+
         bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
-        bool isRagdollMovementStart = VectorLength(data.offset) >= Config::options.keepOffsetStartThreshold;
-        bool isRagdollMovementStop = VectorLength(data.offset) < Config::options.keepOffsetStopThreshold;
+        float startThreshold = isHeldWithBothHands ? Config::options.keepOffsetStartThresholdTwoHanded : Config::options.keepOffsetStartThreshold;
+        float stopThreshold = isHeldWithBothHands ? Config::options.keepOffsetStopThresholdTwoHanded : Config::options.keepOffsetStopThreshold;
+        bool isRagdollMovementStart = VectorLength(data.offset) >= startThreshold;
+        bool isRagdollMovementStop = VectorLength(data.offset) < stopThreshold;
 
         NiPoint3 moveAmtFromRagdollInfluence = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
@@ -6794,20 +6798,9 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
         }
 
-
-        if (!data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) >= Config::options.keepOffsetAngleStartThreshold) {
-            // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-            data.isRotate = true;
-        }
-        else if (data.isRotate && fabsf(ConstrainAngle180(offsetAngle.z)) < Config::options.keepOffsetAngleStopThreshold) {
-            data.isRotate = false;
-        }
-        if (data.isRotate) {
-            offsetAngle = data.offsetAngle * Config::options.keepOffsetAngleDifferenceMultiplier;
-        }
-
         float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
         if (playerMovementAmt > Config::options.keepOffsetMinPlayerMoveAmtForHeading) {
+            // Rotation from player movement heading
             NiPoint3 playerMovementDirection = VectorNormalized(moveAmtFromPlayerMovement);
 
             float currentHeading = actor->rot.z;
@@ -6826,6 +6819,31 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
                 float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
                 offsetAngle.z += std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
+            }
+
+            data.isRotate = false;
+        }
+        else {
+            // Rotation not from player movement is only allowed if both hands are holding the actor
+            if (isHeldWithBothHands) {
+                float angleDiff = ConstrainAngle180(-data.offsetAngle.z);
+
+                bool rotateStartCondition = fabsf(angleDiff) >= Config::options.keepOffsetAngleStartThreshold;
+                bool rotateStopCondition = fabsf(angleDiff) < Config::options.keepOffsetAngleStopThreshold;
+
+                if (!data.isRotate && rotateStartCondition) {
+                    data.isRotate = true;
+                }
+                else if (data.isRotate && rotateStopCondition) {
+                    data.isRotate = false;
+                }
+                if (data.isRotate) {
+                    float maxHeadingChange = Config::options.keepOffsetTwoHandedRotationSpeed * *g_deltaTime;
+                    offsetAngle.z += std::clamp(angleDiff, -maxHeadingChange, maxHeadingChange);
+                }
+            }
+            else {
+                data.isRotate = false;
             }
         }
     }
@@ -6859,7 +6877,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
         float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
         float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, data.prevSpeed);
-        if (denormSpeed < Config::options.zeroSpeedThreshold) { // 5 is the value below which the character will not move anyway
+        if (denormSpeed < Config::options.zeroSpeedThreshold) { // 5 is the value below which the character will not move at all
             if (denormPrevSpeed >= Config::options.zeroSpeedThreshold) {
                 data.noSpeedTime = g_currentFrameTime;
             }
@@ -6867,6 +6885,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         if (g_currentFrameTime - data.noSpeedTime < Config::options.holdZeroSpeedTime) {
             speed = 0.f;
         }
+
+        PrintToFile(std::to_string(denormSpeed), "denormSpeed.txt");
     }
 
     PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
