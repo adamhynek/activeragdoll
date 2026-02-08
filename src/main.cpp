@@ -6232,12 +6232,6 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
                 a_rotAmt.z = rotZ;
             }
         }
-
-        // TODO: Perhaps for quadrupeds we limit movement to their forward axis? Or perhaps not just for quadrupeds, but for everyone?? Humanoids/bipeds kind of walk floatily sideways too.
-        //       We could use the forward/back/left/right values from the current movement type to limit movement to those directions.
-        // TODO: We could probably use ApplyVelocityForDuration instead of using this hook.
-
-        // TODO: There is some kind of discontinuity when we stop moving, the actor kind of snaps
     }
 }
 
@@ -6528,7 +6522,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             }
 
             if (state.isNoStrafeRotating) {
-                // Apply speed limit to heading change
                 float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
                 offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
@@ -6566,7 +6559,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             }
         }
         if (state.isTranslate) {
-            // If we are moving both the player and the ragdoll, we apply both movements
             finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
         }
 
@@ -6751,31 +6743,12 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
     }
 
     if (foundActor) {
-        OverwriteMovementParameters fixedParams(movementParams);
-        MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
+        OverwriteMovementParameters overwriteParams(movementParams);
+        MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
     }
     else {
         MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, movementParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
     }
-
-    //Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
-
-    //{
-    //    std::scoped_lock lock(g_grabbedActorStatesLock);
-
-    //    auto it = g_grabbedActorStates.find(actor);
-    //    if (it == g_grabbedActorStates.end()) {
-    //        return;
-    //    }
-
-    //    //*acceleratedRunSpeedOut = Config::options.keepOffsetMovementDirectionChangeSpeed;
-    //    //*deceleratedRunSpeedOut = Config::options.keepOffsetMovementDirectionChangeSpeed;
-
-    //    //PrintVector({ *acceleratedRunSpeedOut, *deceleratedRunSpeedOut, *acceleratedRotSpeedOut });
-    //    _MESSAGE("CalcSpeeds");
-    //    //PrintVector(ForwardVectorFromEulerRot(movementVector->eulerRot) * movementVector->magnitude);
-    //    _MESSAGE("%.2f", VectorLength(ForwardVectorFromEulerRot(movementVector->eulerRot) * movementVector->magnitude));
-    //}
 }
 
 typedef void(*_ActorState_CalculateRotSpeeds)(ActorState *a1, IMovementParameters *a2, IMovementQueryState *a3, MovementVector *a4, float *clampedRotateSpeedOut, float *desiredRotateSpeedOut);
@@ -6796,31 +6769,14 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
     }
 
     if (foundActor) {
-        OverwriteMovementParameters fixedParams(movementParams);
-        MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&fixedParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
+        OverwriteMovementParameters overwriteParams(movementParams);
+        MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }
     else {
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, movementParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }
 }
 
-
-typedef void(*_MovementUtils_DampenMovementVector)(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut);
-_MovementUtils_DampenMovementVector MovementUtils_DampenMovementVector_Original = 0;
-RelocAddr<uintptr_t> MovementUtils_DampenMovementVector_HookLoc(0x1169D69);
-void MovementUtils_DampenMovementVector_Hook(MovementVector *currentMoveVec, MovementVector *desiredMoveVec, float acceleratedRunSpeed, float deceleratedRunSpeed, float rotSpeedUnclamped, float deltaTime, MovementVector *moveVecOut)
-{
-    MovementUtils_DampenMovementVector_Original(currentMoveVec, desiredMoveVec, acceleratedRunSpeed, deceleratedRunSpeed, rotSpeedUnclamped, deltaTime, moveVecOut);
-
-    //if (deceleratedRunSpeed > 10000) {
-        PrintToFile(std::to_string(currentMoveVec->eulerRot.z), "currentMovementVectorEulerZ.txt");
-        PrintToFile(std::to_string(currentMoveVec->magnitude), "currentMovementVectorEulerMag.txt");
-        PrintToFile(std::to_string(desiredMoveVec->eulerRot.z), "desiredMovementVectorEulerZ.txt");
-        PrintToFile(std::to_string(desiredMoveVec->magnitude), "desiredMovementVectorEulerMag.txt");
-        PrintToFile(std::to_string(moveVecOut->eulerRot.z), "dampenedMovementVectorEulerZ.txt");
-        PrintToFile(std::to_string(moveVecOut->magnitude), "dampenedMovementVectorEulerMag.txt");
-    //}
-}
 
 typedef void(*_hkbUtils_collectActiveNodesLeafFirst)(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9);
 _hkbUtils_collectActiveNodesLeafFirst hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original = 0;
@@ -6871,56 +6827,6 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
         }
     }
 }
-
-
-typedef void(*_ActorProcess_QueueAction)(ActorProcessManager *process, UInt32 *defaultObject);
-_ActorProcess_QueueAction ActorProcess_QueueAction_Original = 0;
-RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc1(0x745BAC);
-RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc2(0x745D8F);
-RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc3(0x745F74);
-RelocAddr<uintptr_t> ActorProcess_QueueAction_HookLoc4(0x745F9D);
-void ActorProcess_QueueAction_Hook(ActorProcessManager *process, UInt32 *defaultObject)
-{
-    {
-        Actor *foundActor = nullptr;
-        std::unique_lock lock(g_activeActorsLock);
-        for (Actor *actor : g_activeActors) {
-            if (actor->processManager == process) {
-                foundActor = actor;
-                break;
-            }
-        }
-
-        if (foundActor && VectorLength(foundActor->pos - (*g_thePlayer)->pos) < 100.f) {
-            TESFullName *fullName = DYNAMIC_CAST(foundActor->baseForm, TESForm, TESFullName);
-            _MESSAGE("%d QueueAction %s %d", *g_currentFrameCounter, fullName->name, *defaultObject);
-        }
-    }
-
-    ActorProcess_QueueAction_Original(process, defaultObject);
-}
-
-
-typedef void(*_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage)(MovementHandlerAgentTranslationController *_this, void *a2, UInt32 a_freezeType);
-_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original = 0;
-RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc1(0x1169E57);
-RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc2(0x1169E9D);
-RelocAddr<uintptr_t> MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc3(0x1169EAF);
-void MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook(MovementHandlerAgentTranslationController *_this, void *a2, UInt32 a_freezeType)
-{
-    _MESSAGE("%d SendFreezeDirectionMessage %d", *g_currentFrameCounter, a_freezeType);
-    MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original(_this, a2, a_freezeType);
-}
-
-typedef void *(*_MovementMessageFreezeDirection_ctor)(void *msg, UInt32 freezeType);
-_MovementMessageFreezeDirection_ctor MovementMessageFreezeDirection_ctor_Original = 0;
-RelocAddr<uintptr_t> MovementMessageFreezeDirection_ctor_HookLoc(0x1169DFB);
-void * MovementMessageFreezeDirection_ctor_Hook(void *msg, UInt32 freezeType)
-{
-    _MESSAGE("%d MovementMessageFreezeDirection_ctor %d", *g_currentFrameCounter, freezeType);
-    return MovementMessageFreezeDirection_ctor_Original(msg, freezeType);
-}
-
 
 
 void DebugDrawSphere(const NiTransform &transform, const NiColorA &color)
@@ -7223,11 +7129,6 @@ void PerformHooks(void)
     }
 
     {
-        std::uintptr_t originalFunc = Write5Call(MovementUtils_DampenMovementVector_HookLoc.GetUIntPtr(), uintptr_t(MovementUtils_DampenMovementVector_Hook));
-        MovementUtils_DampenMovementVector_Original = (_MovementUtils_DampenMovementVector)originalFunc;
-    }
-
-    {
         std::uintptr_t originalFunc = Write5Call(hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_HookLoc.GetUIntPtr(), uintptr_t(hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook));
         hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original = (_hkbUtils_collectActiveNodesLeafFirst)originalFunc;
     }
@@ -7245,25 +7146,6 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc.GetUIntPtr(), uintptr_t(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook));
         hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = (_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)originalFunc;
-    }
-
-    {
-        std::uintptr_t originalFunc = Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc1.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
-        MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Original = (_MovementHandlerAgentTranslationController_SendFreezeDirectionMessage)originalFunc;
-        Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc2.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
-        Write5Call(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_HookLoc3.GetUIntPtr(), uintptr_t(MovementHandlerAgentTranslationController_SendFreezeDirectionMessage_Hook));
-    }
-    {
-        std::uintptr_t originalFunc = Write5Call(MovementMessageFreezeDirection_ctor_HookLoc.GetUIntPtr(), uintptr_t(MovementMessageFreezeDirection_ctor_Hook));
-        MovementMessageFreezeDirection_ctor_Original = (_MovementMessageFreezeDirection_ctor)originalFunc;
-    }
-
-    {
-        std::uintptr_t originalFunc = Write5Call(ActorProcess_QueueAction_HookLoc1.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
-        ActorProcess_QueueAction_Original = (_ActorProcess_QueueAction)originalFunc;
-        Write5Call(ActorProcess_QueueAction_HookLoc2.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
-        Write5Call(ActorProcess_QueueAction_HookLoc3.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
-        Write5Call(ActorProcess_QueueAction_HookLoc4.GetUIntPtr(), uintptr_t(ActorProcess_QueueAction_Hook));
     }
 
     {

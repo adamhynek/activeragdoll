@@ -184,7 +184,6 @@ namespace Config {
         float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
         float keepOffsetPlayerDirectionHeadingForwardThreshold = 1.57f;
         float keepOffsetSpeedCalcSmoothingTime = 0.3f;
-        float keepOffsetMovementDirectionChangeSpeed = 0.1f;
         float zeroSpeedThreshold = 5.f;
         double holdZeroSpeedTime = 0.0;
 
