@@ -686,7 +686,7 @@ NiPointer<NiAVObject> GetGrabbedNode(Actor *actor, bool isLeft)
     return nullptr;
 }
 
-bool ShouldKeepOffset(Actor *actor)
+bool ShouldDoGrabbedActorMovement(Actor *actor)
 {
     if (!Config::options.doKeepOffset) return false;
     if (Actor_IsGhost(actor)) return false;
@@ -708,7 +708,7 @@ bool ShouldKeepOffset(Actor *actor)
     return true;
 }
 
-struct KeepOffsetData
+struct GrabbedActorState
 {
     UInt32 target;
     NiPoint3 offset;
@@ -734,8 +734,8 @@ struct KeepOffsetData
     int numZeroSpeedFrames = 0;
     double noSpeedTime = 0.0;
 };
-std::mutex g_keepOffsetActorsLock;
-std::unordered_map<Actor *, KeepOffsetData> g_keepOffsetActors{};
+std::mutex g_grabbedActorStatesLock;
+std::unordered_map<Actor *, GrabbedActorState> g_grabbedActorStates{};
 
 NiTransform g_rawHandTransforms[2]{};
 
@@ -916,7 +916,7 @@ bool IsSmall(Actor *actor)
     return (race->data.unk40 == 0); // small race
 }
 
-enum class ForceRagdollType
+enum class GrabbedActorAction
 {
     None,
     RagdollOnGrab,
@@ -924,17 +924,17 @@ enum class ForceRagdollType
     RightHandedYank,
     LeftHandedYank,
     TwoHandedYank,
-    KeepOffset,
+    GrabbedActorMovement,
 };
-ForceRagdollType ShouldRagdollOnGrabOrFootYank(Actor *actor)
+GrabbedActorAction ShouldRagdollOnGrabOrFootYank(Actor *actor)
 {
-    if (!CanRagdoll(actor)) return ForceRagdollType::None;
+    if (!CanRagdoll(actor)) return GrabbedActorAction::None;
 
     TESRace *race = actor->race;
-    if (Config::options.ragdollSmallRacesOnGrab && IsSmall(actor)) return ForceRagdollType::RagdollOnGrab; // small race
+    if (Config::options.ragdollSmallRacesOnGrab && IsSmall(actor)) return GrabbedActorAction::RagdollOnGrab; // small race
 
     float health = actor->actorValueOwner.GetCurrent(24);
-    if (health < Config::options.ragdollHealthThreshold) return ForceRagdollType::RagdollOnGrab;
+    if (health < Config::options.ragdollHealthThreshold) return GrabbedActorAction::RagdollOnGrab;
 
     if (Config::options.ragdollOnFootYank && !IsAnimal(race)) {
         for (int isLeft = 0; isLeft < 2; ++isLeft) {
@@ -943,7 +943,7 @@ ForceRagdollType ShouldRagdollOnGrabOrFootYank(Actor *actor)
                     if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(heldNode)) {
                         if (std::optional<NiPoint3> stress = GetBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
                             if (VectorLength(*stress) > Config::options.footYankRequiredStressAmount) {
-                                return ForceRagdollType::FootYank;
+                                return GrabbedActorAction::FootYank;
                             }
                         }
                     }
@@ -952,7 +952,7 @@ ForceRagdollType ShouldRagdollOnGrabOrFootYank(Actor *actor)
         }
     }
 
-    return ForceRagdollType::None;
+    return GrabbedActorAction::None;
 }
 
 
@@ -965,7 +965,7 @@ struct LetGoHandData
 };
 LetGoHandData g_letGoHandData[2]{};
 
-ForceRagdollType GetDesiredForceRagdollType(Actor *actor, bool isHeld)
+GrabbedActorAction GetDesiredGrabbedActorAction(Actor *actor, bool isHeld)
 {
     bool wasHeldRight = actor == g_prevRightHeldRefr;
     bool wasHeldLeft = actor == g_prevLeftHeldRefr;
@@ -973,12 +973,12 @@ ForceRagdollType GetDesiredForceRagdollType(Actor *actor, bool isHeld)
 
     if (isHeld) {
         if (!Actor_IsInRagdollState(actor)) {
-            ForceRagdollType ragdollType = ShouldRagdollOnGrabOrFootYank(actor);
-            if (ragdollType != ForceRagdollType::None) {
+            GrabbedActorAction ragdollType = ShouldRagdollOnGrabOrFootYank(actor);
+            if (ragdollType != GrabbedActorAction::None) {
                 return ragdollType;
             }
-            else if (ShouldKeepOffset(actor)) {
-                return ForceRagdollType::KeepOffset;
+            else if (ShouldDoGrabbedActorMovement(actor)) {
+                return GrabbedActorAction::GrabbedActorMovement;
             }
         }
     }
@@ -993,22 +993,22 @@ ForceRagdollType GetDesiredForceRagdollType(Actor *actor, bool isHeld)
                     // Take MAX velocity to check the threshold (so you still need at least one hand above the threshold, but for impulse you can get up to 2x the normal impulse)
                     NiPoint3 yankVelocity = VectorLength(rightVelocity) >= VectorLength(leftVelocity) ? rightVelocity : leftVelocity;
                     if (VectorLength(yankVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
-                        return ForceRagdollType::TwoHandedYank;
+                        return GrabbedActorAction::TwoHandedYank;
                     }
                 }
                 else if (!Config::options.requireTwoHandsToYank) {
                     if (wasHeldRight && VectorLength(rightVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
-                        return ForceRagdollType::RightHandedYank;
+                        return GrabbedActorAction::RightHandedYank;
                     }
                     else if (wasHeldLeft && VectorLength(leftVelocity) > Config::options.yankRequiredHandSpeedRoomspace) {
-                        return ForceRagdollType::LeftHandedYank;
+                        return GrabbedActorAction::LeftHandedYank;
                     }
                 }
             }
         }
     }
 
-    return ForceRagdollType::None;
+    return GrabbedActorAction::None;
 }
 
 
@@ -3556,10 +3556,10 @@ public:
     BSFixedString Payload_10;
 };
 
-struct ClearKeepOffsetTask : TaskDelegate
+struct EndGrabbedActorMovementTask : TaskDelegate
 {
-    static ClearKeepOffsetTask *Create(UInt32 source) {
-        ClearKeepOffsetTask *cmd = new ClearKeepOffsetTask;
+    static EndGrabbedActorMovementTask * Create(UInt32 source) {
+        EndGrabbedActorMovementTask *cmd = new EndGrabbedActorMovementTask;
         if (cmd) {
             cmd->source = source;
         }
@@ -3570,8 +3570,6 @@ struct ClearKeepOffsetTask : TaskDelegate
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(source, refr)) {
             if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                //Actor_ClearKeepOffsetFromActor(actor);
-
                 MovementControllerNPC *movementController = GetMovementController(actor);
                 if (!movementController) return;
 
@@ -3879,8 +3877,8 @@ void ResetObjects()
     }
 
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
-        g_keepOffsetActors.clear();
+        std::scoped_lock lock(g_grabbedActorStatesLock);
+        g_grabbedActorStates.clear();
     }
 
     g_npcs.clear();
@@ -3989,26 +3987,26 @@ int GetNumSmoothingFrames(float smoothingTime)
 }
 
 
-void UpdateKeepOffset(Actor *actor, bool keepOffset)
+void UpdateGrabbedActorMovement(Actor *actor, bool doGrabbedActorMovement)
 {
-    std::scoped_lock lock(g_keepOffsetActorsLock);
+    std::scoped_lock lock(g_grabbedActorStatesLock);
 
-    if (keepOffset) {
-        if (auto it = g_keepOffsetActors.find(actor); it == g_keepOffsetActors.end()) {
+    if (doGrabbedActorMovement) {
+        if (auto it = g_grabbedActorStates.find(actor); it == g_grabbedActorStates.end()) {
             // Wasn't grabbed before
 
-            KeepOffsetData data{};
-            data.target = GetOrCreateRefrHandle(actor);
-            data.offset = NiPoint3();
-            data.offsetAngle = NiPoint3();
-            data.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
-            data.followRadius = Config::options.keepOffsetFollowRadius;
+            GrabbedActorState state{};
+            state.target = GetOrCreateRefrHandle(actor);
+            state.offset = NiPoint3();
+            state.offsetAngle = NiPoint3();
+            state.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
+            state.followRadius = Config::options.keepOffsetFollowRadius;
 
-            g_keepOffsetActors[actor] = data;
+            g_grabbedActorStates[actor] = state;
         }
         else {
             // Already in the set, so check if it actually succeeded at first
-            KeepOffsetData &data = it->second;
+            GrabbedActorState &state = it->second;
 
             // Update handFromRoot for each hand - set when grabbing, clear when not grabbing
             NiTransform refrTransformForHand; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransformForHand);
@@ -4016,7 +4014,7 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                 TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
                 bool isHeldByHand = (heldRefr == actor);
                 
-                if (isHeldByHand && !data.handFromRoot[isLeft]) {
+                if (isHeldByHand && !state.handFromRoot[isLeft]) {
                     // Hand just grabbed but we don't have a stored transform yet - set it now
                     NiTransform handTransform = g_rawHandTransforms[isLeft];
                     if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
@@ -4024,16 +4022,16 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         NiTransform nodeToHand = InverseTransform(handToNode);
                         handTransform = heldNode->m_worldTransform * nodeToHand;
                     }
-                    data.handFromRoot[isLeft] = InverseTransform(refrTransformForHand) * handTransform;
+                    state.handFromRoot[isLeft] = InverseTransform(refrTransformForHand) * handTransform;
                 }
-                else if (!isHeldByHand && data.handFromRoot[isLeft]) {
+                else if (!isHeldByHand && state.handFromRoot[isLeft]) {
                     // Hand no longer grabbing - clear the stored transform
-                    data.handFromRoot[isLeft] = std::nullopt;
+                    state.handFromRoot[isLeft] = std::nullopt;
                 }
             }
 
             if (MovementControllerNPC *controller = GetMovementController(actor); controller && controller->movementMotionDrivenControl.IsMotionDriven()) {
-                ForEachRagdollDriver(actor, [actor, &data](hkbRagdollDriver *driver) {
+                ForEachRagdollDriver(actor, [actor, &state](hkbRagdollDriver *driver) {
                     if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
                         NiPoint3 offset = { 0.f, 0.f, 0.f };
 
@@ -4064,18 +4062,18 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
 
                                         NiTransform rbPose = heldNode->m_worldTransform;
                                         NiTransform handOnRbPose = rbPose * nodeToHand;
-                                        data.handPosOnGrabbedNode = handOnRbPose.pos;
+                                        state.handPosOnGrabbedNode = handOnRbPose.pos;
 
 #ifdef _DEBUG
                                         {
                                             NiTransform t;
-                                            t.pos = data.handPosOnGrabbedNode;
+                                            t.pos = state.handPosOnGrabbedNode;
                                             t.scale = 1.f;
                                             RegisterDebugTransform("asdf", { t, {0, 0, 1, 1} });
                                         }
 
-                                        if (data.handFromRoot[isLeft]) {
-                                            NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
+                                        if (state.handFromRoot[isLeft]) {
+                                            NiTransform handFromRoot = refrTransform * *state.handFromRoot[isLeft];
 
                                             NiTransform t;
                                             t.pos = handFromRoot.pos;
@@ -4104,7 +4102,7 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                                     }
 
                                     if (std::optional<hkQsTransform> animPose = GetAnimPoseForRigidBody(actor, rigidBody->hkBody)) {
-                                        data.grabbedBoneAnimPoseWS = *animPose;
+                                        state.grabbedBoneAnimPoseWS = *animPose;
                                     }
 
 
@@ -4122,9 +4120,9 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
 
                         // TODO: We should do a full transform inverse of some sort here. Check the keepoffset function for what transform it applies, we need to do the opposite here.
 
-                        data.offsets.pop_back();
-                        data.offsets.push_front(offsetWS);
-                        NiPoint3 avgOffsetWS = GetAverageVector(data.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
+                        state.offsets.pop_back();
+                        state.offsets.push_front(offsetWS);
+                        NiPoint3 avgOffsetWS = GetAverageVector(state.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
 
                         //offset = refrTransform.rot.Transpose() * avgOffsetWS;
                         offset = avgOffsetWS;
@@ -4164,20 +4162,20 @@ void UpdateKeepOffset(Actor *actor, bool keepOffset)
                         PrintToFile(std::to_string(ragdoll->rootOffsetAngle), "rootOffsetAngle");
                         PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
 
-                        data.offset = offset;
-                        data.offsetAngle = offsetAngle;
-                        data.catchUpRadius = catchUpRadius;
-                        data.followRadius = followRadius;
+                        state.offset = offset;
+                        state.offsetAngle = offsetAngle;
+                        state.catchUpRadius = catchUpRadius;
+                        state.followRadius = followRadius;
                     }
                 });
             }
         }
     }
     else {
-        if (g_keepOffsetActors.size() > 0 && g_keepOffsetActors.count(actor)) {
+        if (g_grabbedActorStates.size() > 0 && g_grabbedActorStates.count(actor)) {
             // TODO: Is there a possible race condition here? Where ClearKeepOffset can run and then KeepOffset can run?
-            g_taskInterface->AddTask(ClearKeepOffsetTask::Create(GetOrCreateRefrHandle(actor)));
-            g_keepOffsetActors.erase(actor);
+            g_taskInterface->AddTask(EndGrabbedActorMovementTask::Create(GetOrCreateRefrHandle(actor)));
+            g_grabbedActorStates.erase(actor);
         }
     }
 }
@@ -4565,7 +4563,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool isHeldRight = actor == g_rightHeldRefr;
             bool isHeld = isHeldLeft || isHeldRight;
 
-            ForceRagdollType desiredForceRagdollType = GetDesiredForceRagdollType(actor, isHeld);
+            GrabbedActorAction desiredForceRagdollType = GetDesiredGrabbedActorAction(actor, isHeld);
 
             // When an npc is grabbed, disable collision with them
             if (isHeldRight) {
@@ -4578,11 +4576,11 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             }
 
             bool didRagdoll = false;
-            if (desiredForceRagdollType == ForceRagdollType::RagdollOnGrab) {
+            if (desiredForceRagdollType == GrabbedActorAction::RagdollOnGrab) {
                 RagdollActor(actor);
                 didRagdoll = true;
             }
-            else if (desiredForceRagdollType == ForceRagdollType::FootYank) {
+            else if (desiredForceRagdollType == GrabbedActorAction::FootYank) {
                 if (!g_footYankedActors.count(actor)) {
                     g_footYankedActors[actor] = g_currentFrameTime;
 
@@ -4592,13 +4590,13 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     }
                 }
             }
-            else if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::LeftHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+            else if (desiredForceRagdollType == GrabbedActorAction::RightHandedYank || desiredForceRagdollType == GrabbedActorAction::LeftHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
                 float staminaCost = Actor_IsHostileToActor(actor, player) ? Config::options.yankHostileStaminaCost : Config::options.yankStaminaCost;
                 if (TryStaminaAction(staminaCost)) {
-                    if (desiredForceRagdollType == ForceRagdollType::RightHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+                    if (desiredForceRagdollType == GrabbedActorAction::RightHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
                         ApplyYankImpulse(world, actor, g_letGoHandData[0].rigidBody, g_letGoHandData[0].velocity);
                     }
-                    if (desiredForceRagdollType == ForceRagdollType::LeftHandedYank || desiredForceRagdollType == ForceRagdollType::TwoHandedYank) {
+                    if (desiredForceRagdollType == GrabbedActorAction::LeftHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
                         ApplyYankImpulse(world, actor, g_letGoHandData[1].rigidBody, g_letGoHandData[1].velocity);
                     }
 
@@ -4609,7 +4607,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }
 
-            UpdateKeepOffset(actor, desiredForceRagdollType == ForceRagdollType::KeepOffset);
+            UpdateGrabbedActorMovement(actor, desiredForceRagdollType == GrabbedActorAction::GrabbedActorMovement);
 
 
             bool didShove = UpdateActorShove(actor);
@@ -5056,14 +5054,14 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
     }
 
 
-    bool isKeepOffset = false;
+    bool isDoingGrabbedActorMovement = false;
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
-        isKeepOffset = g_keepOffsetActors.find(actor) != g_keepOffsetActors.end();
+        std::scoped_lock lock(g_grabbedActorStatesLock);
+        isDoingGrabbedActorMovement = g_grabbedActorStates.find(actor) != g_grabbedActorStates.end();
     }
 
 
-    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isKeepOffset && poseHeader && poseHeader->m_onFraction > 0.f) {
+    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isDoingGrabbedActorMovement && poseHeader && poseHeader->m_onFraction > 0.f) {
         hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
         highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
     }
@@ -5377,7 +5375,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                     hkInt16 numPoses = poseHeader->m_numData;
                     memcpy(highResPoseLocal, characterPoseLocal, numPoses * sizeof(hkQsTransform));
 
-                    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isKeepOffset) {
+                    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isDoingGrabbedActorMovement) {
                         highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
                     }
                 }
@@ -5459,11 +5457,11 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
 
                                 {
-                                    std::unique_lock lock(g_keepOffsetActorsLock);
+                                    std::unique_lock lock(g_grabbedActorStatesLock);
 
-                                    auto it = g_keepOffsetActors.find(actor);
-                                    if (it != g_keepOffsetActors.end()) {
-                                        KeepOffsetData &data = it->second;
+                                    auto it = g_grabbedActorStates.find(actor);
+                                    if (it != g_grabbedActorStates.end()) {
+                                        GrabbedActorState &state = it->second;
 
                                         std::vector<NiPoint3> rbPos{};
                                         for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
@@ -5480,8 +5478,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
                                         ragdoll->rootOffset = fit.offsetXY;
                                         ragdoll->rootOffsetAngle = fit.yawRad;
-                                        data.animCentroidWS = fit.restCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
-                                        data.ragdollCentroidWS = fit.physCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
+                                        state.animCentroidWS = fit.restCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
+                                        state.ragdollCentroidWS = fit.physCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
 
                                         {
                                             NiTransform t;
@@ -6405,12 +6403,14 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
     g_Character_ModifyMovementData_Original(actor, a_deltaTime, a_moveAmt, a_rotAmt);
 
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
+        std::scoped_lock lock(g_grabbedActorStatesLock);
 
-        auto it = g_keepOffsetActors.find(actor);
-        if (it == g_keepOffsetActors.end()) {
+        auto it = g_grabbedActorStates.find(actor);
+        if (it == g_grabbedActorStates.end()) {
             return;
         }
+
+        GrabbedActorState &state = it->second;
 
         MovementControllerNPC *movementController = GetMovementController(actor);
         if (!movementController) return;
@@ -6469,9 +6469,9 @@ void PlayerCharacter_ModifyMovementData_Hook(PlayerCharacter *player, float a_de
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(player, refrTransform);
 
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
+        std::scoped_lock lock(g_grabbedActorStatesLock);
 
-        for (auto it = g_keepOffsetActors.begin(); it != g_keepOffsetActors.end(); ++it) {
+        for (auto it = g_grabbedActorStates.begin(); it != g_grabbedActorStates.end(); ++it) {
             Actor *actor = it->first;
             NiPoint3 playerToActor = actor->pos - player->pos;
             NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
@@ -6617,10 +6617,10 @@ _Actor_CheckAndHandleMotionOrAnimationDrivenChange Actor_CheckAndHandleMotionOrA
 RelocAddr<uintptr_t> Actor_CheckAndHandleMotionOrAnimationDrivenChange_HookLoc(0x5E0885);
 void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 {
-    std::scoped_lock lock(g_keepOffsetActorsLock);
+    std::scoped_lock lock(g_grabbedActorStatesLock);
 
-    auto it = g_keepOffsetActors.find(actor);
-    if (it == g_keepOffsetActors.end()) {
+    auto it = g_grabbedActorStates.find(actor);
+    if (it == g_grabbedActorStates.end()) {
         Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
         return;
     }
@@ -6634,7 +6634,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     //static BSFixedString sbAnimationDriven("bAnimationDriven");
     //get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
 
-    KeepOffsetData &data = it->second;
+    GrabbedActorState &state = it->second;
 
     MovementControllerNPC *movementController = GetMovementController(actor);
     if (!movementController) return;
@@ -6683,7 +6683,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
 #ifdef _DEBUG
         NiTransform debugT;
-        debugT.pos = data.ragdollCentroidWS * *g_inverseHavokWorldScale;
+        debugT.pos = state.ragdollCentroidWS * *g_inverseHavokWorldScale;
         debugT.scale = 2.5f;
         RegisterDebugTransform("animCentroidWS", { debugT, { 1, 0, 0, 1 } });
 #endif // _DEBUG
@@ -6694,9 +6694,9 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         int numHandsGrabbing = 0;
 
         for (int isLeft = 0; isLeft <= 1; isLeft++) {
-            if (data.handFromRoot[isLeft]) {
+            if (state.handFromRoot[isLeft]) {
                 NiTransform handTransform = g_rawHandTransforms[isLeft];
-                NiTransform handFromRoot = refrTransform * *data.handFromRoot[isLeft];
+                NiTransform handFromRoot = refrTransform * *state.handFromRoot[isLeft];
 
                 NiPoint3 rootToGrabbedPoint = handFromRoot.pos - refrTransform.pos;
                 NiPoint3 rootToHand = handTransform.pos - refrTransform.pos;
@@ -6737,32 +6737,32 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
 
             // Hysteresis for translation
-            if (!data.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
-                data.isNoStrafeTranslating = true;
+            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
+                state.isNoStrafeTranslating = true;
             }
-            else if (data.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
-                data.isNoStrafeTranslating = false;
+            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+                state.isNoStrafeTranslating = false;
             }
 
             // Hysteresis for rotation. Check this after computing whether to translate.
-            bool rotateStartCondition = data.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
-            bool rotateStopCondition = !data.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
+            bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
+            bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
 
-            if (!data.isNoStrafeRotating && rotateStartCondition) {
-                data.isNoStrafeRotating = true;
+            if (!state.isNoStrafeRotating && rotateStartCondition) {
+                state.isNoStrafeRotating = true;
             }
-            else if (data.isNoStrafeRotating && rotateStopCondition) {
-                data.isNoStrafeRotating = false;
+            else if (state.isNoStrafeRotating && rotateStopCondition) {
+                state.isNoStrafeRotating = false;
             }
 
-            if (data.isNoStrafeRotating) {
+            if (state.isNoStrafeRotating) {
                 // Apply speed limit to heading change
                 float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
                 offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
             }
 
-            if (data.isNoStrafeTranslating) {
+            if (state.isNoStrafeTranslating) {
                 // Apply speed limit to catch-up movement, plus instant player movement
                 float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
                 float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
@@ -6778,22 +6778,22 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
         float startThreshold = isHeldWithBothHands ? Config::options.keepOffsetStartThresholdTwoHanded : Config::options.keepOffsetStartThreshold;
         float stopThreshold = isHeldWithBothHands ? Config::options.keepOffsetStopThresholdTwoHanded : Config::options.keepOffsetStopThreshold;
-        bool isRagdollMovementStart = VectorLength(data.offset) >= startThreshold;
-        bool isRagdollMovementStop = VectorLength(data.offset) < stopThreshold;
+        bool isRagdollMovementStart = VectorLength(state.offset) >= startThreshold;
+        bool isRagdollMovementStop = VectorLength(state.offset) < stopThreshold;
 
-        NiPoint3 moveAmtFromRagdollInfluence = data.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
+        NiPoint3 moveAmtFromRagdollInfluence = state.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
-        if (!data.isTranslate) {
+        if (!state.isTranslate) {
             if (isPlayerMoving || isRagdollMovementStart) {
-                data.isTranslate = true;
+                state.isTranslate = true;
             }
         }
-        else if (data.isTranslate) {
+        else if (state.isTranslate) {
             if (!isPlayerMoving && isRagdollMovementStop) {
-                data.isTranslate = false;
+                state.isTranslate = false;
             }
         }
-        if (data.isTranslate) {
+        if (state.isTranslate) {
             // If we are moving both the player and the ragdoll, we apply both movements
             finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
         }
@@ -6821,29 +6821,29 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 offsetAngle.z += std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
             }
 
-            data.isRotate = false;
+            state.isRotate = false;
         }
         else {
             // Rotation not from player movement is only allowed if both hands are holding the actor
             if (isHeldWithBothHands) {
-                float angleDiff = ConstrainAngle180(-data.offsetAngle.z);
+                float angleDiff = ConstrainAngle180(-state.offsetAngle.z);
 
                 bool rotateStartCondition = fabsf(angleDiff) >= Config::options.keepOffsetAngleStartThreshold;
                 bool rotateStopCondition = fabsf(angleDiff) < Config::options.keepOffsetAngleStopThreshold;
 
-                if (!data.isRotate && rotateStartCondition) {
-                    data.isRotate = true;
+                if (!state.isRotate && rotateStartCondition) {
+                    state.isRotate = true;
                 }
-                else if (data.isRotate && rotateStopCondition) {
-                    data.isRotate = false;
+                else if (state.isRotate && rotateStopCondition) {
+                    state.isRotate = false;
                 }
-                if (data.isRotate) {
+                if (state.isRotate) {
                     float maxHeadingChange = Config::options.keepOffsetTwoHandedRotationSpeed * *g_deltaTime;
                     offsetAngle.z += std::clamp(angleDiff, -maxHeadingChange, maxHeadingChange);
                 }
             }
             else {
-                data.isRotate = false;
+                state.isRotate = false;
             }
         }
     }
@@ -6876,13 +6876,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
         float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
-        float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, data.prevSpeed);
+        float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, state.prevSpeed);
         if (denormSpeed < Config::options.zeroSpeedThreshold) { // 5 is the value below which the character will not move at all
             if (denormPrevSpeed >= Config::options.zeroSpeedThreshold) {
-                data.noSpeedTime = g_currentFrameTime;
+                state.noSpeedTime = g_currentFrameTime;
             }
         }
-        if (g_currentFrameTime - data.noSpeedTime < Config::options.holdZeroSpeedTime) {
+        if (g_currentFrameTime - state.noSpeedTime < Config::options.holdZeroSpeedTime) {
             speed = 0.f;
         }
 
@@ -6900,8 +6900,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     NiPoint3 targetAngle = ConstrainAngle180(actor->rot + offsetAngle);
     movementController->movementPlannerDirectControl.SetTargetAngle(targetAngle);
 
-    data.prevSpeed = speed;
-    data.prevDirection = direction;
+    state.prevSpeed = speed;
+    state.prevDirection = direction;
 }
 
 struct IMovementParameters
@@ -6970,10 +6970,10 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
 
     bool foundActor = false;
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
+        std::scoped_lock lock(g_grabbedActorStatesLock);
 
-        auto it = g_keepOffsetActors.find(actor);
-        if (it != g_keepOffsetActors.end()) {
+        auto it = g_grabbedActorStates.find(actor);
+        if (it != g_grabbedActorStates.end()) {
             foundActor = true;
         }
     }
@@ -6989,10 +6989,10 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
     //Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
 
     //{
-    //    std::scoped_lock lock(g_keepOffsetActorsLock);
+    //    std::scoped_lock lock(g_grabbedActorStatesLock);
 
-    //    auto it = g_keepOffsetActors.find(actor);
-    //    if (it == g_keepOffsetActors.end()) {
+    //    auto it = g_grabbedActorStates.find(actor);
+    //    if (it == g_grabbedActorStates.end()) {
     //        return;
     //    }
 
@@ -7015,10 +7015,10 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
 
     bool foundActor = false;
     {
-        std::scoped_lock lock(g_keepOffsetActorsLock);
+        std::scoped_lock lock(g_grabbedActorStatesLock);
 
-        auto it = g_keepOffsetActors.find(actor);
-        if (it != g_keepOffsetActors.end()) {
+        auto it = g_grabbedActorStates.find(actor);
+        if (it != g_grabbedActorStates.end()) {
             foundActor = true;
         }
     }
