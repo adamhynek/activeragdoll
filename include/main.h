@@ -28,7 +28,6 @@ struct ActiveRagdoll
     hkQsTransform worldFromModelPostPhysics{};
     hkQsTransform stickyWorldFromModel{};
     NiPoint3 rootOffset{}; // meters
-    float rootOffsetAngle = 0.f; // radians
     float avgStress = 0.f;
     float deltaTime = 0.f;
     RE::hkRefPtr<hkpEaseConstraintsAction> easeConstraintsAction = nullptr;

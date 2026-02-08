@@ -713,15 +713,11 @@ struct GrabbedActorState
     UInt32 target;
     NiPoint3 offset;
     NiPoint3 offsetAngle;
-    float catchUpRadius;
-    float followRadius;
     std::optional<NiTransform> handFromRoot[2];
     NiPoint3 endMovementDirection;
     double endMovementTime = 0.0;
     std::deque<NiPoint3> offsets{ 500, NiPoint3() };
     std::deque<NiPoint3> speeds{ 500, NiPoint3() };
-    hkQsTransform grabbedBoneAnimPoseWS{}; // TODO: Probably one for each hand
-    NiPoint3 handPosOnGrabbedNode{}; // TODO: Probably one for each hand
     NiPoint3 animCentroidWS{};
     NiPoint3 ragdollCentroidWS{};
     bool isTranslate = false;
@@ -3987,195 +3983,139 @@ int GetNumSmoothingFrames(float smoothingTime)
 }
 
 
-void UpdateGrabbedActorMovement(Actor *actor, bool doGrabbedActorMovement)
+void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 {
     std::scoped_lock lock(g_grabbedActorStatesLock);
 
-    if (doGrabbedActorMovement) {
-        if (auto it = g_grabbedActorStates.find(actor); it == g_grabbedActorStates.end()) {
-            // Wasn't grabbed before
-
-            GrabbedActorState state{};
-            state.target = GetOrCreateRefrHandle(actor);
-            state.offset = NiPoint3();
-            state.offsetAngle = NiPoint3();
-            state.catchUpRadius = Config::options.keepOffsetCatchUpRadius;
-            state.followRadius = Config::options.keepOffsetFollowRadius;
-
-            g_grabbedActorStates[actor] = state;
-        }
-        else {
-            // Already in the set, so check if it actually succeeded at first
-            GrabbedActorState &state = it->second;
-
-            // Update handFromRoot for each hand - set when grabbing, clear when not grabbing
-            NiTransform refrTransformForHand; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransformForHand);
-            for (int isLeft = 0; isLeft < 2; ++isLeft) {
-                TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
-                bool isHeldByHand = (heldRefr == actor);
-                
-                if (isHeldByHand && !state.handFromRoot[isLeft]) {
-                    // Hand just grabbed but we don't have a stored transform yet - set it now
-                    NiTransform handTransform = g_rawHandTransforms[isLeft];
-                    if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
-                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
-                        NiTransform nodeToHand = InverseTransform(handToNode);
-                        handTransform = heldNode->m_worldTransform * nodeToHand;
-                    }
-                    state.handFromRoot[isLeft] = InverseTransform(refrTransformForHand) * handTransform;
-                }
-                else if (!isHeldByHand && state.handFromRoot[isLeft]) {
-                    // Hand no longer grabbing - clear the stored transform
-                    state.handFromRoot[isLeft] = std::nullopt;
-                }
-            }
-
-            if (MovementControllerNPC *controller = GetMovementController(actor); controller && controller->movementMotionDrivenControl.IsMotionDriven()) {
-                ForEachRagdollDriver(actor, [actor, &state](hkbRagdollDriver *driver) {
-                    if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                        NiPoint3 offset = { 0.f, 0.f, 0.f };
-
-                        //NiPoint3 rootOffsetXY = ragdoll->rootOffset;
-                        //rootOffsetXY.z = 0.f;
-                        //if (VectorLength(rootOffsetXY) >= Config::options.keepOffsetMinPosDifference) {
-
-                        NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-
-                        // TODO: A real fallback direction
-                        NiPoint3 direction = VectorNormalized(actor->pos - (*g_thePlayer)->pos);
-                        direction.z = 0.f;
-                        NiPoint3 offsetWS = direction * Config::options.keepOffsetDirectionMultiplier;
-
-                        // TODO: What if left AND right are held?
-                        for (int isLeft = 0; isLeft < 2; ++isLeft) {
-                            if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
-                                if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(heldNode)) {
-                                    // TODO: This is actually a bad metric to use for the direction we want them to move in. Something that conveys intent more clearly would be better. Maybe offset of your actual hand (i.e. wand) from the bone instead?
-                                    //if (std::optional<NiPoint3> displacement = GetHandBoneDisplacement(actor, rigidBody->hkBody, isLeft)) {
-                                    //    NiPoint3 displacementXY = { displacement->x, displacement->y, 0.f };
-                                    //    offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
-                                    //}
-
-                                    {
-                                        NiTransform handToNode = g_currentGrabTransforms[isLeft];
-                                        NiTransform nodeToHand = InverseTransform(handToNode);
-
-                                        NiTransform rbPose = heldNode->m_worldTransform;
-                                        NiTransform handOnRbPose = rbPose * nodeToHand;
-                                        state.handPosOnGrabbedNode = handOnRbPose.pos;
-
-#ifdef _DEBUG
-                                        {
-                                            NiTransform t;
-                                            t.pos = state.handPosOnGrabbedNode;
-                                            t.scale = 1.f;
-                                            RegisterDebugTransform("asdf", { t, {0, 0, 1, 1} });
-                                        }
-
-                                        if (state.handFromRoot[isLeft]) {
-                                            NiTransform handFromRoot = refrTransform * *state.handFromRoot[isLeft];
-
-                                            NiTransform t;
-                                            t.pos = handFromRoot.pos;
-                                            t.scale = 1.f;
-                                            RegisterDebugTransform(std::string("handFromRoot") + std::to_string(isLeft), { t, {1, 0, 0, 1} });
-                                        }
-#endif
-                                    }
-
-
-                                    NiPoint3 displacement = GetTotalDisplacement(actor);
-                                    NiPoint3 displacementXY = { displacement.x, displacement.y, 0.f };
-                                    //offsetWS = displacementXY * Config::options.keepOffsetDirectionMultiplier;
-                                    offsetWS = displacementXY;
-
-                                    {
-                                        NiTransform t;
-                                        t.pos = t.pos = actor->pos;
-                                        NiPoint3 vec = displacementXY * 10.f;
-                                        t.pos += (vec * 0.5f);
-                                        t.pos.z += 50.f;
-                                        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                                        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                                        t.scale = 1.f;
-                                        RegisterDebugTransform("TotalDisplacement", { t, {0, 0, 1, 1} });
-                                    }
-
-                                    if (std::optional<hkQsTransform> animPose = GetAnimPoseForRigidBody(actor, rigidBody->hkBody)) {
-                                        state.grabbedBoneAnimPoseWS = *animPose;
-                                    }
-
-
-                                    offsetWS = ragdoll->rootOffset * *g_inverseHavokWorldScale;
-                                }
-                            }
-                        }
-
-                        float catchUpRadius = Config::options.keepOffsetCatchUpRadius;
-                        float followRadius = Config::options.keepOffsetFollowRadius;
-
-                        // TODO: Can we measure the actor's current speed (rather the amount they moved in the previous frame(s)) and use that to drive the target speed we have?
-                        //    - I believe the magnitude of the offset amount from the actor is effectively the target speed percent. Should re-test this (target offset magnitude 0-100 (or 0 to catch up radius?))
-
-
-                        // TODO: We should do a full transform inverse of some sort here. Check the keepoffset function for what transform it applies, we need to do the opposite here.
-
-                        state.offsets.pop_back();
-                        state.offsets.push_front(offsetWS);
-                        NiPoint3 avgOffsetWS = GetAverageVector(state.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
-
-                        //offset = refrTransform.rot.Transpose() * avgOffsetWS;
-                        offset = avgOffsetWS;
-                        PrintToFile(std::to_string(VectorLength(avgOffsetWS)), "offset.txt");
-                        //PrintVector(avgOffsetWS);
-                        //PrintVector(offset);
-
-                        //{
-                        //    NiTransform t;
-                        //    t.pos = refrTransform.pos;
-                        //    //NiPoint3 vec = VectorNormalized(avgOffsetWS) * 200.f;
-                        //    NiPoint3 vec = avgOffsetWS * 5.f;
-                        //    t.pos += (vec * 0.5f);
-                        //    t.pos.z += 50.f;
-                        //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                        //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                        //    t.scale = 1.f;
-                        //    RegisterDebugTransform("avgOffsetWS", { t, {0, 1, 0, 1} });
-                        //}
-
-                            //NiPoint3 offsetWS = refrTransform.pos + rootOffsetXY * Config::options.keepOffsetPosDifferenceMultiplier;
-                            //offset = InverseTransform(refrTransform) * offsetWS;
-                        //}
-
-                        // TODO: This angle stuff is pretty busted with oscillation for quadrupeds like dog/cow in riverwood.
-                        //       Possibly also incorporate movement direction into rotation, e.g. rotate towards the direction of movement?
-                        NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-                        //if (!data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) >= Config::options.keepOffsetAngleStartThreshold) {
-                        //    // offsetAngle.z < PI -> clockwise, >= PI -> counter-clockwise
-                        //    data.isRotate = true;
-                        //}
-                        //else if (data.isRotate && fabsf(ConstrainAngle180(ragdoll->rootOffsetAngle)) < Config::options.keepOffsetAngleStopThreshold) {
-                        //    data.isRotate = false;
-                        //}
-                        offsetAngle.z = ConstrainAngle180(ragdoll->rootOffsetAngle);
-
-                        PrintToFile(std::to_string(ragdoll->rootOffsetAngle), "rootOffsetAngle");
-                        PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
-
-                        state.offset = offset;
-                        state.offsetAngle = offsetAngle;
-                        state.catchUpRadius = catchUpRadius;
-                        state.followRadius = followRadius;
-                    }
-                });
-            }
-        }
-    }
-    else {
+    if (!doGrabbedActorMovement) {
         if (g_grabbedActorStates.size() > 0 && g_grabbedActorStates.count(actor)) {
             // TODO: Is there a possible race condition here? Where ClearKeepOffset can run and then KeepOffset can run?
             g_taskInterface->AddTask(EndGrabbedActorMovementTask::Create(GetOrCreateRefrHandle(actor)));
             g_grabbedActorStates.erase(actor);
+        }
+        return;
+    }
+
+    if (auto it = g_grabbedActorStates.find(actor); it == g_grabbedActorStates.end()) {
+        // Wasn't grabbed before
+
+        GrabbedActorState state{};
+        state.target = GetOrCreateRefrHandle(actor);
+        state.offset = NiPoint3();
+        state.offsetAngle = NiPoint3();
+
+        g_grabbedActorStates[actor] = state;
+    }
+    else {
+        // Already in the set
+
+        GrabbedActorState &state = it->second;
+
+        NiTransform refrTransform;
+        TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+
+        // Update handFromRoot for each hand - set when grabbing, clear when not grabbing
+        for (int isLeft = 0; isLeft < 2; ++isLeft) {
+            TESObjectREFR *heldRefr = isLeft ? g_leftHeldRefr : g_rightHeldRefr;
+            bool isHeldByHand = (heldRefr == actor);
+
+            if (isHeldByHand && !state.handFromRoot[isLeft]) {
+                // Hand just grabbed but we don't have a stored transform yet - set it now
+                NiTransform handTransform = g_rawHandTransforms[isLeft];
+                if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                    NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                    NiTransform nodeToHand = InverseTransform(handToNode);
+                    handTransform = heldNode->m_worldTransform * nodeToHand;
+                }
+                state.handFromRoot[isLeft] = InverseTransform(refrTransform) * handTransform;
+            }
+            else if (!isHeldByHand && state.handFromRoot[isLeft]) {
+                // Hand no longer grabbing - clear the stored transform
+                state.handFromRoot[isLeft] = std::nullopt;
+            }
+        }
+
+        if (MovementControllerNPC *controller = GetMovementController(actor); controller && controller->movementMotionDrivenControl.IsMotionDriven()) {
+            ForEachRagdollDriver(actor, [actor, &state, &refrTransform](hkbRagdollDriver *driver) {
+                if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+#ifdef _DEBUG
+                    for (int isLeft = 0; isLeft < 2; ++isLeft) {
+                        if (state.handFromRoot[isLeft]) {
+                            NiTransform handFromRoot = refrTransform * *state.handFromRoot[isLeft];
+
+                            NiTransform t;
+                            t.pos = handFromRoot.pos;
+                            t.scale = 1.f;
+                            RegisterDebugTransform(std::string("handFromRoot") + std::to_string(isLeft), {t, {1, 0, 0, 1}});
+                        }
+                    }
+#endif
+
+                    std::vector<NiPoint3> rbPos{};
+                    for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
+                        hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
+                        rbPos.push_back(HkVectorToNiPoint(rb->getTransform().getTranslation()) - refrTransform.pos * *g_havokWorldScale);
+                    }
+
+                    std::vector weights(ragdoll->lowResAnimPoseWS.size(), 1.f);
+                    std::vector<NiPoint3> animPos{};
+                    for (const hkQsTransform &t : ragdoll->lowResAnimPoseWS) {
+                        animPos.push_back(HkVectorToNiPoint(t.m_translation) - refrTransform.pos * *g_havokWorldScale);
+                    }
+
+                    MathUtils::PlanarFit2D fit = SolvePlanarYaw(animPos, rbPos, weights);
+
+                    state.animCentroidWS = fit.restCentroid + refrTransform.pos * *g_havokWorldScale;
+                    state.ragdollCentroidWS = fit.physCentroid + refrTransform.pos * *g_havokWorldScale;
+
+                    NiPoint3 kabschOffset = fit.offsetXY;
+                    float kabschOffsetAngle = fit.yawRad;
+
+#ifdef _DEBUG
+                    {
+                        NiPoint3 actorForward = ForwardVector(EulerToMatrix(actor->rot));
+
+                        NiTransform t;
+                        t.pos = actor->pos;
+                        NiPoint3 vec = actorForward * 70.f;
+                        t.pos += (vec * 0.5f);
+                        t.pos.z += 50.f;
+                        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{0, 0, 1});
+                        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                        t.scale = 1.f;
+                        RegisterDebugTransform("actorForward", {t, {1, 0, 0, 1}});
+                    }
+
+                    {
+                        NiTransform t;
+                        t.pos = actor->pos;
+                        NiPoint3 vec = fit.offsetXY * *g_inverseHavokWorldScale * 10.f;
+                        t.pos += (vec * 0.5f);
+                        t.pos.z += 50.f;
+                        t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{0, 0, 1});
+                        SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
+                        t.scale = 1.f;
+                        RegisterDebugTransform("kabschOffset", {t, {1, 0, 0, 1}});
+                    }
+#endif // _DEBUG
+
+                    state.offsets.pop_back();
+                    state.offsets.push_front(kabschOffset * *g_inverseHavokWorldScale);
+                    NiPoint3 avgOffset = GetAverageVector(state.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
+
+                    NiPoint3 offset = avgOffset;
+                    PrintToFile(std::to_string(VectorLength(avgOffset)), "offset.txt");
+
+                    NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+                    offsetAngle.z = ConstrainAngle180(kabschOffsetAngle);
+
+                    PrintToFile(std::to_string(kabschOffsetAngle), "rootOffsetAngle");
+                    PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
+
+                    state.offset = offset;
+                    state.offsetAngle = offsetAngle;
+                }
+            });
         }
     }
 }
@@ -4563,7 +4503,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             bool isHeldRight = actor == g_rightHeldRefr;
             bool isHeld = isHeldLeft || isHeldRight;
 
-            GrabbedActorAction desiredForceRagdollType = GetDesiredGrabbedActorAction(actor, isHeld);
+            GrabbedActorAction desiredGrabbedActorAction = GetDesiredGrabbedActorAction(actor, isHeld);
 
             // When an npc is grabbed, disable collision with them
             if (isHeldRight) {
@@ -4576,11 +4516,11 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             }
 
             bool didRagdoll = false;
-            if (desiredForceRagdollType == GrabbedActorAction::RagdollOnGrab) {
+            if (desiredGrabbedActorAction == GrabbedActorAction::RagdollOnGrab) {
                 RagdollActor(actor);
                 didRagdoll = true;
             }
-            else if (desiredForceRagdollType == GrabbedActorAction::FootYank) {
+            else if (desiredGrabbedActorAction == GrabbedActorAction::FootYank) {
                 if (!g_footYankedActors.count(actor)) {
                     g_footYankedActors[actor] = g_currentFrameTime;
 
@@ -4590,13 +4530,13 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     }
                 }
             }
-            else if (desiredForceRagdollType == GrabbedActorAction::RightHandedYank || desiredForceRagdollType == GrabbedActorAction::LeftHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
+            else if (desiredGrabbedActorAction == GrabbedActorAction::RightHandedYank || desiredGrabbedActorAction == GrabbedActorAction::LeftHandedYank || desiredGrabbedActorAction == GrabbedActorAction::TwoHandedYank) {
                 float staminaCost = Actor_IsHostileToActor(actor, player) ? Config::options.yankHostileStaminaCost : Config::options.yankStaminaCost;
                 if (TryStaminaAction(staminaCost)) {
-                    if (desiredForceRagdollType == GrabbedActorAction::RightHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
+                    if (desiredGrabbedActorAction == GrabbedActorAction::RightHandedYank || desiredGrabbedActorAction == GrabbedActorAction::TwoHandedYank) {
                         ApplyYankImpulse(world, actor, g_letGoHandData[0].rigidBody, g_letGoHandData[0].velocity);
                     }
-                    if (desiredForceRagdollType == GrabbedActorAction::LeftHandedYank || desiredForceRagdollType == GrabbedActorAction::TwoHandedYank) {
+                    if (desiredGrabbedActorAction == GrabbedActorAction::LeftHandedYank || desiredGrabbedActorAction == GrabbedActorAction::TwoHandedYank) {
                         ApplyYankImpulse(world, actor, g_letGoHandData[1].rigidBody, g_letGoHandData[1].velocity);
                     }
 
@@ -4607,7 +4547,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 }
             }
 
-            UpdateGrabbedActorMovement(actor, desiredForceRagdollType == GrabbedActorAction::GrabbedActorMovement);
+            UpdateGrabbedActorMovementState(actor, desiredGrabbedActorAction == GrabbedActorAction::GrabbedActorMovement);
 
 
             bool didShove = UpdateActorShove(actor);
@@ -4763,85 +4703,6 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput &ge
         driver->reportingWhenKeyframed[i >> 5] |= (1 << (i & 0x1F));
     }
 }
-
-
-
-
-struct PlanarFit2D
-{
-    float yawRad = 0.f;          // CCW rotation in radians
-    NiPoint3 offsetXY{ 0.f, 0.f, 0.f };  // planar translation
-    NiPoint3 restCentroid{ 0.f, 0.f, 0.f };
-    NiPoint3 physCentroid{ 0.f, 0.f, 0.f };
-    NiPoint3 centroidOffset{ 0.f, 0.f, 0.f };
-};
-
-PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
-    const std::vector<NiPoint3> &physPos,
-    const std::vector<float> &weights)
-{
-    const std::size_t n = restPos.size();
-    PlanarFit2D out;
-
-    if (n == 0 || physPos.size() != n || weights.size() != n) {
-        return out;                               // invalid input → identity
-    }
-
-    // 1. Weighted centroids ---------------------------------------------------
-    float sumW = 0.f;
-    NiPoint3 c_p = { 0.f, 0.f, 0.f };               // rest-pose centroid
-    NiPoint3 c_q = { 0.f, 0.f, 0.f };               // physics-pose centroid
-
-    for (std::size_t i = 0; i < n; ++i) {
-        const float w = weights[i];
-        sumW += w;
-
-        c_p += restPos[i] * w;
-        c_q += physPos[i] * w;
-    }
-
-    if (sumW <= std::numeric_limits<float>::epsilon()) {
-        return out;                               // all weights zero → identity
-    }
-
-    c_p /= sumW;
-    c_q /= sumW;
-
-    // 2. Accumulate dot- and cross-terms --------------------------------------
-    double A = 0.0;   // Σ w (dx·dx′ + dy·dy′)
-    double B = 0.0;   // Σ w (dx·dy′ − dy·dx′)
-
-    for (std::size_t i = 0; i < n; ++i) {
-        const float w = weights[i];
-        const NiPoint3 d = restPos[i] - c_p;     // rest displacement
-        const NiPoint3 dP = physPos[i] - c_q;     // phys displacement
-
-        A += static_cast<double>(w) * (d.x * dP.x + d.y * dP.y);
-        B += static_cast<double>(w) * (d.x * dP.y - d.y * dP.x);
-    }
-
-    // 3. Least-squares yaw -----------------------------------------------------
-    const float theta = std::atan2(B, A);     // radians
-
-    // 4. Matching planar translation ------------------------------------------
-    const float c = std::cos(theta);
-    const float s = std::sin(theta);
-
-    NiPoint3 offset;
-    offset.x = c_q.x - (c * c_p.x - s * c_p.y);
-    offset.y = c_q.y - (s * c_p.x + c * c_p.y);
-
-    out.yawRad = theta;
-    out.offsetXY = offset;
-    out.restCentroid = c_p;
-    out.physCentroid = c_q;
-    return out;
-}
-
-
-
-
-
 
 
 struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
@@ -5442,86 +5303,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                                 NiPoint3 posePos = HkVectorToNiPoint(ragdoll->rootBoneTransform->m_translation);
                                 NiPoint3 actualPos = HkVectorToNiPoint(actualT.m_translation);
                                 ragdoll->rootOffset = actualPos - posePos;
-
-                                //NiPoint3 poseForward = ForwardVector(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
-                                NiMatrix33 actualRot; HkMatrixToNiMatrix(actualT.m_rotation, actualRot);
-                                //NiPoint3 actualForward = ForwardVector(actualRot);
-                                //float poseAngle = atan2f(poseForward.x, poseForward.y);
-                                //float actualAngle = atan2f(actualForward.x, actualForward.y);
-                                //ragdoll->rootOffsetAngle = AngleDifference(poseAngle, actualAngle);
-
-                                NiPoint3 poseEuler = MatrixToEuler(QuaternionToMatrix(QuaternionNormalized(HkQuatToNiQuat(ragdoll->rootBoneTransform->m_rotation))));
-                                NiPoint3 actualEuler = MatrixToEuler(actualRot);
-
-                                ragdoll->rootOffsetAngle = AngleDifference(poseEuler.z, actualEuler.z);
-
-
-                                {
-                                    std::unique_lock lock(g_grabbedActorStatesLock);
-
-                                    auto it = g_grabbedActorStates.find(actor);
-                                    if (it != g_grabbedActorStates.end()) {
-                                        GrabbedActorState &state = it->second;
-
-                                        std::vector<NiPoint3> rbPos{};
-                                        for (int i = 0; i < driver->ragdoll->m_rigidBodies.getSize(); i++) {
-                                            hkpRigidBody *rb = driver->ragdoll->m_rigidBodies[i];
-                                            rbPos.push_back(HkVectorToNiPoint(rb->getTransform().getTranslation()) - HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale);
-                                        }
-
-                                        std::vector weights(ragdoll->lowResAnimPoseWS.size(), 1.f);
-                                        std::vector<NiPoint3> animPos{};
-                                        for (const hkQsTransform &t : ragdoll->lowResAnimPoseWS) {
-                                            animPos.push_back(HkVectorToNiPoint(t.m_translation) - HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale);
-                                        }
-                                        PlanarFit2D fit = SolvePlanarYaw(animPos, rbPos, weights);
-
-                                        ragdoll->rootOffset = fit.offsetXY;
-                                        ragdoll->rootOffsetAngle = fit.yawRad;
-                                        state.animCentroidWS = fit.restCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
-                                        state.ragdollCentroidWS = fit.physCentroid + HkVectorToNiPoint(worldFromModel.getTranslation()) * *g_havokWorldScale;
-
-                                        {
-                                            NiTransform t;
-                                            t.pos = t.pos = actor->pos;;
-                                            NiPoint3 vec = fit.offsetXY * *g_inverseHavokWorldScale * 10.f;
-                                            t.pos += (vec * 0.5f);
-                                            t.pos.z += 50.f;
-                                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                                            t.scale = 1.f;
-                                            RegisterDebugTransform("kabschOffset", { t, {1, 0, 0, 1} });
-                                        }
-
-                                        NiPoint3 actorForward = ForwardVector(EulerToMatrix(actor->rot));
-
-                                        {
-                                            NiTransform t;
-                                            t.pos = actor->pos;
-                                            NiPoint3 vec = actorForward * 70.f;
-                                            t.pos += (vec * 0.5f);
-                                            t.pos.z += 50.f;
-                                            t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                                            SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                                            t.scale = 1.f;
-                                            RegisterDebugTransform("actorForward", { t, {1, 0, 0, 1} });
-                                        }
-
-                                        //{
-                                        //    NiTransform t;
-                                        //    t.pos = actor->pos;
-                                        //    NiPoint3 vec = RotateVectorByAxisAngle(actorForward, { 0.f, 0.f, 1.f }, fit.yawRad) * 70.f;
-                                        //    t.pos += (vec * 0.5f);
-                                        //    t.pos.z += 50.f;
-                                        //    t.rot = MatrixFromForwardVector(VectorNormalized(vec), NiPoint3{ 0, 0, 1 });
-                                        //    SetForwardVector(t.rot, ForwardVector(t.rot) * VectorLength(vec) * 0.5f);
-                                        //    t.scale = 1.f;
-                                        //    RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
-                                        //}
-                                    }
-
-                                }
-
 
                                 if (
                                     Config::options.doWarp &&
@@ -6626,7 +6407,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     }
 
     // TODO: Maybe only force motiondriven if they are bAllowRotation, but NOT if they are animation driven?
-    // TODO: If the player moves (e.g. via joystick), we can apply the offset directly in the player movement direction rather than the "local" offset driven by how you move your hand relative to the thing you're holding.
     // TODO: We could push away (either through keepoffset or applyvelocityforduration) actors that are intersecting the player.
 
 
@@ -6644,18 +6424,10 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 #ifdef _DEBUG
         _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
 #endif // _DEBUG
-        //static BSAnimationGraphEvent evnt{ "StartMotionDriven", nullptr, "" };
-        //actor->animGraphEventSink.ReceiveEvent(&evnt, nullptr);
         movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
         movementController->movementPlannerDirectControl.SetPlannerDirectControl();
         movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
     }
-
-    //movementController->movementDirectControl.SetMovementSpeed(Config::options.keepOffsetMovementDirectionChangeSpeed);
-    //NiPoint3 dir = ForwardVectorToEulerRot(VectorNormalized(actor->pos - (*g_thePlayer)->pos));
-    //movementController->movementDirectControl.SetMovementDirection(dir);
-
-    //Actor_KeepOffsetFromActor(actor, data.target, data.offset, data.offsetAngle, data.catchUpRadius, data.followRadius);
 
 
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);

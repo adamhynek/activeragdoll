@@ -1412,3 +1412,66 @@ bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, 
     }
     return false;
 }
+
+
+MathUtils::PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
+    const std::vector<NiPoint3> &physPos,
+    const std::vector<float> &weights)
+{
+    const std::size_t n = restPos.size();
+    MathUtils::PlanarFit2D out;
+
+    if (n == 0 || physPos.size() != n || weights.size() != n) {
+        return out;                               // invalid input → identity
+    }
+
+    // 1. Weighted centroids ---------------------------------------------------
+    float sumW = 0.f;
+    NiPoint3 c_p = { 0.f, 0.f, 0.f };               // rest-pose centroid
+    NiPoint3 c_q = { 0.f, 0.f, 0.f };               // physics-pose centroid
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const float w = weights[i];
+        sumW += w;
+
+        c_p += restPos[i] * w;
+        c_q += physPos[i] * w;
+    }
+
+    if (sumW <= std::numeric_limits<float>::epsilon()) {
+        return out;                               // all weights zero → identity
+    }
+
+    c_p /= sumW;
+    c_q /= sumW;
+
+    // 2. Accumulate dot- and cross-terms --------------------------------------
+    double A = 0.0;   // Σ w (dx·dx′ + dy·dy′)
+    double B = 0.0;   // Σ w (dx·dy′ − dy·dx′)
+
+    for (std::size_t i = 0; i < n; ++i) {
+        const float w = weights[i];
+        const NiPoint3 d = restPos[i] - c_p;     // rest displacement
+        const NiPoint3 dP = physPos[i] - c_q;     // phys displacement
+
+        A += static_cast<double>(w) * (d.x * dP.x + d.y * dP.y);
+        B += static_cast<double>(w) * (d.x * dP.y - d.y * dP.x);
+    }
+
+    // 3. Least-squares yaw -----------------------------------------------------
+    const float theta = std::atan2(B, A);     // radians
+
+    // 4. Matching planar translation ------------------------------------------
+    const float c = std::cos(theta);
+    const float s = std::sin(theta);
+
+    NiPoint3 offset;
+    offset.x = c_q.x - (c * c_p.x - s * c_p.y);
+    offset.y = c_q.y - (s * c_p.x + c * c_p.y);
+
+    out.yawRad = theta;
+    out.offsetXY = offset;
+    out.restCentroid = c_p;
+    out.physCentroid = c_q;
+    return out;
+}

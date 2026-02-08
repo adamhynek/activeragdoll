@@ -61,6 +61,15 @@ namespace MathUtils
     };
 
     Result GetClosestPointOnTriangle(const NiPoint3 &point, const Triangle &triangle, uintptr_t vertices, UInt8 vertexStride, UInt32 vertexPosOffset);
+
+    struct PlanarFit2D
+    {
+        float yawRad = 0.f;          // CCW rotation in radians
+        NiPoint3 offsetXY{ 0.f, 0.f, 0.f };  // planar translation
+        NiPoint3 restCentroid{ 0.f, 0.f, 0.f };
+        NiPoint3 physCentroid{ 0.f, 0.f, 0.f };
+        NiPoint3 centroidOffset{ 0.f, 0.f, 0.f };
+    };
 }
 
 inline float VectorLengthSquared(const NiPoint3 &vec) { return vec.x * vec.x + vec.y * vec.y + vec.z * vec.z; }
@@ -137,3 +146,5 @@ inline float AngleDifference(float angle1, float angle2)
 }
 
 bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, NiPoint3 *closestPos, NiPoint3 *closestNormal, float *closestDistanceSoFar);
+
+MathUtils::PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos, const std::vector<NiPoint3> &physPos, const std::vector<float> &weights);
