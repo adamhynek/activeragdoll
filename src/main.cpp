@@ -3569,9 +3569,11 @@ struct EndGrabbedActorMovementTask : TaskDelegate
                 MovementControllerNPC *movementController = GetMovementController(actor);
                 if (!movementController) return;
 
-                movementController->movementPlannerDirectControl.ClearPlannerDirectControl();
+                if (IsPlannerDirectControl(movementController)) {
+                    movementController->movementPlannerDirectControl.ClearPlannerDirectControl();
 
-                Actor_EvaluatePackage(actor, false, false);
+                    Actor_EvaluatePackage(actor, false, false);
+                }
             }
         }
     }
@@ -6206,8 +6208,7 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
         if (!IMovementState_CanStrafe(&actor->actorState)) {
             // Nostrafe only
 
-            bool isPlannerDirectControl = movementController->isHighProcess && movementController->movementType == MovementControllerNPC::MovementType::kPlannerDirectControl && movementController->isPlannerDirectControl;
-            if (!isPlannerDirectControl) return;
+            if (!IsPlannerDirectControl(movementController)) return;
 
             static BSFixedString sPlannerDirectControl("Planner Direct Control");
             BSTSmartPointer<MovementAgent> movementAgent{ 0 };
@@ -6403,25 +6404,36 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     // TODO: Maybe only force motiondriven if they are bAllowRotation, but NOT if they are animation driven?
     // TODO: We could push away (either through keepoffset or applyvelocityforduration) actors that are intersecting the player.
 
-
-    //bool isAnimationDriven = false;
-    //static BSFixedString sbAnimationDriven("bAnimationDriven");
-    //get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
-
     GrabbedActorState &state = it->second;
 
     MovementControllerNPC *movementController = GetMovementController(actor);
     if (!movementController) return;
 
-    bool isPlannerDirectControl = movementController->isHighProcess && movementController->movementType == MovementControllerNPC::MovementType::kPlannerDirectControl && movementController->isPlannerDirectControl;
-    if (Config::options.forceMotionDrivenDuringKeepOffset && !isPlannerDirectControl) {
+
+    if (!IsPlannerDirectControl(movementController)) {
+        bool isAnimationDriven = false;
+        static BSFixedString sbAnimationDriven("bAnimationDriven");
+        get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
+
+        bool isAllowRotation = false;
+        static BSFixedString sbAllowRotation("bAllowRotation");
+        get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAllowRotation, isAllowRotation);
+
+        bool doMotionDrivenWithoutForce = !isAnimationDriven && !isAllowRotation; // Same condition as the base game
+        bool doMotionDriven = Config::options.forceMotionDrivenDuringKeepOffset || doMotionDrivenWithoutForce;
+
+        if (doMotionDriven) {
 #ifdef _DEBUG
-        _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
+            _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
 #endif // _DEBUG
-        movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
-        movementController->movementPlannerDirectControl.SetPlannerDirectControl();
-        movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
+            movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
+            movementController->movementPlannerDirectControl.SetPlannerDirectControl();
+            movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
+        }
     }
+
+    // Check again after potentially forcing planner direct control.
+    if (!IsPlannerDirectControl(movementController)) return;
 
 
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);

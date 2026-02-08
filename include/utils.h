@@ -119,6 +119,7 @@ void PlayPhysicsSound(hkpCollidable *collidable, const NiPoint3 &location, bool 
 void ModSpeedMult(Actor *actor, float amount);
 void PlayMeleeImpactRumble(int hand);
 MovementControllerNPC *GetMovementController(Actor *actor);
+bool IsPlannerDirectControl(MovementControllerNPC *movementController);
 ActorCause *TESObjectREFR_GetActorCause(TESObjectREFR *refr);
 void TESObjectREFR_SetActorCause(TESObjectREFR *refr, ActorCause *cause);
 inline UInt32 GetVehicleHandle(Actor *actor) { return actor->unk1E8; }

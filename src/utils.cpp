@@ -1054,6 +1054,11 @@ MovementControllerNPC *GetMovementController(Actor *actor)
     return (MovementControllerNPC *)actor->unk148;
 }
 
+bool IsPlannerDirectControl(MovementControllerNPC *movementController)
+{
+    return movementController->isHighProcess && movementController->movementType == MovementControllerNPC::MovementType::kPlannerDirectControl && movementController->isPlannerDirectControl;
+}
+
 ActorCause *TESObjectREFR_GetActorCause(TESObjectREFR *refr)
 {
     UInt64 *vtbl = *((UInt64 **)refr);
