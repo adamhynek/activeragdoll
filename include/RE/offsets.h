@@ -412,7 +412,7 @@ extern RelocAddr<_Actor_GetPickupPutdownSound> Actor_GetPickupPutdownSound;
 typedef void(*_NiMatrixToNiQuaternion)(NiQuaternion &quatOut, const NiMatrix33 &matIn);
 extern RelocAddr<_NiMatrixToNiQuaternion> NiMatrixToNiQuaternion;
 
-typedef NiMatrix33 *(*_NiMatrixFromForwardVector)(NiMatrix33 *matOut, NiPoint3 *forward, NiPoint3 *world);
+typedef NiMatrix33 *(*_NiMatrixFromForwardVector)(NiMatrix33 *matOut, const NiPoint3 *forward, const NiPoint3 *world);
 extern RelocAddr<_NiMatrixFromForwardVector> NiMatrixFromForwardVector;
 
 typedef NiMatrix33 *(*_NiMatrixToYawPitchRollImpl)(NiMatrix33 *mat, float *yaw, float *pitch, float *roll);

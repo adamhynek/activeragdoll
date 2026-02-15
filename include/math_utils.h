@@ -91,7 +91,7 @@ NiPoint3 NiMatrixToYawPitchRoll(NiMatrix33 &mat);
 NiPoint3 NiMatrixToEuler(NiMatrix33 &mat);
 NiPoint3 MatrixToEuler(const NiMatrix33 &mat);
 NiMatrix33 EulerToMatrix(const NiPoint3 &euler);
-NiMatrix33 MatrixFromForwardVector(NiPoint3 &forward, NiPoint3 &world);
+NiMatrix33 MatrixFromForwardVector(const NiPoint3 &forward, const NiPoint3 &world);
 NiPoint3 RotateVectorByAxisAngle(const NiPoint3 &vector, const NiPoint3 &axis, float angle);
 NiPoint3 RotateVectorByQuaternion(const NiQuaternion &quat, const NiPoint3 &vec);
 NiPoint3 ProjectVectorOntoPlane(const NiPoint3 &vector, const NiPoint3 &normal);

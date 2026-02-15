@@ -146,7 +146,7 @@ NiMatrix33 EulerToMatrix(const NiPoint3 &euler)
     return output;
 };
 
-NiMatrix33 MatrixFromForwardVector(NiPoint3 &forward, NiPoint3 &world)
+NiMatrix33 MatrixFromForwardVector(const NiPoint3 &forward, const NiPoint3 &world)
 {
     NiMatrix33 rot;
     NiMatrixFromForwardVector(&rot, &forward, &world);

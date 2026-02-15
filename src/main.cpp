@@ -174,6 +174,7 @@ float GetPhysicsDamage(float mass, float speed, float minMass, float minSpeed)
 
 struct GenericJob
 {
+    virtual ~GenericJob() = default;
     virtual void Run() = 0;
 };
 
@@ -287,7 +288,7 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
                                 {
-                                    BSWriteLocker lock(&worldWrapper->worldLock);
+                                    BSWriteLocker lock2(&worldWrapper->worldLock);
 
                                     for (hkpRigidBody *body : ragdoll->m_rigidBodies) {
                                         hkpWorld_UpdateCollisionFilterOnEntity(world, body, HK_UPDATE_FILTER_ON_ENTITY_FULL_CHECK, HK_UPDATE_COLLECTION_FILTER_IGNORE_SHAPE_COLLECTIONS);
@@ -347,13 +348,13 @@ struct ControllerTrackingData
     std::deque<NiPoint3> positionsRoomspace{ 50, NiPoint3() };
     NiPoint2 angularVelocity;
 
-    NiPoint3 GetMaxVelocity(const std::deque<NiPoint3> &velocities, int numFrames)
+    static NiPoint3 GetMaxVelocity(const std::deque<NiPoint3> &velocities, int numFrames)
     {
-        int size = min(numFrames, velocities.size());
+        int numVelocities = min(numFrames, velocities.size());
 
         float largestSpeed = -1;
         int largestIndex = -1;
-        for (int i = 0; i < size; i++) {
+        for (int i = 0; i < numVelocities; i++) {
             const NiPoint3 &velocity = velocities[i];
             float speed = VectorLength(velocity);
             if (speed > largestSpeed) {
@@ -366,7 +367,7 @@ struct ControllerTrackingData
             // Max is the first value
             return velocities[0];
         }
-        else if (largestIndex == size - 1) {
+        else if (largestIndex == numVelocities - 1) {
             // Max is the last value
             return velocities[largestIndex];
         }
@@ -1235,7 +1236,6 @@ struct SwingHandler
 
         TESForm *offhandObj = player->GetEquippedObject(true);
         TESObjectARMO *equippedShield = (offhandObj && offhandObj->formType == kFormType_Armor) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectARMO) : nullptr;
-        bool isShield = isOffhand && equippedShield;
 
         TESObjectLIGH *equippedLight = (offhandObj && offhandObj->formType == kFormType_Light) ? DYNAMIC_CAST(offhandObj, TESForm, TESObjectLIGH) : nullptr;
         bool isTorch = isOffhand && equippedLight;
@@ -1650,7 +1650,7 @@ void PlayImpactEffects(TESObjectCELL *cell, BGSImpactData *impact, NiPoint3 hitP
 
 struct DoActorHitTask : TaskDelegate
 {
-    void DoActorHit(Character *hitChar, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+    void DoActorHit(Character *hitChar)
     {
         PlayerCharacter *player = *g_thePlayer;
 
@@ -1719,7 +1719,7 @@ struct DoActorHitTask : TaskDelegate
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(hitActorHandle, refr)) {
             if (Character *actor = DYNAMIC_CAST(refr, TESObjectREFR, Character)) {
-                DoActorHit(actor, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+                DoActorHit(actor);
             }
         }
     }
@@ -1742,7 +1742,7 @@ struct DoActorHitTask : TaskDelegate
 
 struct DoRefrHitTask : TaskDelegate
 {
-    void DoRefrHit(TESObjectREFR *hitRefr, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, BGSMaterialType *hitMaterial, TESForm *weapon, bool setCause, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+    void DoRefrHit(TESObjectREFR *hitRefr)
     {
 #ifdef _DEBUG
         _MESSAGE("%d: Refr hit", *g_currentFrameCounter);
@@ -1792,7 +1792,7 @@ struct DoRefrHitTask : TaskDelegate
     virtual void Run() {
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(hitRefrHandle, refr)) {
-            DoRefrHit(refr, hitPosition, hitVelocity, hitMaterial, weapon, setCause, isLeft, isOffhand, isTwoHanding, isStab);
+            DoRefrHit(refr);
         }
     }
 
@@ -1971,7 +1971,7 @@ struct PhysicsListener :
         }
     }
 
-    void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, NiPoint3 &hitPos, NiPoint3 &hitNormal, float minMass, float minSpeed)
+    void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, const NiPoint3 &hitPos, const NiPoint3 &hitNormal, float minMass, float minSpeed)
     {
         bhkCharacterController::CollisionEvent collisionEvent{
             collidingBody,
@@ -2544,7 +2544,7 @@ struct PhysicsListener :
         g_taskInterface->AddTask(PotentiallyConvertBipedObjectToDeadBipTask::Create(GetOrCreateRefrHandle(refr), wrapper));
     }
 
-    bhkWorld *world = nullptr;
+    bhkWorld *m_world = nullptr;
 };
 PhysicsListener g_physicsListener{};
 
@@ -2759,7 +2759,7 @@ void PrePhysicsStepCallback(void *world)
     // At this point we can apply any impulses / velocity adjustments without fear of them being overwritten
 
     for (auto &job : g_prePhysicsStepJobs) {
-        job.get()->Run();
+        job->Run();
     }
     g_prePhysicsStepJobs.clear();
 
@@ -2882,7 +2882,7 @@ struct NPCData
                 dialogueTime = g_currentFrameTime;
                 return;
             }
-            else if (auto it = topics.find(nullptr); it != topics.end()) {
+            else if (it = topics.find(nullptr); it != topics.end()) {
                 // If the specific actor does not have an assigned topic, see if there is a general topic set for all actors
                 TriggerDialogue(character, it->second, nullptr);
                 dialogueTime = g_currentFrameTime;
@@ -3428,7 +3428,7 @@ void CleanupActiveRagdollTracking(Actor *actor)
                     g_activeRagdolls.erase(driver);
 
                     {
-                        std::unique_lock lock(g_activeActorsLock);
+                        std::unique_lock lock2(g_activeActorsLock);
                         g_activeActors.erase(actor);
                     }
                 }
@@ -3536,7 +3536,7 @@ void EnableGravity(Actor *actor)
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
                                 {
-                                    BSWriteLocker lock(&worldWrapper->worldLock);
+                                    BSWriteLocker lock2(&worldWrapper->worldLock);
 
                                     for (hkpRigidBody *rigidBody : ragdoll->m_rigidBodies) {
                                         rigidBody->setGravityFactor(1.f);
@@ -3725,9 +3725,9 @@ void UpdateSpeedReductionAndStaminaDrain()
         speedReduction = g_savedSpeedReduction * (1.f - (g_currentFrameTime - g_lastHeldTime) / Config::options.slowMovementFadeOutTime);
     }
 
-    if (speedReduction != g_savedSpeedReduction) {
-        PlayerCharacter *player = *g_thePlayer;
+    PlayerCharacter *player = *g_thePlayer;
 
+    if (speedReduction != g_savedSpeedReduction) {
         // First just undo our previous speed change
         ModSpeedMult(player, g_savedSpeedReduction);
 
@@ -3737,11 +3737,8 @@ void UpdateSpeedReductionAndStaminaDrain()
         g_savedSpeedReduction = speedReduction;
     }
 
-    PlayerCharacter *player = *g_thePlayer;
     bool isPlayerGodMode = get_vfunc<_MagicTarget_IsInvulnerable>(&player->magicTarget, 4)(&player->magicTarget);
     if (!isPlayerGodMode && staminaCost > 0.f) {
-        PlayerCharacter *player = *g_thePlayer;
-
         float cost = staminaCost * *g_deltaTime;
         DamageAV(player, 26, -cost);
 
@@ -4218,8 +4215,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
     UpdateTemporaryIgnoredActors();
 
-    if (world != g_physicsListener.world) {
-        if (g_physicsListener.world) {
+    if (world != g_physicsListener.m_world) {
+        if (g_physicsListener.m_world) {
             ResetObjects();
         }
 
@@ -4281,7 +4278,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             ReSyncLayerBitfields(filter, BGSCollisionLayer::kCollisionLayer_BipedNoCC);
         }
 
-        g_physicsListener.world = world;
+        g_physicsListener.m_world = world;
         g_worldChangedTime = g_currentFrameTime;
     }
 
@@ -4626,9 +4623,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                 // Set whether we want biped self-collision for this actor
                 if (Config::options.doBipedSelfCollision && collisionGroup != 0) {
                     if (TESRace *race = actor->race) {
-                        const char *name = race->editorId;
+                        const char *editorId = race->editorId;
                         if ((Config::options.doBipedSelfCollisionForNPCs && race->keyword.HasKeyword(g_keyword_actorTypeNPC)) ||
-                            (name && Config::options.additionalSelfCollisionRaces.count(std::string_view(name)))) {
+                            (editorId && Config::options.additionalSelfCollisionRaces.count(std::string_view(editorId)))) {
 
                             if (g_physicsListener.IsCollided(actor) || isHeld) {
                                 if (!g_selfCollidableBipedGroups.count(collisionGroup)) {
@@ -4802,7 +4799,6 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
     hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
     hkbGeneratorOutput::TrackHeader *worldFromModelHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_WORLD_FROM_MODEL);
-    hkbGeneratorOutput::TrackHeader *keyframedBonesHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_KEYFRAMED_RAGDOLL_BONES);
     hkbGeneratorOutput::TrackHeader *rigidBodyHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_RIGID_BODY_RAGDOLL_CONTROLS);
     hkbGeneratorOutput::TrackHeader *poweredHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_CONTROLS);
     hkbGeneratorOutput::TrackHeader *poweredWorldFromModelModeHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POWERED_RAGDOLL_WORLD_FROM_MODEL_MODE);
@@ -5560,14 +5556,12 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
 
     if (Config::options.forceAnimPose) {
         if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->animPose.data()) {
-            int numPoses = poseHeader->m_numData;
             hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
             memcpy(poseOut, ragdoll->animPose.data(), ragdoll->animPose.size() * sizeof(hkQsTransform));
         }
     }
     else if (Config::options.forceRagdollPose) {
         if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->ragdollPose.data()) {
-            int numPoses = poseHeader->m_numData;
             hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
             memcpy(poseOut, ragdoll->ragdollPose.data(), ragdoll->ragdollPose.size() * sizeof(hkQsTransform));
         }
@@ -5844,13 +5838,6 @@ bool WeaponRightSwingHandler_Handle_Hook(void *_this, Actor *actor)
         // Don't do the weapon swing sound for the player
 
         return false;
-
-        // OLD
-        SetAttackState(actor, 2); // kSwing
-
-        get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
-
-        return false;
     }
     return true;
 }
@@ -5863,13 +5850,6 @@ bool WeaponLeftSwingHandler_Handle_Hook(void *_this, Actor *actor)
         _MESSAGE("%d WeaponLeftSwing", *g_currentFrameCounter);
 #endif // _DEBUG
         // Don't do the weapon swing sound for the player
-
-        return false;
-
-        // OLD
-        SetAttackState(actor, 2); // kSwing
-
-        get_vfunc<_Actor_WeaponSwingCallback>(actor, 0xF1)(actor);
 
         return false;
     }
@@ -5892,14 +5872,6 @@ bool HitFrameHandler_Handle_Hook(void *_this, Actor *actor, BSFixedString *side)
 
         SwingHandler &swingHandler = isLeft ? g_leftSwingHandler : g_rightSwingHandler;
         return swingHandler.IsSwingActive(); // swing happened recently
-
-        // OLD
-        if (GetAttackState(actor) != 2) { // != kSwing
-            return false;
-        }
-
-        SetAttackState(actor, 3); // kSwing
-        return true;
     }
     return g_originalHitFrameHandlerHandle(_this, actor, side);
 }
