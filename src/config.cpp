@@ -334,8 +334,6 @@ namespace Config {
         if (!RegisterFloat("keepOffsetPlayerMovementInfluence", options.keepOffsetPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetPlayerSmoothingTime", options.keepOffsetPlayerSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetActorSmoothingTime", options.keepOffsetActorSmoothingTime)) success = false;
-        if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionPlayer", options.keepOffsetSpeedReductionInActorDirectionPlayer)) success = false;
-        if (!RegisterFloat("keepOffsetSpeedReductionInActorDirectionActor", options.keepOffsetSpeedReductionInActorDirectionActor)) success = false;
         if (!RegisterFloat("keepOffsetStartThreshold", options.keepOffsetStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
         if (!RegisterFloat("keepOffsetStartThresholdTwoHanded", options.keepOffsetStartThresholdTwoHanded)) success = false;
@@ -540,6 +538,10 @@ namespace Config {
 
         if (!RegisterBool("hitAnyMoveableObjects", options.hitAnyMoveableObjects)) success = false;
         if (!RegisterBool("hitAnyStaticObjects", options.hitAnyStaticObjects)) success = false;
+
+        if (!RegisterBool("forceDontIgnoreCyclicBlendTransitionEvents", options.forceDontIgnoreCyclicBlendTransitionEvents)) success = false;
+        if (!RegisterBool("allowCyclicFreezeFromCrossBlend", options.allowCyclicFreezeFromCrossBlend)) success = false;
+        if (!RegisterBool("forceContinueSelfTransitionForCyclicBlends", options.forceContinueSelfTransitionForCyclicBlends)) success = false;
 
         if (!ReadStringSet("additionalSelfCollisionRaces", Config::options.additionalSelfCollisionRaces)) success = false;
         if (!ReadStringSet("excludeRaces", Config::options.excludeRaces)) success = false;

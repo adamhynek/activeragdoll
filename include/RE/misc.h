@@ -685,6 +685,35 @@ struct MovementPlannerAgentDirectControl : MovementPlannerAgent
 };
 static_assert(sizeof(MovementPlannerAgentDirectControl) == 0x50);
 
+struct IMovementParameters
+{
+    virtual ~IMovementParameters() = 0; // 0
+    virtual float GetWalkRunPercent() = 0; // 1
+    virtual float GetAcceleration() = 0; // 2
+    virtual float GetDeceleration() = 0; // 3
+    virtual float GetAngleAcceleration() = 0; // 4
+    virtual float GetRotationPercent() = 0; // 5
+    virtual UInt32 GetType() = 0; // 6
+    virtual void Write(void *writeStream) = 0; // 7
+    virtual void Read(void *readStream) = 0; // 8
+
+    SInt32 refCount_8;
+    char _pad_C[4];
+};
+struct MovementParameters : IMovementParameters
+{
+    float walkRunPercent; // 10
+    float acceleration; // 14
+    float deceleration; // 18
+    float rotationPercent; // 1C
+    float angleAcceleration; // 20
+    UInt32 pad24;
+};
+struct IMovementQueryState
+{
+    void *vtbl; // 00
+};
+
 enum class EnabledInputs : UInt32
 {
     looking = 1 << 1,

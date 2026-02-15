@@ -733,6 +733,13 @@ struct GrabbedActorState
 std::mutex g_grabbedActorStatesLock;
 std::unordered_map<Actor *, GrabbedActorState> g_grabbedActorStates{};
 
+bool IsDoingGrabbedActorMovement(Actor *actor)
+{
+    std::scoped_lock lock(g_grabbedActorStatesLock);
+    return g_grabbedActorStates.find(actor) != g_grabbedActorStates.end();
+}
+
+
 NiTransform g_rawHandTransforms[2]{};
 
 
@@ -4105,16 +4112,10 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
                     state.offsets.push_front(kabschOffset * *g_inverseHavokWorldScale);
                     NiPoint3 avgOffset = GetAverageVector(state.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
 
-                    NiPoint3 offset = avgOffset;
-                    PrintToFile(std::to_string(VectorLength(avgOffset)), "offset.txt");
-
                     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
                     offsetAngle.z = ConstrainAngle180(kabschOffsetAngle);
 
-                    PrintToFile(std::to_string(kabschOffsetAngle), "rootOffsetAngle");
-                    PrintToFile(std::to_string(offsetAngle.z), "offsetAngleZ");
-
-                    state.offset = offset;
+                    state.offset = avgOffset;
                     state.offsetAngle = offsetAngle;
                 }
             });
@@ -4917,12 +4918,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
     }
 
 
-    bool isDoingGrabbedActorMovement = false;
-    {
-        std::scoped_lock lock(g_grabbedActorStatesLock);
-        isDoingGrabbedActorMovement = g_grabbedActorStates.find(actor) != g_grabbedActorStates.end();
-    }
-
+    bool isDoingGrabbedActorMovement = IsDoingGrabbedActorMovement(actor);
 
     if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isDoingGrabbedActorMovement && poseHeader && poseHeader->m_onFraction > 0.f) {
         hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
@@ -6185,84 +6181,48 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 {
     g_Character_ModifyMovementData_Original(actor, a_deltaTime, a_moveAmt, a_rotAmt);
 
-    {
-        std::scoped_lock lock(g_grabbedActorStatesLock);
+    if (!IsDoingGrabbedActorMovement(actor)) return;
 
-        auto it = g_grabbedActorStates.find(actor);
-        if (it == g_grabbedActorStates.end()) {
-            return;
-        }
+    MovementControllerNPC *movementController = GetMovementController(actor);
+    if (!movementController) return;
 
-        GrabbedActorState &state = it->second;
+    static BSFixedString sIMovementMotionDrivenControl("IMovementMotionDrivenControl");
+    IMovementMotionDrivenControl *motionDrivenControl = (IMovementMotionDrivenControl *)movementController->GetInterfaceByName_2(sIMovementMotionDrivenControl);
+    if (!motionDrivenControl) return;
 
-        MovementControllerNPC *movementController = GetMovementController(actor);
-        if (!movementController) return;
+    if (!motionDrivenControl->IsMotionDriven()) return;
 
-        static BSFixedString sIMovementMotionDrivenControl("IMovementMotionDrivenControl");
-        IMovementMotionDrivenControl *motionDrivenControl = (IMovementMotionDrivenControl *)movementController->GetInterfaceByName_2(sIMovementMotionDrivenControl);
-        if (!motionDrivenControl) return;
+    
+    if (!IMovementState_CanStrafe(&actor->actorState)) {
+        // Nostrafe only
 
-        if (!motionDrivenControl->IsMotionDriven()) return;
+        if (!IsPlannerDirectControl(movementController)) return;
 
-        
-        if (!IMovementState_CanStrafe(&actor->actorState)) {
-            // Nostrafe only
+        static BSFixedString sPlannerDirectControl("Planner Direct Control");
+        BSTSmartPointer<MovementAgent> movementAgent{ 0 };
+        if (!MovementControllerNPC_GetMovementAgent(movementController, sPlannerDirectControl, movementAgent)) return;
 
-            if (!IsPlannerDirectControl(movementController)) return;
+        MovementPlannerAgentDirectControl *plannerAgentDirectControl = DYNAMIC_CAST(movementAgent.ptr, MovementAgent, MovementPlannerAgentDirectControl);
+        if (!plannerAgentDirectControl) return;
 
-            static BSFixedString sPlannerDirectControl("Planner Direct Control");
-            BSTSmartPointer<MovementAgent> movementAgent{ 0 };
-            if (!MovementControllerNPC_GetMovementAgent(movementController, sPlannerDirectControl, movementAgent)) return;
-
-            MovementPlannerAgentDirectControl *plannerAgentDirectControl = DYNAMIC_CAST(movementAgent.ptr, MovementAgent, MovementPlannerAgentDirectControl);
-            if (!plannerAgentDirectControl) return;
-
-            NiPoint3 targetAngle = plannerAgentDirectControl->targetAngle;
-            if (ActorProcessManager *process = actor->processManager) {
-                float currentRotZ = actor->rot.z;
-                float targetRotZ = targetAngle.z;
-                float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
-                float rotZ = 0.f;
-                if (fabs(deltaZ) >= Config::options.dummyFloat1) {
-                    rotZ = deltaZ;
-                }
-
-                // Force the rotation amount to be what we want.
-                // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
-                ActorProcess_SetRotationSpeedZ(process, rotZ / a_deltaTime);
-                a_rotAmt.z = rotZ;
+        NiPoint3 targetAngle = plannerAgentDirectControl->targetAngle;
+        if (ActorProcessManager *process = actor->processManager) {
+            float currentRotZ = actor->rot.z;
+            float targetRotZ = targetAngle.z;
+            float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
+            float rotZ = 0.f;
+            if (fabs(deltaZ) >= Config::options.dummyFloat1) {
+                rotZ = deltaZ;
             }
+
+            // Force the rotation amount to be what we want.
+            // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
+            ActorProcess_SetRotationSpeedZ(process, rotZ / a_deltaTime);
+            a_rotAmt.z = rotZ;
         }
     }
 }
 
-_Actor_ModifyMovementData g_PlayerCharacter_ModifyMovementData_Original = nullptr;
-static RelocPtr<_Actor_ModifyMovementData> PlayerCharacter_ModifyMovementData_vtbl(0x16E2B10);
-void PlayerCharacter_ModifyMovementData_Hook(PlayerCharacter *player, float a_deltaTime, NiPoint3 &a_moveAmt, NiPoint3 &a_rotAmt)
-{
-    g_PlayerCharacter_ModifyMovementData_Original(player, a_deltaTime, a_moveAmt, a_rotAmt);
-
-    NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(player, refrTransform);
-
-    {
-        std::scoped_lock lock(g_grabbedActorStatesLock);
-
-        for (auto it = g_grabbedActorStates.begin(); it != g_grabbedActorStates.end(); ++it) {
-            Actor *actor = it->first;
-            NiPoint3 playerToActor = actor->pos - player->pos;
-            NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
-
-            NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
-
-            NiPoint3 moveAmtXY = { a_moveAmt.x, a_moveAmt.y, 0.f };
-
-            float dot = DotProduct(VectorNormalized(vec), VectorNormalized(moveAmtXY));
-            if (dot > 0.f) {
-                a_moveAmt *= 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionPlayer, 0.f, 1.f);
-            }
-        }
-    }
-}
 
 // hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData
 typedef void(*_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)(hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData);
@@ -6286,72 +6246,6 @@ void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *
         hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original(a_desiredPoseLocal, a_bodyData, a_controlPalette, a_keyframeData, a_applyKeyframeData);
     }
 }
-
-
-
-
-struct AnimUpdateData
-{
-    MovementVector movementVector; // 00
-    NiPoint3 rotSpeedEuler; // 10
-};
-
-struct MovementArbiterUpdateData
-{
-    struct Data
-    {
-        UInt64 unk00;
-        tArray<void *> unk10;
-        UInt64 unk20;
-        tArray<void *> unk30;
-        MovementVector movementVector; // 40
-        NiPoint3 unkRot50;
-        bool unk5C;
-        UInt64 unk60;
-        bool unk68;
-        float deltaTime; // 6C
-        float acceleratedRunSpeed; // 70
-        float deceleratedRunSpeed; // 74
-        float rotSpeedClamed; // 78
-        float rotSpeedUnclamped; // 7C
-        float acceleratedRotSpeed; // 80
-        UInt32 pad84;
-    };
-
-    float deltaTime0; // 00
-    UInt32 unk04;
-    float deltaTime1; // 08
-    UInt32 pad0C;
-    Data data; // 10
-    NiPoint3 unk98;
-    UInt32 unkA4;
-    NiPoint3 unkA8;
-    float deltaTime2; // B4
-    AnimUpdateData updateData; // B8
-};
-
-struct MovementParametersData
-{
-    float unk00;
-    UInt32 pad04;
-    void *data; // 08
-};
-
-struct MovementUpdateData
-{
-    float targetDisplacementMultiplier; // 00
-    MovementVector movementVector; // 04
-    float unk14;
-    NiPoint3 targetAngle; // 18
-    UInt32 unk24;
-    MovementParametersData movementParams; // 28
-    MovementArbiterUpdateData::Data *arbiterUpdateData; // 38
-    void *unk40;
-    UInt64 unk48;
-    UInt16 unk50;
-    UInt16 pad52;
-    UInt32 pad54;
-}; // size == 0x58 ??
 
 
 NiPoint3 GetForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
@@ -6439,23 +6333,15 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
     NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
 
-    NiPoint3 playerToActor = actor->pos - (*g_thePlayer)->pos;
-    NiPoint3 playerToActorXY = { playerToActor.x, playerToActor.y, 0.f };
-    NiPoint3 vec = refrTransform.rot.Transpose() * playerToActorXY;
-    float dot = DotProduct(VectorNormalized(vec), VectorNormalized(playerOffsetXY));
-    float actorDirectionMultiplier = 1.f;
-    if (dot > 0.f) {
-        actorDirectionMultiplier = 1.f - std::clamp(dot * Config::options.keepOffsetSpeedReductionInActorDirectionActor, 0.f, 1.f);
-    }
-
-    NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * actorDirectionMultiplier * Config::options.keepOffsetPlayerMovementInfluence;
+    NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * Config::options.keepOffsetPlayerMovementInfluence;
 
 
     NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
-        // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car. So we only allow forward/backward movement directly.
+        // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car.
+        // So we only allow forward/backward movement directly, along with rotation.
 
         NiPoint3 forward = ForwardVector(refrTransform.rot);
 
@@ -6506,8 +6392,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         }
 
         if (numHandsGrabbing > 0) {
-            PrintToFile(std::to_string(combinedDeltaAngle), "keepOffsetHandLateralDeltaAngle.txt");
-
             float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
             float totalForwardAmt = combinedForwardMoveAmt + playerForwardMoveAmt;
             float absTotalForward = fabsf(totalForwardAmt);
@@ -6624,6 +6508,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         }
     }
 
+#ifdef _DEBUG
     {
         NiPoint3 forward = ForwardVector(refrTransform.rot);
 
@@ -6637,6 +6522,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         t.scale = 1.f;
         RegisterDebugTransform("kabschRotatedForward", { t, {0, 1, 0, 1} });
     }
+#endif // _DEBUG
 
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
@@ -6661,12 +6547,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         if (g_currentFrameTime - state.noSpeedTime < Config::options.holdZeroSpeedTime) {
             speed = 0.f;
         }
-
-        PrintToFile(std::to_string(denormSpeed), "denormSpeed.txt");
     }
-
-    PrintToFile(std::to_string(speed), "keepOffsetSpeed.txt");
-    PrintToFile(std::to_string(directionEuler.z), "keepOffsetDirZ.txt");
 
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
     if (speed > Config::options.keepOffsetSpeedDirectionCutoff) {
@@ -6680,34 +6561,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     state.prevDirection = direction;
 }
 
-struct IMovementParameters
-{
-    virtual ~IMovementParameters() = 0; // 0
-    virtual float GetWalkRunPercent() = 0; // 1
-    virtual float GetAcceleration() = 0; // 2
-    virtual float GetDeceleration() = 0; // 3
-    virtual float GetAngleAcceleration() = 0; // 4
-    virtual float GetRotationPercent() = 0; // 5
-    virtual UInt32 GetType() = 0; // 6
-    virtual void Write(void *writeStream) = 0; // 7
-    virtual void Read(void *readStream) = 0; // 8
 
-    SInt32 refCount_8;
-    char _pad_C[4];
-};
-struct MovementParameters : IMovementParameters
-{
-    float walkRunPercent; // 10
-    float acceleration; // 14
-    float deceleration; // 18
-    float rotationPercent; // 1C
-    float angleAcceleration; // 20
-    UInt32 pad24;
-};
-struct IMovementQueryState
-{
-    void *vtbl; // 00
-};
 struct OverwriteMovementParameters
 {
     virtual ~OverwriteMovementParameters() {} // 0
@@ -6744,17 +6598,7 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
 {
     Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
 
-    bool foundActor = false;
-    {
-        std::scoped_lock lock(g_grabbedActorStatesLock);
-
-        auto it = g_grabbedActorStates.find(actor);
-        if (it != g_grabbedActorStates.end()) {
-            foundActor = true;
-        }
-    }
-
-    if (foundActor) {
+    if (IsDoingGrabbedActorMovement(actor)) {
         OverwriteMovementParameters overwriteParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
     }
@@ -6770,17 +6614,7 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
 {
     Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
 
-    bool foundActor = false;
-    {
-        std::scoped_lock lock(g_grabbedActorStatesLock);
-
-        auto it = g_grabbedActorStates.find(actor);
-        if (it != g_grabbedActorStates.end()) {
-            foundActor = true;
-        }
-    }
-
-    if (foundActor) {
+    if (IsDoingGrabbedActorMovement(actor)) {
         OverwriteMovementParameters overwriteParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }
@@ -6796,12 +6630,16 @@ RelocAddr<uintptr_t> hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirs
 void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9)
 {
     hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original(a1, a2, a_flags, a_nodeInfoOut, a_activeNodeToIndexMap, a_activeNodesChildrenIndices, a_prevActiveNodes, a_nodeToIndexMap, a9);
-    for (UInt32 i = 0; i < a_nodeInfoOut->m_size; i++) {
-        hkbNodeInfo &nodeInfo = a_nodeInfoOut->m_data[i];
-        if (BSCyclicBlendTransitionGenerator *cyclicBlendGenerator = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, BSCyclicBlendTransitionGenerator)) {
-            // The event we care about not ignoring is CyclicFreeze/CyclicCrossBlend. This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
-            nodeInfo.ignoreEvents = false;
-            nodeInfo.ignoreEventsParentIdx = -1;
+
+    if (Config::options.forceDontIgnoreCyclicBlendTransitionEvents) {
+        for (UInt32 i = 0; i < a_nodeInfoOut->m_size; i++) {
+            hkbNodeInfo &nodeInfo = a_nodeInfoOut->m_data[i];
+            if (BSCyclicBlendTransitionGenerator *cyclicBlendGenerator = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, BSCyclicBlendTransitionGenerator)) {
+                // The event we care about not ignoring is CyclicFreeze/CyclicCrossBlend.
+                // This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
+                nodeInfo.ignoreEvents = false;
+                nodeInfo.ignoreEventsParentIdx = -1;
+            }
         }
     }
 }
@@ -6811,9 +6649,11 @@ _hkbNode_handleEvent BSCyclicBlendTransitionGenerator_handleEvent_Original = nul
 static RelocPtr<_hkbNode_handleEvent> BSCyclicBlendTransitionGenerator_handleEvent_vtbl(0x17C5518);
 void BSCyclicBlendTransitionGenerator_handleEvent_Hook(BSCyclicBlendTransitionGenerator *_this, hkbContext *context, hkbEvent *evnt)
 {
-    if (evnt->id == _this->freezeEventId && (_this->state == BSCyclicBlendTransitionGenerator::State::CrossBlend || _this->state == BSCyclicBlendTransitionGenerator::State::CrossBlendStart)) {
-        // CyclicFreeze can only happen from a None state. After handleEvent accepts this event, the state will be Freeze.
-        _this->state = BSCyclicBlendTransitionGenerator::State::None;
+    if (Config::options.allowCyclicFreezeFromCrossBlend) {
+        if (evnt->id == _this->freezeEventId && (_this->state == BSCyclicBlendTransitionGenerator::State::CrossBlend || _this->state == BSCyclicBlendTransitionGenerator::State::CrossBlendStart)) {
+            // CyclicFreeze can only happen from a None state. After handleEvent accepts this event, the state will be Freeze.
+            _this->state = BSCyclicBlendTransitionGenerator::State::None;
+        }
     }
 
     BSCyclicBlendTransitionGenerator_handleEvent_Original(_this, context, evnt);
@@ -6826,13 +6666,15 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
 {
     hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Original(_this, context, prospectiveTransitionInfo, isReturnToPreviousState);
 
-    for (hkbStateMachine::ActiveTransitionInfo &transitionInfo : _this->activeTransitions) {
-        if (hkbTransitionEffect *transition = transitionInfo.m_transitionEffect) {
-            if (transition->selfTransitionMode != 0) {
-                if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
-                    if (blendingTransitionEffect->toGenerator && DYNAMIC_CAST(blendingTransitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) {
-                        // There are some transition effects that are set to SELF_TRANSITION_MODE_RESET, such as for the Wispmother. This causes a snap when trying to do a CyclicCrossBlend in some cases.
-                        blendingTransitionEffect->selfTransitionMode = 0; // SELF_TRANSITION_MODE_CONTINUE_IF_CYCLIC_BLEND_IF_ACYCLIC
+    if (Config::options.forceContinueSelfTransitionForCyclicBlends) {
+        for (hkbStateMachine::ActiveTransitionInfo &transitionInfo : _this->activeTransitions) {
+            if (hkbTransitionEffect *transition = transitionInfo.m_transitionEffect) {
+                if (transition->selfTransitionMode != 0) {
+                    if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
+                        if (blendingTransitionEffect->toGenerator && DYNAMIC_CAST(blendingTransitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) {
+                            // There are some transition effects that are set to SELF_TRANSITION_MODE_RESET, such as for the Wispmother. This causes a snap when trying to do a CyclicCrossBlend in some cases.
+                            blendingTransitionEffect->selfTransitionMode = 0; // SELF_TRANSITION_MODE_CONTINUE_IF_CYCLIC_BLEND_IF_ACYCLIC
+                        }
                     }
                 }
             }
@@ -7114,10 +6956,6 @@ void PerformHooks(void)
     {
         g_Character_ModifyMovementData_Original = *Character_ModifyMovementData_vtbl;
         SafeWrite64(Character_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(Character_ModifyMovementData_Hook));
-    }
-    {
-        g_PlayerCharacter_ModifyMovementData_Original = *PlayerCharacter_ModifyMovementData_vtbl;
-        SafeWrite64(PlayerCharacter_ModifyMovementData_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_ModifyMovementData_Hook));
     }
 
     {

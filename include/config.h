@@ -174,8 +174,6 @@ namespace Config {
         float keepOffsetPlayerMovementInfluence = 1.f;
         float keepOffsetPlayerSmoothingTime = 0.1f;
         float keepOffsetActorSmoothingTime = 0.1f;
-        float keepOffsetSpeedReductionInActorDirectionPlayer = 0.5f;
-        float keepOffsetSpeedReductionInActorDirectionActor = 0.5f;
         float keepOffsetStartThreshold = 10.f;
         float keepOffsetStopThreshold = 5.f;
         float keepOffsetStartThresholdTwoHanded = 10.f;
@@ -378,6 +376,10 @@ namespace Config {
 
         bool hitAnyMoveableObjects = true;
         bool hitAnyStaticObjects = false;
+
+        bool forceDontIgnoreCyclicBlendTransitionEvents = true;
+        bool allowCyclicFreezeFromCrossBlend = true;
+        bool forceContinueSelfTransitionForCyclicBlends = true;
 
         std::set<std::string, std::less<>> additionalSelfCollisionRaces;
         std::set<std::string, std::less<>> excludeRaces;
