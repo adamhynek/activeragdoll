@@ -3,6 +3,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
+#include <deque>
 #include <algorithm>
 
 #include "skse64/NiObjects.h"
@@ -135,6 +136,11 @@ std::optional<NiTransform> AdvanceTransform(const NiTransform &currentTransform,
 float AdvanceFloat(float a, float b, float speed, float *deltaOut);
 NiPoint3 AdvanceVector(const NiPoint3 &a, const NiPoint3 &b, float speed, NiPoint3 *deltaOut);
 NiMatrix33 AdvanceRotation(const NiMatrix33 &a, const NiMatrix33 &b, float speed, NiMatrix33 *deltaOut = nullptr);
+NiPoint3 ForwardVectorToEulerRot(const NiPoint3 &forwardVec);
+NiPoint3 ForwardVectorFromEulerRot(const NiPoint3 &eulerRot);
+MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2);
+NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames);
+float GetAverageVectorLength(std::deque<NiPoint3> &vectors, int numFrames);
 inline float ConstrainAngle180(float x) { x = fmodf(x + M_PI, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x - M_PI; }
 inline NiPoint3 ConstrainAngle180(const NiPoint3 &euler) { return { ConstrainAngle180(euler.x), ConstrainAngle180(euler.y), ConstrainAngle180(euler.z) }; }
 inline float ConstrainAngle360(float x) { x = fmod(x, 2 * M_PI); if (x < 0) x += 2 * M_PI; return x; }

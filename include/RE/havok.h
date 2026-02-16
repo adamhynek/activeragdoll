@@ -87,6 +87,12 @@ struct ahkpWorld : hkpWorld
 };
 static_assert(offsetof(ahkpWorld, m_userData) == 0x430);
 
+struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
+{
+    hkQsTransform bodyWorld; // 00
+    hkQsTransform poseWorld; // 30
+};
+
 struct bhkRefObject : NiObject
 {
     virtual void SetHavokObject(hkReferencedObject *object); // 25

@@ -650,6 +650,69 @@ NiMatrix33 AdvanceRotation(const NiMatrix33 &a, const NiMatrix33 &b, float speed
     return b;
 }
 
+NiPoint3 ForwardVectorToEulerRot(const NiPoint3 &forwardVec)
+{
+    NiPoint3 eulerRot;
+    eulerRot.x = -atan2f(forwardVec.z, sqrtf(forwardVec.x * forwardVec.x + forwardVec.y * forwardVec.y));
+    eulerRot.y = 0.f;
+    eulerRot.z = atan2f(forwardVec.x, forwardVec.y);
+    return eulerRot;
+}
+
+NiPoint3 ForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
+{
+    float pitch = -eulerRot.x;
+    float yaw = eulerRot.z;
+
+    float cosPitch = cosf(pitch);
+    NiPoint3 forwardVec;
+    forwardVec.x = sinf(yaw) * cosPitch;
+    forwardVec.y = cosf(yaw) * cosPitch;
+    forwardVec.z = sinf(pitch);
+    return forwardVec;
+}
+
+MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2)
+{
+    NiPoint3 vec1 = ForwardVectorFromEulerRot(v1.eulerRot) * v1.magnitude;
+    NiPoint3 newVec = vec1 + v2;
+
+    MovementVector result;
+    result.magnitude = VectorLength(newVec);
+    result.eulerRot = ForwardVectorToEulerRot(newVec);
+
+    return result;
+}
+
+NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
+{
+    NiPoint3 averageVector = NiPoint3();
+
+    int i = 0;
+    for (NiPoint3 &vector : vectors) {
+        averageVector += vector;
+        if (++i >= numFrames) {
+            break;
+        }
+    }
+
+    return averageVector / i;
+}
+
+float GetAverageVectorLength(std::deque<NiPoint3> &vectors, int numFrames)
+{
+    float length = 0;
+
+    int i = 0;
+    for (NiPoint3 &vector : vectors) {
+        length += VectorLength(vector);
+        if (++i >= numFrames) {
+            break;
+        }
+    }
+    return length /= i;
+}
+
 namespace MathUtils
 {
     Result GetClosestPointOnTriangle(const NiPoint3 &point, const Triangle &triangle, uintptr_t vertices, UInt8 vertexStride, UInt32 vertexPosOffset)
@@ -1414,6 +1477,8 @@ bool GetClosestPointOnGraphicsGeometry(NiAVObject *root, const NiPoint3 &point, 
 }
 
 
+// This is something like the Kabsch algorithm but only solving for planar rotation (yaw) and planar translation, not 3D rotation or scaling.
+// It finds the best-fit planar rotation and translation that maps restPos to physPos, weighted by weights.
 MathUtils::PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
     const std::vector<NiPoint3> &physPos,
     const std::vector<float> &weights)
@@ -1422,13 +1487,13 @@ MathUtils::PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
     MathUtils::PlanarFit2D out;
 
     if (n == 0 || physPos.size() != n || weights.size() != n) {
-        return out;                               // invalid input → identity
+        return out;
     }
 
-    // 1. Weighted centroids ---------------------------------------------------
+    // Weighted centroids
     float sumW = 0.f;
-    NiPoint3 c_p = { 0.f, 0.f, 0.f };               // rest-pose centroid
-    NiPoint3 c_q = { 0.f, 0.f, 0.f };               // physics-pose centroid
+    NiPoint3 c_p = { 0.f, 0.f, 0.f }; // rest-pose centroid
+    NiPoint3 c_q = { 0.f, 0.f, 0.f }; // physics-pose centroid
 
     for (std::size_t i = 0; i < n; ++i) {
         const float w = weights[i];
@@ -1439,29 +1504,29 @@ MathUtils::PlanarFit2D SolvePlanarYaw(const std::vector<NiPoint3> &restPos,
     }
 
     if (sumW <= std::numeric_limits<float>::epsilon()) {
-        return out;                               // all weights zero → identity
+        return out; // all weights zero
     }
 
     c_p /= sumW;
     c_q /= sumW;
 
-    // 2. Accumulate dot- and cross-terms --------------------------------------
-    double A = 0.0;   // Σ w (dx·dx′ + dy·dy′)
-    double B = 0.0;   // Σ w (dx·dy′ − dy·dx′)
+    // Accumulate dot and cross terms
+    double A = 0.0; // Σ w (dx·dx′ + dy·dy′)
+    double B = 0.0; // Σ w (dx·dy′ − dy·dx′)
 
     for (std::size_t i = 0; i < n; ++i) {
         const float w = weights[i];
-        const NiPoint3 d = restPos[i] - c_p;     // rest displacement
-        const NiPoint3 dP = physPos[i] - c_q;     // phys displacement
+        const NiPoint3 d = restPos[i] - c_p; // rest displacement
+        const NiPoint3 dP = physPos[i] - c_q; // phys displacement
 
         A += static_cast<double>(w) * (d.x * dP.x + d.y * dP.y);
         B += static_cast<double>(w) * (d.x * dP.y - d.y * dP.x);
     }
 
-    // 3. Least-squares yaw -----------------------------------------------------
-    const float theta = std::atan2(B, A);     // radians
+    // Least-squares yaw
+    const float theta = std::atan2(B, A);
 
-    // 4. Matching planar translation ------------------------------------------
+    // Matching planar translation
     const float c = std::cos(theta);
     const float s = std::sin(theta);
 

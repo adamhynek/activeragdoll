@@ -498,8 +498,8 @@ namespace Config {
 
         if (!RegisterBool("preventActorSelfHits", options.preventActorSelfHits)) success = false;
 
-        if (!RegisterInt("numControllerVelocitySmoothingFrames", options.numControllerVelocitySmoothingFrames)) success = false;
-        if (!RegisterInt("numControllerAngularVelocityTrackingFrames", options.numControllerAngularVelocityTrackingFrames)) success = false;
+        if (!RegisterFloat("controllerVelocitySmoothingTime", options.controllerVelocitySmoothingTime)) success = false;
+        if (!RegisterFloat("controllerAngularVelocityTrackingTime", options.controllerAngularVelocityTrackingTime)) success = false;
 
         if (!RegisterBool("enableWeaponBash", options.enableWeaponBash)) success = false;
         if (!RegisterBool("failBashWhenOutOfStamina", options.failBashWhenOutOfStamina)) success = false;

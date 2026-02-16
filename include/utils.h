@@ -194,3 +194,5 @@ constexpr int GetDialogueTypeFromSubtype(int subtype)
     if (subtype < 75) return 6; // kService
     else return 7; // kMiscellaneous
 }
+
+int GetNumSmoothingFrames(float smoothingTime);

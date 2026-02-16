@@ -336,8 +336,8 @@ namespace Config {
 
         bool preventActorSelfHits = true;
 
-        int numControllerVelocitySmoothingFrames = 5;
-        int numControllerAngularVelocityTrackingFrames = 10;
+        float controllerVelocitySmoothingTime = 0.055f;
+        float controllerAngularVelocityTrackingTime = 0.11f;
 
         bool enableWeaponBash = true;
         bool failBashWhenOutOfStamina = true;

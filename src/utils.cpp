@@ -1365,3 +1365,8 @@ bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle)
     float requiredDotProduct = cosf(halfAngle * 0.0174533f);
     return DotProduct(VectorNormalized(handPos - hmdPos), hmdForward) >= requiredDotProduct;
 }
+
+int GetNumSmoothingFrames(float smoothingTime)
+{
+    return round(smoothingTime / *g_secondsSinceLastFrame_Unmultiplied);
+}

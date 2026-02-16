@@ -65,6 +65,8 @@ std::vector<UInt16> g_dialogueSkipConditions = { 0x4D, 0x90, 0x91, 0x120 }; // 4
 NiPoint3 g_prevPlayerPos{};
 NiPoint3 g_playerPosDelta{};
 
+std::deque<NiPoint3> g_prevPlayerPositions{ 100, NiPoint3() };
+
 
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
 struct CheckHitEventsFunctor : IForEachScriptObjectFunctor
@@ -382,64 +384,21 @@ struct ControllerTrackingData
         return GetMaxVelocity(velocities, 5);
     }
 
-    NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
-    {
-        NiPoint3 averageVector = NiPoint3();
-
-        int i = 0;
-        for (NiPoint3 &vector : vectors) {
-            averageVector += vector;
-            if (++i >= numFrames) {
-                break;
-            }
-        }
-
-        return averageVector / i;
-    }
-
-    float GetAverageVectorLength(std::deque<NiPoint3> &vectors, int numFrames)
-    {
-        float length = 0;
-
-        int i = 0;
-        for (NiPoint3 &vector : vectors) {
-            length += VectorLength(vector);
-            if (++i >= numFrames) {
-                break;
-            }
-        }
-        return length /= i;
-    }
-
-    int GetNumSmoothingFrames()
-    {
-        int numSmoothingFrames = Config::options.numControllerVelocitySmoothingFrames;
-        float smoothingMultiplier = 0.011f / *g_secondsSinceLastFrame_Unmultiplied; // Half the number of frames at 45fps compared to 90fps, etc.
-        return round(float(numSmoothingFrames) * smoothingMultiplier);
-    }
-
-    int GetNumControllerAngularVelocityTrackingFrames()
-    {
-        int numFrames = Config::options.numControllerAngularVelocityTrackingFrames;
-        float smoothingMultiplier = 0.011f / *g_secondsSinceLastFrame_Unmultiplied; // Half the number of frames at 45fps compared to 90fps, etc.
-        return round(float(numFrames) * smoothingMultiplier);
-    }
-
     void ComputeAverageVelocity()
     {
-        int numSmoothingFrames = GetNumSmoothingFrames();
+        int numSmoothingFrames = GetNumSmoothingFrames(Config::options.controllerVelocitySmoothingTime);
         avgVelocity = GetAverageVector(velocities, numSmoothingFrames);
     }
 
     void ComputeAverageSpeed()
     {
-        int numSmoothingFrames = GetNumSmoothingFrames();
+        int numSmoothingFrames = GetNumSmoothingFrames(Config::options.controllerVelocitySmoothingTime);
         avgSpeed = GetAverageVectorLength(velocities, numSmoothingFrames);
     }
 
     void ComputeAngularVelocity()
     {
-        int numFrames = GetNumControllerAngularVelocityTrackingFrames();
+        int numFrames = GetNumSmoothingFrames(Config::options.controllerAngularVelocityTrackingTime);
 
         NiPointer<NiAVObject> hmdNode = (*g_thePlayer)->unk3F0[PlayerCharacter::Node::kNode_HmdNode];
         NiPoint3 hmdLocalPos = hmdNode->m_localTransform.pos;
@@ -711,14 +670,10 @@ bool ShouldDoGrabbedActorMovement(Actor *actor)
 
 struct GrabbedActorState
 {
-    UInt32 target;
-    NiPoint3 offset;
-    NiPoint3 offsetAngle;
+    NiPoint3 ragdollOffset;
+    NiPoint3 ragdollOffsetAngle;
     std::optional<NiTransform> handFromRoot[2];
-    NiPoint3 endMovementDirection;
-    double endMovementTime = 0.0;
-    std::deque<NiPoint3> offsets{ 500, NiPoint3() };
-    std::deque<NiPoint3> speeds{ 500, NiPoint3() };
+    std::deque<NiPoint3> ragdollOffsets{ 500, NiPoint3() };
     NiPoint3 animCentroidWS{};
     NiPoint3 ragdollCentroidWS{};
     bool isTranslate = false;
@@ -726,9 +681,6 @@ struct GrabbedActorState
     bool isNoStrafeRotating = false;
     bool isNoStrafeTranslating = false;
     float prevSpeed = 0.f;
-    NiPoint3 prevDirection{};
-    float advanceSpeed = 0.f;
-    int numZeroSpeedFrames = 0;
     double noSpeedTime = 0.0;
 };
 std::mutex g_grabbedActorStatesLock;
@@ -817,72 +769,6 @@ std::optional<NiPoint3> GetBoneDisplacement(Actor *actor, const hkpRigidBody *de
     return displacement;
 }
 
-std::optional<NiPoint3> GetHandBoneDisplacement(Actor *actor, const hkpRigidBody *desiredBody, bool isLeft)
-{
-    std::optional<NiPoint3> displacement = std::nullopt;
-    ForEachRagdollDriver(actor, [desiredBody, isLeft, &displacement](hkbRagdollDriver *driver) -> void {
-        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
-            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
-                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
-                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
-                            NiTransform handToNode = g_currentGrabTransforms[isLeft];
-                            NiTransform nodeToHand = InverseTransform(handToNode);
-
-                            NiTransform animPose = hkQsTransformToNiTransform(activeRagdoll->lowResAnimPoseWS[i]);
-                            //NiTransform rbPose = hkTransformToNiTransform(desiredBody->getTransform(), animPose.scale);
-
-                            NiTransform handOnAnimPose = animPose * nodeToHand;
-                            //NiTransform handOnRbPose = rbPose * nodeToHand;
-
-                            displacement = g_rawHandTransforms[isLeft].pos - handOnAnimPose.pos;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-        });
-
-    return displacement;
-}
-
-NiPoint3 GetTotalDisplacement(Actor *actor)
-{
-    // Get average of all bone displacements between anim pose and ragdoll pose. Each bone's contribution is weighted by its mass
-    NiPoint3 displacement = NiPoint3();
-    ForEachRagdollDriver(actor, [&displacement](hkbRagdollDriver *driver) -> void {
-        if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
-            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
-
-                    float totalMass = 0.f;
-
-                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
-                        hkpRigidBody *body = ragdoll->m_rigidBodies[i];
-                        float massInv = body->getMassInv();
-                        if (massInv > 0.f) {
-                            float mass = 1.f / massInv;
-                            NiTransform animPose = hkQsTransformToNiTransform(activeRagdoll->lowResAnimPoseWS[i]);
-                            NiTransform rbPose = hkTransformToNiTransform(body->getTransform(), animPose.scale);
-
-                            // TODO: Handle rotation too somehow
-                            NiPoint3 offset = rbPose.pos - animPose.pos;
-                            displacement += offset * mass;
-
-                            totalMass += mass;
-                        }
-                    }
-
-                    displacement /= totalMass;
-                }
-            }
-        }
-    });
-
-    return displacement;
-}
-
 
 bool CanRagdoll(Actor *actor)
 {
@@ -907,7 +793,7 @@ bool IsAnimal(TESRace *race)
     return race->keyword.HasKeyword(g_keyword_actorTypeAnimal);
 }
 
-bool IsSmall(Actor *actor)
+bool IsSmallActor(Actor *actor)
 {
     TESRace *race = actor->race;
     if (!race) return false;
@@ -935,7 +821,7 @@ GrabbedActorAction ShouldRagdollOnGrabOrFootYank(Actor *actor)
     if (!CanRagdoll(actor)) return GrabbedActorAction::None;
 
     TESRace *race = actor->race;
-    if (Config::options.ragdollSmallRacesOnGrab && IsSmall(actor)) return GrabbedActorAction::RagdollOnGrab; // small race
+    if (Config::options.ragdollSmallRacesOnGrab && IsSmallActor(actor)) return GrabbedActorAction::RagdollOnGrab; // small race
 
     float health = actor->actorValueOwner.GetCurrent(24);
     if (health < Config::options.ragdollHealthThreshold) return GrabbedActorAction::RagdollOnGrab;
@@ -2587,18 +2473,14 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
     // This allows the user to override of add any information stored in the plane equations passed to the simplex solver.
     virtual void processConstraintsCallback(const hkpCharacterProxy *proxy, const hkArray<hkpRootCdPoint> &manifold, hkpSimplexSolverInput &input)
     {
-        int i = 0;
-        for (i = 0; i < manifold.getSize(); i++) {
+        for (int i = 0; i < manifold.getSize(); i++) {
             hkpRigidBody *rigidBody = hkpGetRigidBody(manifold[i].m_rootCollidableB);
 
             if (rigidBody && IsMoveableEntity(rigidBody)) {
                 UInt32 layer = GetCollisionLayer(rigidBody);
                 bool isBiped = layer == BGSCollisionLayer::kCollisionLayer_Biped || layer == BGSCollisionLayer::kCollisionLayer_BipedNoCC;
 
-                // TODO: When you have seomeone held, zero plane instead of ignoring the collision?
-
                 if (isBiped) {
-
                     if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
                         if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
                             if (TESRace *race = actor->race) {
@@ -3551,13 +3433,6 @@ void EnableGravity(Actor *actor)
     }
 }
 
-class BSAnimationGraphEvent
-{
-public:
-    BSFixedString Tag_0;
-    TESObjectREFR *Holder_8 = nullptr;
-    BSFixedString Payload_10;
-};
 
 struct EndGrabbedActorMovementTask : TaskDelegate
 {
@@ -3966,29 +3841,6 @@ void RagdollActor(Actor *actor)
 }
 
 
-std::deque<NiPoint3> g_prevPlayerPositions{ 100, NiPoint3() };
-
-NiPoint3 GetAverageVector(std::deque<NiPoint3> &vectors, int numFrames)
-{
-    NiPoint3 averageVector = NiPoint3();
-
-    int i = 0;
-    for (NiPoint3 &vector : vectors) {
-        averageVector += vector;
-        if (++i >= numFrames) {
-            break;
-        }
-    }
-
-    return averageVector / i;
-}
-
-int GetNumSmoothingFrames(float smoothingTime)
-{
-    return round(smoothingTime / *g_secondsSinceLastFrame_Unmultiplied);
-}
-
-
 void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 {
     std::scoped_lock lock(g_grabbedActorStatesLock);
@@ -4006,9 +3858,8 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
         // Wasn't grabbed before
 
         GrabbedActorState state{};
-        state.target = GetOrCreateRefrHandle(actor);
-        state.offset = NiPoint3();
-        state.offsetAngle = NiPoint3();
+        state.ragdollOffset = NiPoint3();
+        state.ragdollOffsetAngle = NiPoint3();
 
         g_grabbedActorStates[actor] = state;
     }
@@ -4105,15 +3956,15 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
                     }
 #endif // _DEBUG
 
-                    state.offsets.pop_back();
-                    state.offsets.push_front(kabschOffset * *g_inverseHavokWorldScale);
-                    NiPoint3 avgOffset = GetAverageVector(state.offsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
+                    state.ragdollOffsets.pop_back();
+                    state.ragdollOffsets.push_front(kabschOffset * *g_inverseHavokWorldScale);
+                    NiPoint3 avgOffset = GetAverageVector(state.ragdollOffsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
 
                     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
                     offsetAngle.z = ConstrainAngle180(kabschOffsetAngle);
 
-                    state.offset = avgOffset;
-                    state.offsetAngle = offsetAngle;
+                    state.ragdollOffset = avgOffset;
+                    state.ragdollOffsetAngle = offsetAngle;
                 }
             });
         }
@@ -4601,7 +4452,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     g_activeBipedGroups.insert(collisionGroup);
 
                     if (
-                        (Config::options.dontCollidePlayerWithSmallRaces && IsSmall(actor)) ||
+                        (Config::options.dontCollidePlayerWithSmallRaces && IsSmallActor(actor)) ||
                         (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
                         (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
                     ) {
@@ -4703,80 +4554,6 @@ void SetBonesKeyframedReporting(hkbRagdollDriver *driver, hkbGeneratorOutput &ge
         driver->reportingWhenKeyframed[i >> 5] |= (1 << (i & 0x1F));
     }
 }
-
-
-struct hkaKeyFrameHierarchyUtility__ApplyKeyFrameData
-{
-    hkQsTransform bodyWorld; // 00
-    hkQsTransform poseWorld; // 30
-};
-
-void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeDataEx(
-    const hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData,
-    std::vector<std::optional<NiQuaternion>> *qPrevs = nullptr
-)
-{
-    for (int i = 0; i < a_bodyData->m_numRigidBodies; i++) {
-        int parentIndex = a_bodyData->m_parentIndices[i];
-        const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].poseWorld;
-
-        hkQsTransform poseWorld; poseWorld.setMul(parentPose, a_desiredPoseLocal[i]);
-        a_applyKeyframeData[i].poseWorld = poseWorld;
-
-        hkVector4 translation = poseWorld.m_translation;
-        hkQuaternion rotation = poseWorld.m_rotation;
-
-
-        int controlDataIndex = a_bodyData->m_controlDataIndices ? a_bodyData->m_controlDataIndices[i] : 0;
-        if (controlDataIndex == -1) continue;
-
-        hkaKeyFrameHierarchyUtility::ControlData &controlData = a_controlPalette[controlDataIndex];
-        float hierarchyGain = controlData.m_hierarchyGain;
-        if (a_bodyData->m_boneWeights) {
-            hierarchyGain *= a_bodyData->m_boneWeights[i];
-        }
-
-        if (hierarchyGain > 0.f && parentIndex >= 0) {
-            hkpRigidBody *parentBody = a_bodyData->m_rigidBodies[parentIndex];
-
-            hkQsTransform parentBodyTransform;
-            parentBodyTransform.m_translation = parentBody->getPosition();
-            parentBodyTransform.m_rotation = parentBody->getRotation();
-
-            hkQsTransform transformedLocal; transformedLocal.setMul(parentBodyTransform, a_desiredPoseLocal[i]);
-
-            NiQuaternion newRot;
-            if (qPrevs) {
-                std::optional<NiQuaternion> &qPrev = (*qPrevs)[i];
-                if (!qPrev.has_value()) {
-                    qPrev = HkQuatToNiQuat(rotation);
-                }
-                newRot = continuousSlerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain, *qPrev);
-                qPrev = newRot; // Store the new rotation for the next frame
-            }
-            else {
-                newRot = slerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain);
-            }
-
-            rotation = NiQuatToHkQuat(newRot);
-            translation = NiPointToHkVector(lerp(HkVectorToNiPoint(translation), HkVectorToNiPoint(transformedLocal.m_translation), hierarchyGain));
-        }
-
-        NiPoint3 centerOfMassLocal = HkVectorToNiPoint(a_bodyData->m_rigidBodies[i]->getCenterOfMassLocal());
-
-        hkQsTransform bodyWorld;
-        bodyWorld.m_translation = NiPointToHkVector(HkVectorToNiPoint(translation) + RotateVectorByQuaternion(HkQuatToNiQuat(rotation), centerOfMassLocal));
-        bodyWorld.m_rotation = rotation;
-        bodyWorld.m_scale.setAll(0.f);
-
-        a_applyKeyframeData[i].bodyWorld = bodyWorld;
-    }
-}
-
-
-
-
-
 
 
 struct SavedConstraintData
@@ -5609,12 +5386,6 @@ void BShkbAnimationGraph_PreGenerate_Hook(BShkbAnimationGraph *_this, BShkbAnima
     BShkbAnimationGraph_PreGenerate_Original(_this, updateData, a3);
 }
 
-_BShkbAnimationGraph_Generate BShkbAnimationGraph_Generate_Original = 0;
-void BShkbAnimationGraph_Generate_Hook(BShkbAnimationGraph *_this, bool *a_useGenerateJob)
-{
-    BShkbAnimationGraph_Generate_Original(_this, a_useGenerateJob);
-}
-
 _Actor_GetHit Actor_TakePhysicsDamage_Original = 0;
 void Actor_TakePhysicsDamage_Hook(Actor *_this, HitData &hitData)
 {
@@ -6122,30 +5893,6 @@ void UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook(
 }
 
 
-NiPoint3 ForwardVectorToEulerRot(const NiPoint3 &forwardVec)
-{
-    NiPoint3 eulerRot;
-    eulerRot.x = -atan2f(forwardVec.z, sqrtf(forwardVec.x * forwardVec.x + forwardVec.y * forwardVec.y));
-    eulerRot.y = 0.f;
-    eulerRot.z = atan2f(forwardVec.x, forwardVec.y);
-    return eulerRot;
-}
-
-NiPoint3 ForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
-{
-    float pitch = -eulerRot.x;
-    float yaw = eulerRot.z;
-
-    float cosPitch = cosf(pitch);
-    NiPoint3 forwardVec;
-    forwardVec.x = sinf(yaw) * cosPitch;
-    forwardVec.y = cosf(yaw) * cosPitch;
-    forwardVec.z = sinf(pitch);
-    return forwardVec;
-}
-
-typedef bool (*_ActorState_GetCurrentSpeedData)(ActorState *_this, BGSMovementType__MaxSpeeds &a_out);
-
 typedef void(*_Actor_ModifyMovementData)(Actor *_this, float a_deltaTime, NiPoint3 &a_moveAmt, NiPoint3 &a_rotAmt);
 _Actor_ModifyMovementData g_Character_ModifyMovementData_Original = nullptr;
 static RelocPtr<_Actor_ModifyMovementData> Character_ModifyMovementData_vtbl(0x16D76C0);
@@ -6196,6 +5943,69 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 }
 
 
+
+void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeDataEx(
+    const hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData,
+    std::vector<std::optional<NiQuaternion>> *qPrevs = nullptr
+)
+{
+    for (int i = 0; i < a_bodyData->m_numRigidBodies; i++) {
+        int parentIndex = a_bodyData->m_parentIndices[i];
+        const ::hkQsTransform &parentPose = parentIndex < 0 ? a_keyframeData->m_worldFromRoot : a_applyKeyframeData[parentIndex].poseWorld;
+
+        hkQsTransform poseWorld; poseWorld.setMul(parentPose, a_desiredPoseLocal[i]);
+        a_applyKeyframeData[i].poseWorld = poseWorld;
+
+        hkVector4 translation = poseWorld.m_translation;
+        hkQuaternion rotation = poseWorld.m_rotation;
+
+
+        int controlDataIndex = a_bodyData->m_controlDataIndices ? a_bodyData->m_controlDataIndices[i] : 0;
+        if (controlDataIndex == -1) continue;
+
+        hkaKeyFrameHierarchyUtility::ControlData &controlData = a_controlPalette[controlDataIndex];
+        float hierarchyGain = controlData.m_hierarchyGain;
+        if (a_bodyData->m_boneWeights) {
+            hierarchyGain *= a_bodyData->m_boneWeights[i];
+        }
+
+        if (hierarchyGain > 0.f && parentIndex >= 0) {
+            hkpRigidBody *parentBody = a_bodyData->m_rigidBodies[parentIndex];
+
+            hkQsTransform parentBodyTransform;
+            parentBodyTransform.m_translation = parentBody->getPosition();
+            parentBodyTransform.m_rotation = parentBody->getRotation();
+
+            hkQsTransform transformedLocal; transformedLocal.setMul(parentBodyTransform, a_desiredPoseLocal[i]);
+
+            NiQuaternion newRot;
+            if (qPrevs) {
+                std::optional<NiQuaternion> &qPrev = (*qPrevs)[i];
+                if (!qPrev.has_value()) {
+                    qPrev = HkQuatToNiQuat(rotation);
+                }
+                newRot = continuousSlerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain, *qPrev);
+                qPrev = newRot; // Store the new rotation for the next frame
+            }
+            else {
+                newRot = slerp(HkQuatToNiQuat(rotation), HkQuatToNiQuat(transformedLocal.m_rotation), hierarchyGain);
+            }
+
+            rotation = NiQuatToHkQuat(newRot);
+            translation = NiPointToHkVector(lerp(HkVectorToNiPoint(translation), HkVectorToNiPoint(transformedLocal.m_translation), hierarchyGain));
+        }
+
+        NiPoint3 centerOfMassLocal = HkVectorToNiPoint(a_bodyData->m_rigidBodies[i]->getCenterOfMassLocal());
+
+        hkQsTransform bodyWorld;
+        bodyWorld.m_translation = NiPointToHkVector(HkVectorToNiPoint(translation) + RotateVectorByQuaternion(HkQuatToNiQuat(rotation), centerOfMassLocal));
+        bodyWorld.m_rotation = rotation;
+        bodyWorld.m_scale.setAll(0.f);
+
+        a_applyKeyframeData[i].bodyWorld = bodyWorld;
+    }
+}
+
 // hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData
 typedef void(*_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)(hkQsTransform *a_desiredPoseLocal, hkaKeyFrameHierarchyUtility::BodyData *a_bodyData, hkaKeyFrameHierarchyUtility::ControlData *a_controlPalette, hkaKeyFrameHierarchyUtility::KeyFrameData *a_keyframeData, hkaKeyFrameHierarchyUtility__ApplyKeyFrameData *a_applyKeyframeData);
 _hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = 0;
@@ -6217,25 +6027,6 @@ void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *
     else {
         hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original(a_desiredPoseLocal, a_bodyData, a_controlPalette, a_keyframeData, a_applyKeyframeData);
     }
-}
-
-
-NiPoint3 GetForwardVectorFromEulerRot(const NiPoint3 &eulerRot)
-{
-    NiMatrix33 rot = EulerToMatrix(eulerRot);
-    return ForwardVector(rot);
-}
-
-MovementVector AddToMovementVector(const MovementVector &v1, const NiPoint3 &v2)
-{
-    NiPoint3 vec1 = ForwardVectorFromEulerRot(v1.eulerRot) * v1.magnitude;
-    NiPoint3 newVec = vec1 + v2;
-
-    MovementVector result;
-    result.magnitude = VectorLength(newVec);
-    result.eulerRot = ForwardVectorToEulerRot(newVec);
-
-    return result;
 }
 
 
@@ -6411,10 +6202,10 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
         float startThreshold = isHeldWithBothHands ? Config::options.keepOffsetStartThresholdTwoHanded : Config::options.keepOffsetStartThreshold;
         float stopThreshold = isHeldWithBothHands ? Config::options.keepOffsetStopThresholdTwoHanded : Config::options.keepOffsetStopThreshold;
-        bool isRagdollMovementStart = VectorLength(state.offset) >= startThreshold;
-        bool isRagdollMovementStop = VectorLength(state.offset) < stopThreshold;
+        bool isRagdollMovementStart = VectorLength(state.ragdollOffset) >= startThreshold;
+        bool isRagdollMovementStop = VectorLength(state.ragdollOffset) < stopThreshold;
 
-        NiPoint3 moveAmtFromRagdollInfluence = state.offset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
+        NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
         if (!state.isTranslate) {
             if (isPlayerMoving || isRagdollMovementStart) {
@@ -6458,7 +6249,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         else {
             // Rotation not from player movement is only allowed if both hands are holding the actor
             if (isHeldWithBothHands) {
-                float angleDiff = ConstrainAngle180(-state.offsetAngle.z);
+                float angleDiff = ConstrainAngle180(-state.ragdollOffsetAngle.z);
 
                 bool rotateStartCondition = fabsf(angleDiff) >= Config::options.keepOffsetAngleStartThreshold;
                 bool rotateStopCondition = fabsf(angleDiff) < Config::options.keepOffsetAngleStopThreshold;
@@ -6499,14 +6290,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
     NiPoint3 direction = VectorNormalized(finalMoveAmt);
-
-    NiPoint3 rawSpeed = direction * speed;
-    it->second.speeds.pop_back();
-    it->second.speeds.push_front(rawSpeed);
-    NiPoint3 smoothedSpeed = GetAverageVector(it->second.speeds, GetNumSmoothingFrames(Config::options.keepOffsetSpeedCalcSmoothingTime));
-
-    speed = VectorLength(smoothedSpeed);
-    NiPoint3 directionEuler = ForwardVectorToEulerRot(VectorNormalized(smoothedSpeed));
+    NiPoint3 directionEuler = ForwardVectorToEulerRot(direction);
 
     { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
         float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
@@ -6530,7 +6314,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     movementController->movementPlannerDirectControl.SetTargetAngle(targetAngle);
 
     state.prevSpeed = speed;
-    state.prevDirection = direction;
 }
 
 
@@ -6748,7 +6531,6 @@ auto potentiallyEnableMeleeCollisionLoc = RelocAddr<uintptr_t>(0x6E5366);
 auto preCullActorsHookLoc = RelocAddr<uintptr_t>(0x69F4B9);
 
 auto BShkbAnimationGraph_PreGenerate_HookLoc = RelocAddr<uintptr_t>(0xB1CB55);
-auto BShkbAnimationGraph_Generate_HookLoc = RelocAddr<uintptr_t>(0xB1CCC7);
 
 auto Actor_TakePhysicsDamage_HookLoc = RelocAddr<uintptr_t>(0x61F6E7);
 
@@ -6813,12 +6595,6 @@ void PerformHooks(void)
         std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_PreGenerate_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_PreGenerate_Hook));
         BShkbAnimationGraph_PreGenerate_Original = (_BShkbAnimationGraph_PreGenerate)originalFunc;
         _MESSAGE("BShkbAnimationGraph::PreGenerate hook complete");
-    }
-
-    {
-        std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_Generate_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_Generate_Hook));
-        BShkbAnimationGraph_Generate_Original = (_BShkbAnimationGraph_Generate)originalFunc;
-        _MESSAGE("BShkbAnimationGraph::Generate hook complete");
     }
 
     {
@@ -7425,37 +7201,6 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
                 }
         }
     }
-
-
-
-
-    //// TODO: Remove this
-    //if (std::string_view(animationName.c_str()) == "CyclicFreeze") {
-    //    if (!accepted) {
-    //        if (Actor *actor = DYNAMIC_CAST(_this, IAnimationGraphManagerHolder, Actor)) {
-    //            BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
-    //            if (GetAnimationGraphManager(actor, animGraphManager)) {
-    //                BSAnimationGraphManager *manager = animGraphManager.ptr;
-    //                BShkbAnimationGraph *graph = manager->graphs.GetData()->ptr;
-    //                hkbBehaviorGraph *behaviorGraph = graph->behaviorGraph;
-    //                hkArray<hkbNodeInfo> *nodeInfo = behaviorGraph->activeNodes;
-    //                hkbNodeInfo *firstNodeInfo = nodeInfo->begin();
-    //                int x = 0;
-    //            }
-    //        }
-    //        int x = 0;
-    //    }
-    //    else {
-    //        int x = 0;
-    //    }
-    //}
-
-
-
-
-#ifdef _DEBUG
-    _MESSAGE("%d: %s %d", *g_currentFrameCounter, animationName.c_str(), accepted);
-#endif
 
     return accepted;
 }
