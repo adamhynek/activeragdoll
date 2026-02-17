@@ -3467,6 +3467,32 @@ struct EndGrabbedActorMovementTask : TaskDelegate
     UInt32 source;
 };
 
+struct ResetAITask : TaskDelegate
+{
+    static ResetAITask * Create(UInt32 source) {
+        ResetAITask *cmd = new ResetAITask;
+        if (cmd) {
+            cmd->source = source;
+        }
+        return cmd;
+    }
+
+    virtual void Run() {
+        NiPointer<TESObjectREFR> refr;
+        if (LookupREFRByHandle(source, refr)) {
+            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+                Actor_EvaluatePackage(actor, false, true);
+            }
+        }
+    }
+
+    virtual void Dispose() {
+        delete this;
+    }
+
+    UInt32 source;
+};
+
 float g_savedSpeedReduction = 0.f;
 
 float GetSpeedReduction(Actor *actor)
@@ -6077,7 +6103,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAllowRotation, isAllowRotation);
 
         bool doMotionDrivenWithoutForce = !isAnimationDriven && !isAllowRotation; // Same condition as the base game
-        bool doMotionDriven = Config::options.forceMotionDrivenDuringKeepOffset || doMotionDrivenWithoutForce;
+        bool forceMotionDriven = Config::options.forceMotionDrivenDuringKeepOffset;
+        bool doMotionDriven = forceMotionDriven || doMotionDrivenWithoutForce;
 
         if (doMotionDriven) {
 #ifdef _DEBUG
@@ -6086,6 +6113,15 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
             movementController->movementPlannerDirectControl.SetPlannerDirectControl();
             movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
+
+            // Reset AI if we are forcing motion driven and they weren't already capable of being so. This will for example make someone stop sweeping with a broom and start walking.
+            // However, don't reset AI if in combat, as that would make them sheathe and then unsheathe again to attack you. This will make them slide though if they are performing an animation such as a power attack.
+            bool isInCombat = actor->IsInCombat();
+            bool resetAI = Config::options.resetAIWhenForcingMotionDriven && !doMotionDrivenWithoutForce && !isInCombat;
+            if (resetAI) {
+                // If they are anim driven, kick them out of their animation so that they actually show the motions.
+                g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
+            }
         }
     }
 

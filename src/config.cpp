@@ -315,6 +315,7 @@ namespace Config {
 
         if (!RegisterBool("doKeepOffset", options.doKeepOffset)) success = false;
         if (!RegisterBool("forceMotionDrivenDuringKeepOffset", options.forceMotionDrivenDuringKeepOffset)) success = false;
+        if (!RegisterBool("resetAIWhenForcingMotionDriven", options.resetAIWhenForcingMotionDriven)) success = false;
         if (!RegisterFloat("keepOffsetAngleStartThreshold", options.keepOffsetAngleStartThreshold)) success = false;
         if (!RegisterFloat("keepOffsetAngleStopThreshold", options.keepOffsetAngleStopThreshold)) success = false;
         if (!RegisterFloat("keepOffsetTwoHandedRotationSpeed", options.keepOffsetTwoHandedRotationSpeed)) success = false;

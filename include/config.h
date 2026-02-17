@@ -155,6 +155,7 @@ namespace Config {
 
         bool doKeepOffset = true;
         bool forceMotionDrivenDuringKeepOffset = true;
+        bool resetAIWhenForcingMotionDriven = true;
         float keepOffsetAngleStartThreshold = 0.25f;
         float keepOffsetAngleStopThreshold = 0.25f;
         float keepOffsetTwoHandedRotationSpeed = 2.f;

@@ -836,7 +836,7 @@ extern RelocAddr<_Actor_StopCombatAlarm> Actor_StopCombatAlarm;
 typedef bool(*_Actor_IsTalking)(Actor *_this);
 extern RelocAddr<_Actor_IsTalking> Actor_IsTalking;
 
-typedef bool(*_Actor_EvaluatePackage)(Actor *_this, bool a2, bool resetAI);
+typedef bool(*_Actor_EvaluatePackage)(Actor *_this, bool a_immediate, bool resetAI);
 extern RelocAddr<_Actor_EvaluatePackage> Actor_EvaluatePackage;
 
 typedef void(*_BSTaskPool_QueueDestructibleDamageTask)(BSTaskPool *taskPool, TESObjectREFR *target, float damage);
