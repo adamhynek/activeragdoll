@@ -13,10 +13,6 @@ namespace Config {
         float activeRagdollStartDistance = 50.f;
         float activeRagdollEndDistance = 60.f;
 
-        bool enablePhysicalBlock = false;
-        double physicalBlockWindow = 0.2;
-        float weaponRotationRecloneThreshold = 0.1f;
-
         bool requireFullPowerAttackStamina = false;
         bool requireFullBashStamina = false;
 
@@ -168,10 +164,6 @@ namespace Config {
         float keepOffsetMoveSpeedNoStrafe = 100.f;
         float keepOffsetLateralPlayerMovementInfluence = 0.1f;
         float keepOffsetDirectionMultiplier = 1.f;
-        float keepOffsetPlayerDirectionMultiplier = 1.f;
-        float keepOffsetCatchUpRadius = 150.f;
-        float keepOffsetFollowRadius = 50.f;
-        float keepOffsetMovingCatchUpRadius = 150.f;
         float keepOffsetPlayerMovementInfluence = 1.f;
         float keepOffsetPlayerSmoothingTime = 0.1f;
         float keepOffsetActorSmoothingTime = 0.1f;
@@ -182,7 +174,6 @@ namespace Config {
         float keepOffsetSpeedDirectionCutoff = 0.1;
         float keepOffsetMinPlayerMoveAmtForHeading = 0.1;
         float keepOffsetPlayerDirectionHeadingForwardThreshold = 1.57f;
-        float keepOffsetSpeedCalcSmoothingTime = 0.3f;
         float zeroSpeedThreshold = 5.f;
         double holdZeroSpeedTime = 0.0;
 
@@ -371,7 +362,6 @@ namespace Config {
         float playerCapsuleRadius = 0.15f;
 
         bool convertNonRagdollBipedObjectsToDeadBip = true;
-        bool removeRagdollWhenExitingHighProcess = true;
 
         bool removeActiveActorsOnLoad = true;
 

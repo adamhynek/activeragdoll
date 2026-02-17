@@ -328,10 +328,6 @@ namespace Config {
         if (!RegisterFloat("keepOffsetMoveSpeedNoStrafe", options.keepOffsetMoveSpeedNoStrafe)) success = false;
         if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
-        if (!RegisterFloat("keepOffsetPlayerDirectionMultiplier", options.keepOffsetPlayerDirectionMultiplier)) success = false;
-        if (!RegisterFloat("keepOffsetCatchUpRadius", options.keepOffsetCatchUpRadius)) success = false;
-        if (!RegisterFloat("keepOffsetFollowRadius", options.keepOffsetFollowRadius)) success = false;
-        if (!RegisterFloat("keepOffsetMovingCatchUpRadius", options.keepOffsetMovingCatchUpRadius)) success = false;
         if (!RegisterFloat("keepOffsetPlayerMovementInfluence", options.keepOffsetPlayerMovementInfluence)) success = false;
         if (!RegisterFloat("keepOffsetPlayerSmoothingTime", options.keepOffsetPlayerSmoothingTime)) success = false;
         if (!RegisterFloat("keepOffsetActorSmoothingTime", options.keepOffsetActorSmoothingTime)) success = false;
@@ -343,7 +339,6 @@ namespace Config {
         if (!RegisterFloat("keepOffsetMinPlayerMoveAmtForHeading", options.keepOffsetMinPlayerMoveAmtForHeading)) success = false;
         if (!RegisterFloat("keepOffsetPlayerDirectionHeadingForwardThreshold", options.keepOffsetPlayerDirectionHeadingForwardThreshold)) success = false;
 
-        if (!RegisterFloat("keepOffsetSpeedCalcSmoothingTime", options.keepOffsetSpeedCalcSmoothingTime)) success = false;
         if (!RegisterFloat("zeroSpeedThreshold", options.zeroSpeedThreshold)) success = false;
         if (!RegisterDouble("holdZeroSpeedTime", options.holdZeroSpeedTime)) success = false;
 
@@ -533,7 +528,6 @@ namespace Config {
         if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
 
         if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;
-        if (!RegisterBool("removeRagdollWhenExitingHighProcess", options.removeRagdollWhenExitingHighProcess)) success = false;
 
         if (!RegisterBool("removeActiveActorsOnLoad", options.removeActiveActorsOnLoad)) success = false;
 

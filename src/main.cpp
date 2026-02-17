@@ -5532,8 +5532,6 @@ void ActorProcess_EnterFurniture_SetWorld_Hook(BSAnimationGraphManager *manager,
 
 bool IsPhysicallyBlocked(Actor *attacker)
 {
-    if (!Config::options.enablePhysicalBlock) return false;
-
     return false;
 }
 
