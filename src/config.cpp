@@ -301,7 +301,7 @@ namespace Config {
         if (!RegisterFloat("yankHostileStaminaCost", options.yankHostileStaminaCost)) success = false;
         if (!RegisterFloat("footYankStaminaCost", options.footYankStaminaCost)) success = false;
         if (!RegisterDouble("yankTwoHandedTimeWindow", options.yankTwoHandedTimeWindow)) success = false;
-        if (!RegisterBool("disableKeepOffsetWhenFootHeld", options.disableKeepOffsetWhenFootHeld)) success = false;
+        if (!RegisterBool("disableGrabbedActorMovementWhenFootHeld", options.disableGrabbedActorMovementWhenFootHeld)) success = false;
         if (!RegisterDouble("footYankCooldown", options.footYankCooldown)) success = false;
         if (!RegisterFloat("footYankRequiredStressAmount", options.footYankRequiredStressAmount)) success = false;
         if (!RegisterFloat("yankImpulseDecayExponent", options.yankImpulseDecayExponent)) success = false;
@@ -313,36 +313,42 @@ namespace Config {
         if (!RegisterFloat("yankImpulseUpwardsMultiplier", options.yankImpulseUpwardsMultiplier)) success = false;
         if (!RegisterFloat("yankImpulseDownwardsMultiplier", options.yankImpulseDownwardsMultiplier)) success = false;
 
-        if (!RegisterBool("doKeepOffset", options.doKeepOffset)) success = false;
-        if (!RegisterBool("forceMotionDrivenDuringKeepOffset", options.forceMotionDrivenDuringKeepOffset)) success = false;
+        if (!RegisterBool("doGrabbedActorMovement", options.doGrabbedActorMovement)) success = false;
+        if (!RegisterBool("forceMotionDrivenDuringGrabbedActorMovement", options.forceMotionDrivenDuringGrabbedActorMovement)) success = false;
         if (!RegisterBool("resetAIWhenForcingMotionDriven", options.resetAIWhenForcingMotionDriven)) success = false;
-        if (!RegisterFloat("keepOffsetAngleStartThreshold", options.keepOffsetAngleStartThreshold)) success = false;
-        if (!RegisterFloat("keepOffsetAngleStopThreshold", options.keepOffsetAngleStopThreshold)) success = false;
-        if (!RegisterFloat("keepOffsetTwoHandedRotationSpeed", options.keepOffsetTwoHandedRotationSpeed)) success = false;
-        if (!RegisterFloat("keepOffsetLateralStartAngleNoStrafe", options.keepOffsetLateralStartAngleNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetLateralStopAngleNoStrafe", options.keepOffsetLateralStopAngleNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetStartOffsetNoStrafe", options.keepOffsetStartOffsetNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetStopOffsetNoStrafe", options.keepOffsetStopOffsetNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetHeadingSpeedNoStrafe", options.keepOffsetHeadingSpeedNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetPlayerDirectionHeadingSpeed", options.keepOffsetPlayerDirectionHeadingSpeed)) success = false;
-        if (!RegisterFloat("keepOffsetMoveSpeedNoStrafe", options.keepOffsetMoveSpeedNoStrafe)) success = false;
-        if (!RegisterFloat("keepOffsetLateralPlayerMovementInfluence", options.keepOffsetLateralPlayerMovementInfluence)) success = false;
-        if (!RegisterFloat("keepOffsetDirectionMultiplier", options.keepOffsetDirectionMultiplier)) success = false;
-        if (!RegisterFloat("keepOffsetPlayerMovementInfluence", options.keepOffsetPlayerMovementInfluence)) success = false;
-        if (!RegisterFloat("keepOffsetPlayerSmoothingTime", options.keepOffsetPlayerSmoothingTime)) success = false;
-        if (!RegisterFloat("keepOffsetActorSmoothingTime", options.keepOffsetActorSmoothingTime)) success = false;
-        if (!RegisterFloat("keepOffsetStartThreshold", options.keepOffsetStartThreshold)) success = false;
-        if (!RegisterFloat("keepOffsetStopThreshold", options.keepOffsetStopThreshold)) success = false;
-        if (!RegisterFloat("keepOffsetStartThresholdTwoHanded", options.keepOffsetStartThresholdTwoHanded)) success = false;
-        if (!RegisterFloat("keepOffsetStopThresholdTwoHanded", options.keepOffsetStopThresholdTwoHanded)) success = false;
-        if (!RegisterFloat("keepOffsetSpeedDirectionCutoff", options.keepOffsetSpeedDirectionCutoff)) success = false;
-        if (!RegisterFloat("keepOffsetMinPlayerMoveAmtForHeading", options.keepOffsetMinPlayerMoveAmtForHeading)) success = false;
-        if (!RegisterFloat("keepOffsetPlayerDirectionHeadingForwardThreshold", options.keepOffsetPlayerDirectionHeadingForwardThreshold)) success = false;
+        if (!RegisterFloat("grabbedActorMovementAngleStartThreshold", options.grabbedActorMovementAngleStartThreshold)) success = false;
+        if (!RegisterFloat("grabbedActorMovementAngleStopThreshold", options.grabbedActorMovementAngleStopThreshold)) success = false;
+        if (!RegisterFloat("grabbedActorMovementTwoHandedRotationSpeed", options.grabbedActorMovementTwoHandedRotationSpeed)) success = false;
+        if (!RegisterFloat("grabbedActorMovementLateralStartAngleNoStrafe", options.grabbedActorMovementLateralStartAngleNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementLateralStopAngleNoStrafe", options.grabbedActorMovementLateralStopAngleNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStartOffsetNoStrafe", options.grabbedActorMovementStartOffsetNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStopOffsetNoStrafe", options.grabbedActorMovementStopOffsetNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementNoStrafeMinAngle", options.grabbedActorMovementNoStrafeMinAngle)) success = false;
+        if (!RegisterFloat("grabbedActorMovementHeadingSpeedNoStrafe", options.grabbedActorMovementHeadingSpeedNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementPlayerDirectionHeadingSpeed", options.grabbedActorMovementPlayerDirectionHeadingSpeed)) success = false;
+        if (!RegisterFloat("grabbedActorMovementMoveSpeedNoStrafe", options.grabbedActorMovementMoveSpeedNoStrafe)) success = false;
+        if (!RegisterFloat("grabbedActorMovementLateralPlayerMovementInfluence", options.grabbedActorMovementLateralPlayerMovementInfluence)) success = false;
+        if (!RegisterFloat("grabbedActorMovementDirectionMultiplier", options.grabbedActorMovementDirectionMultiplier)) success = false;
+        if (!RegisterFloat("grabbedActorMovementPlayerMovementInfluence", options.grabbedActorMovementPlayerMovementInfluence)) success = false;
+        if (!RegisterFloat("grabbedActorMovementPlayerSmoothingTime", options.grabbedActorMovementPlayerSmoothingTime)) success = false;
+        if (!RegisterFloat("grabbedActorMovementActorSmoothingTime", options.grabbedActorMovementActorSmoothingTime)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStartThreshold", options.grabbedActorMovementStartThreshold)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStopThreshold", options.grabbedActorMovementStopThreshold)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStartThresholdTwoHanded", options.grabbedActorMovementStartThresholdTwoHanded)) success = false;
+        if (!RegisterFloat("grabbedActorMovementStopThresholdTwoHanded", options.grabbedActorMovementStopThresholdTwoHanded)) success = false;
+        if (!RegisterFloat("grabbedActorMovementSpeedDirectionCutoff", options.grabbedActorMovementSpeedDirectionCutoff)) success = false;
+        if (!RegisterFloat("grabbedActorMovementMinPlayerMoveAmtForHeading", options.grabbedActorMovementMinPlayerMoveAmtForHeading)) success = false;
+        if (!RegisterFloat("grabbedActorMovementPlayerDirectionHeadingForwardThreshold", options.grabbedActorMovementPlayerDirectionHeadingForwardThreshold)) success = false;
 
-        if (!RegisterFloat("zeroSpeedThreshold", options.zeroSpeedThreshold)) success = false;
-        if (!RegisterDouble("holdZeroSpeedTime", options.holdZeroSpeedTime)) success = false;
+        if (!RegisterFloat("grabbedActorMovementOverwriteParamAcceleration", options.grabbedActorMovementOverwriteParamAcceleration)) success = false;
+        if (!RegisterFloat("grabbedActorMovementOverwriteParamDeceleration", options.grabbedActorMovementOverwriteParamDeceleration)) success = false;
+        if (!RegisterFloat("grabbedActorMovementOverwriteParamRotationPercent", options.grabbedActorMovementOverwriteParamRotationPercent)) success = false;
+        if (!RegisterFloat("grabbedActorMovementOverwriteParamAngleAcceleration", options.grabbedActorMovementOverwriteParamAngleAcceleration)) success = false;
 
-        if (!RegisterBool("zeroOutRootTranslationWhenKeepingOffset", options.zeroOutRootTranslationWhenKeepingOffset)) success = false;
+        if (!RegisterFloat("grabbedActorMovementZeroSpeedThreshold", options.grabbedActorMovementZeroSpeedThreshold)) success = false;
+        if (!RegisterDouble("grabbedActorMovementHoldZeroSpeedTime", options.grabbedActorMovementHoldZeroSpeedTime)) success = false;
+
+        if (!RegisterBool("zeroOutRootTranslationDuringGrabbedActorMovement", options.zeroOutRootTranslationDuringGrabbedActorMovement)) success = false;
 
         if (!RegisterBool("doContinuousSlerp", options.doContinuousSlerp)) success = false;
 

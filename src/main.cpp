@@ -648,13 +648,13 @@ NiPointer<NiAVObject> GetGrabbedNode(Actor *actor, bool isLeft)
 
 bool ShouldDoGrabbedActorMovement(Actor *actor)
 {
-    if (!Config::options.doKeepOffset) return false;
+    if (!Config::options.doGrabbedActorMovement) return false;
     if (Actor_IsGhost(actor)) return false;
     if (IsActorUsingFurniture(actor)) return false;
 
     if (!actor->race || actor->race->data.unk40 >= 2) return false; // race size is >= large
 
-    if (Config::options.disableKeepOffsetWhenFootHeld) {
+    if (Config::options.disableGrabbedActorMovementWhenFootHeld) {
         for (int isLeft = 0; isLeft < 2; ++isLeft) {
             if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
                 if (heldNode->m_name && Config::options.footNodeNames.count(heldNode->m_name)) {
@@ -3873,7 +3873,7 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 
     if (!doGrabbedActorMovement) {
         if (g_grabbedActorStates.size() > 0 && g_grabbedActorStates.count(actor)) {
-            // TODO: Is there a possible race condition here? Where ClearKeepOffset can run and then KeepOffset can run?
+            // TODO: Is there a possible race condition here? Where we end grabbed actor movement and then start it?
             g_taskInterface->AddTask(EndGrabbedActorMovementTask::Create(GetOrCreateRefrHandle(actor)));
             g_grabbedActorStates.erase(actor);
         }
@@ -3984,7 +3984,7 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 
                     state.ragdollOffsets.pop_back();
                     state.ragdollOffsets.push_front(kabschOffset * *g_inverseHavokWorldScale);
-                    NiPoint3 avgOffset = GetAverageVector(state.ragdollOffsets, GetNumSmoothingFrames(Config::options.keepOffsetActorSmoothingTime));
+                    NiPoint3 avgOffset = GetAverageVector(state.ragdollOffsets, GetNumSmoothingFrames(Config::options.grabbedActorMovementActorSmoothingTime));
 
                     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
                     offsetAngle.z = ConstrainAngle180(kabschOffsetAngle);
@@ -4529,7 +4529,7 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     //g_playerPosDelta = player->pos - g_prevPlayerPos;
     g_prevPlayerPositions.pop_back();
     g_prevPlayerPositions.push_front(player->pos - g_prevPlayerPos);
-    g_playerPosDelta = GetAverageVector(g_prevPlayerPositions, GetNumSmoothingFrames(Config::options.keepOffsetPlayerSmoothingTime));
+    g_playerPosDelta = GetAverageVector(g_prevPlayerPositions, GetNumSmoothingFrames(Config::options.grabbedActorMovementPlayerSmoothingTime));
     g_prevPlayerPos = player->pos;
 }
 
@@ -4719,7 +4719,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
     bool isDoingGrabbedActorMovement = IsDoingGrabbedActorMovement(actor);
 
-    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isDoingGrabbedActorMovement && poseHeader && poseHeader->m_onFraction > 0.f) {
+    if (Config::options.zeroOutRootTranslationDuringGrabbedActorMovement && isDoingGrabbedActorMovement && poseHeader && poseHeader->m_onFraction > 0.f) {
         hkQsTransform *highResPoseLocal = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
         highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
     }
@@ -5033,7 +5033,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                     hkInt16 numPoses = poseHeader->m_numData;
                     memcpy(highResPoseLocal, characterPoseLocal, numPoses * sizeof(hkQsTransform));
 
-                    if (Config::options.zeroOutRootTranslationWhenKeepingOffset && isDoingGrabbedActorMovement) {
+                    if (Config::options.zeroOutRootTranslationDuringGrabbedActorMovement && isDoingGrabbedActorMovement) {
                         highResPoseLocal[0].m_translation = NiPointToHkVector(NiPoint3{ 0.f, 0.f, 0.f });
                     }
                 }
@@ -5954,7 +5954,7 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
             float targetRotZ = targetAngle.z;
             float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
             float rotZ = 0.f;
-            if (fabs(deltaZ) >= Config::options.dummyFloat1) {
+            if (fabs(deltaZ) >= Config::options.grabbedActorMovementNoStrafeMinAngle) {
                 rotZ = deltaZ;
             }
 
@@ -6101,7 +6101,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAllowRotation, isAllowRotation);
 
         bool doMotionDrivenWithoutForce = !isAnimationDriven && !isAllowRotation; // Same condition as the base game
-        bool forceMotionDriven = Config::options.forceMotionDrivenDuringKeepOffset;
+        bool forceMotionDriven = Config::options.forceMotionDrivenDuringGrabbedActorMovement;
         bool doMotionDriven = forceMotionDriven || doMotionDrivenWithoutForce;
 
         if (doMotionDriven) {
@@ -6130,7 +6130,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
     NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
 
-    NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * Config::options.keepOffsetPlayerMovementInfluence;
+    NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * Config::options.grabbedActorMovementPlayerMovementInfluence;
 
 
     NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
@@ -6196,16 +6196,16 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
 
             // Hysteresis for translation
-            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.keepOffsetStartOffsetNoStrafe)) {
+            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.grabbedActorMovementStartOffsetNoStrafe)) {
                 state.isNoStrafeTranslating = true;
             }
-            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.keepOffsetStopOffsetNoStrafe) {
+            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.grabbedActorMovementStopOffsetNoStrafe) {
                 state.isNoStrafeTranslating = false;
             }
 
             // Hysteresis for rotation. Check this after computing whether to translate.
-            bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.keepOffsetLateralStartAngleNoStrafe;
-            bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.keepOffsetLateralStopAngleNoStrafe;
+            bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.grabbedActorMovementLateralStartAngleNoStrafe;
+            bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.grabbedActorMovementLateralStopAngleNoStrafe;
 
             if (!state.isNoStrafeRotating && rotateStartCondition) {
                 state.isNoStrafeRotating = true;
@@ -6215,14 +6215,14 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             }
 
             if (state.isNoStrafeRotating) {
-                float maxHeadingChange = Config::options.keepOffsetHeadingSpeedNoStrafe * *g_deltaTime;
+                float maxHeadingChange = Config::options.grabbedActorMovementHeadingSpeedNoStrafe * *g_deltaTime;
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
-                offsetAngle.z += clampedDeltaAngle * Config::options.keepOffsetLateralPlayerMovementInfluence;
+                offsetAngle.z += clampedDeltaAngle * Config::options.grabbedActorMovementLateralPlayerMovementInfluence;
             }
 
             if (state.isNoStrafeTranslating) {
                 // Apply speed limit to catch-up movement, plus instant player movement
-                float maxMoveAmt = Config::options.keepOffsetMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
+                float maxMoveAmt = Config::options.grabbedActorMovementMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
                 float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
                 finalMoveAmt = forward * clampedMoveAmt;
             }
@@ -6234,12 +6234,12 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         bool isHeldWithBothHands = g_leftHeldRefr == actor && g_rightHeldRefr == actor;
 
         bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
-        float startThreshold = isHeldWithBothHands ? Config::options.keepOffsetStartThresholdTwoHanded : Config::options.keepOffsetStartThreshold;
-        float stopThreshold = isHeldWithBothHands ? Config::options.keepOffsetStopThresholdTwoHanded : Config::options.keepOffsetStopThreshold;
+        float startThreshold = isHeldWithBothHands ? Config::options.grabbedActorMovementStartThresholdTwoHanded : Config::options.grabbedActorMovementStartThreshold;
+        float stopThreshold = isHeldWithBothHands ? Config::options.grabbedActorMovementStopThresholdTwoHanded : Config::options.grabbedActorMovementStopThreshold;
         bool isRagdollMovementStart = VectorLength(state.ragdollOffset) >= startThreshold;
         bool isRagdollMovementStop = VectorLength(state.ragdollOffset) < stopThreshold;
 
-        NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.keepOffsetDirectionMultiplier; // TODO: Should we be using deltaTime here?
+        NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.grabbedActorMovementDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
         if (!state.isTranslate) {
             if (isPlayerMoving || isRagdollMovementStart) {
@@ -6256,7 +6256,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         }
 
         float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
-        if (playerMovementAmt > Config::options.keepOffsetMinPlayerMoveAmtForHeading) {
+        if (playerMovementAmt > Config::options.grabbedActorMovementMinPlayerMoveAmtForHeading) {
             // Rotation from player movement heading
             NiPoint3 playerMovementDirection = VectorNormalized(moveAmtFromPlayerMovement);
 
@@ -6265,16 +6265,16 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             float movementHeading = GetHeadingFromVector(playerMovementDirection);
             float movementHeadingDiff = ConstrainAngle180(movementHeading - currentHeading);
 
-            if (fabsf(movementHeadingDiff) < Config::options.keepOffsetPlayerDirectionHeadingForwardThreshold) {
+            if (fabsf(movementHeadingDiff) < Config::options.grabbedActorMovementPlayerDirectionHeadingForwardThreshold) {
                 // Player is moving in the same direction as the actor's current heading
-                float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
+                float maxHeadingChange = Config::options.grabbedActorMovementPlayerDirectionHeadingSpeed * *g_deltaTime;
                 offsetAngle.z += std::clamp(movementHeadingDiff, -maxHeadingChange, maxHeadingChange);
             }
             else {
                 // Player is moving in the opposite direction of the actor's current heading
                 float movementHeadingOpposite = ConstrainAngle180(movementHeading + M_PI);
                 float movementHeadingOppositeDiff = ConstrainAngle180(movementHeadingOpposite - currentHeading);
-                float maxHeadingChange = Config::options.keepOffsetPlayerDirectionHeadingSpeed * *g_deltaTime;
+                float maxHeadingChange = Config::options.grabbedActorMovementPlayerDirectionHeadingSpeed * *g_deltaTime;
                 offsetAngle.z += std::clamp(movementHeadingOppositeDiff, -maxHeadingChange, maxHeadingChange);
             }
 
@@ -6285,8 +6285,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             if (isHeldWithBothHands) {
                 float angleDiff = ConstrainAngle180(-state.ragdollOffsetAngle.z);
 
-                bool rotateStartCondition = fabsf(angleDiff) >= Config::options.keepOffsetAngleStartThreshold;
-                bool rotateStopCondition = fabsf(angleDiff) < Config::options.keepOffsetAngleStopThreshold;
+                bool rotateStartCondition = fabsf(angleDiff) >= Config::options.grabbedActorMovementAngleStartThreshold;
+                bool rotateStopCondition = fabsf(angleDiff) < Config::options.grabbedActorMovementAngleStopThreshold;
 
                 if (!state.isRotate && rotateStartCondition) {
                     state.isRotate = true;
@@ -6295,7 +6295,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                     state.isRotate = false;
                 }
                 if (state.isRotate) {
-                    float maxHeadingChange = Config::options.keepOffsetTwoHandedRotationSpeed * *g_deltaTime;
+                    float maxHeadingChange = Config::options.grabbedActorMovementTwoHandedRotationSpeed * *g_deltaTime;
                     offsetAngle.z += std::clamp(angleDiff, -maxHeadingChange, maxHeadingChange);
                 }
             }
@@ -6329,18 +6329,18 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
         float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
         float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, state.prevSpeed);
-        if (denormSpeed < Config::options.zeroSpeedThreshold) { // 5 is the value below which the character will not move at all
-            if (denormPrevSpeed >= Config::options.zeroSpeedThreshold) {
+        if (denormSpeed < Config::options.grabbedActorMovementZeroSpeedThreshold) { // 5 is the value below which the character will not move at all
+            if (denormPrevSpeed >= Config::options.grabbedActorMovementZeroSpeedThreshold) {
                 state.noSpeedTime = g_currentFrameTime;
             }
         }
-        if (g_currentFrameTime - state.noSpeedTime < Config::options.holdZeroSpeedTime) {
+        if (g_currentFrameTime - state.noSpeedTime < Config::options.grabbedActorMovementHoldZeroSpeedTime) {
             speed = 0.f;
         }
     }
 
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
-    if (speed > Config::options.keepOffsetSpeedDirectionCutoff) {
+    if (speed > Config::options.grabbedActorMovementSpeedDirectionCutoff) {
         movementController->movementPlannerDirectControl.SetTargetDirection(directionEuler);
     }
 
@@ -6366,10 +6366,10 @@ struct OverwriteMovementParameters
     OverwriteMovementParameters(IMovementParameters *params)
     {
         walkRunPercent = params->GetWalkRunPercent();
-        acceleration = Config::options.dummyFloat2;
-        deceleration = Config::options.dummyFloat2;
-        rotationPercent = Config::options.dummyFloat3;
-        angleAcceleration = Config::options.dummyFloat4;
+        acceleration = Config::options.grabbedActorMovementOverwriteParamAcceleration;
+        deceleration = Config::options.grabbedActorMovementOverwriteParamDeceleration;
+        rotationPercent = Config::options.grabbedActorMovementOverwriteParamRotationPercent;
+        angleAcceleration = Config::options.grabbedActorMovementOverwriteParamAngleAcceleration;
         type = params->GetType();
     }
 
