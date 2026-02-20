@@ -5953,15 +5953,11 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
             float currentRotZ = actor->rot.z;
             float targetRotZ = targetAngle.z;
             float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
-            float rotZ = 0.f;
-            if (fabs(deltaZ) >= Config::options.grabbedActorMovementNoStrafeMinAngle) {
-                rotZ = deltaZ;
-            }
 
             // Force the rotation amount to be what we want.
             // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
-            ActorProcess_SetRotationSpeedZ(process, rotZ / a_deltaTime);
-            a_rotAmt.z = rotZ;
+            ActorProcess_SetRotationSpeedZ(process, deltaZ / a_deltaTime);
+            a_rotAmt.z = deltaZ;
         }
     }
 }
@@ -6193,19 +6189,19 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             float totalForwardAmt = combinedForwardMoveAmt + playerForwardMoveAmt;
             float absTotalForward = fabsf(totalForwardAmt);
             float absAngle = fabsf(combinedDeltaAngle);
-            bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > 0.f; // TODO: Config?
+            bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > Config::options.grabbedActorMovementMinPlayerMoveAmtToForceTranslation;
 
             // Hysteresis for translation
-            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.grabbedActorMovementStartOffsetNoStrafe)) {
+            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.grabbedActorMovementNoStrafeStartOffset)) {
                 state.isNoStrafeTranslating = true;
             }
-            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.grabbedActorMovementStopOffsetNoStrafe) {
+            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.grabbedActorMovementNoStrafeStopOffset) {
                 state.isNoStrafeTranslating = false;
             }
 
             // Hysteresis for rotation. Check this after computing whether to translate.
-            bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.grabbedActorMovementLateralStartAngleNoStrafe;
-            bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.grabbedActorMovementLateralStopAngleNoStrafe;
+            bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.grabbedActorMovementNoStrafeLateralStartAngle;
+            bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.grabbedActorMovementNoStrafeLateralStopAngle;
 
             if (!state.isNoStrafeRotating && rotateStartCondition) {
                 state.isNoStrafeRotating = true;
@@ -6215,14 +6211,14 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             }
 
             if (state.isNoStrafeRotating) {
-                float maxHeadingChange = Config::options.grabbedActorMovementHeadingSpeedNoStrafe * *g_deltaTime;
+                float maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeed * *g_deltaTime;
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
-                offsetAngle.z += clampedDeltaAngle * Config::options.grabbedActorMovementLateralPlayerMovementInfluence;
+                offsetAngle.z += clampedDeltaAngle;
             }
 
             if (state.isNoStrafeTranslating) {
                 // Apply speed limit to catch-up movement, plus instant player movement
-                float maxMoveAmt = Config::options.grabbedActorMovementMoveSpeedNoStrafe * *g_deltaTime + fabsf(playerForwardMoveAmt);
+                float maxMoveAmt = Config::options.grabbedActorMovementNoStrafeMoveSpeed * *g_deltaTime + fabsf(playerForwardMoveAmt);
                 float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
                 finalMoveAmt = forward * clampedMoveAmt;
             }
@@ -6233,7 +6229,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
         bool isHeldWithBothHands = g_leftHeldRefr == actor && g_rightHeldRefr == actor;
 
-        bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > 0.f; // TODO: Config?
+        bool isPlayerMoving = VectorLength(moveAmtFromPlayerMovement) > Config::options.grabbedActorMovementMinPlayerMoveAmtToForceTranslation;
         float startThreshold = isHeldWithBothHands ? Config::options.grabbedActorMovementStartThresholdTwoHanded : Config::options.grabbedActorMovementStartThreshold;
         float stopThreshold = isHeldWithBothHands ? Config::options.grabbedActorMovementStopThresholdTwoHanded : Config::options.grabbedActorMovementStopThreshold;
         bool isRagdollMovementStart = VectorLength(state.ragdollOffset) >= startThreshold;
