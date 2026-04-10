@@ -202,14 +202,15 @@ NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor)
     return DYNAMIC_CAST(controller, bhkCharacterController, bhkCharProxyController);
 }
 
+BShkbAnimationGraph *GetAnimationGraph(hkbBehaviorGraph *behavior)
+{
+    if (!behavior) return nullptr;
+    return (BShkbAnimationGraph *)behavior->userData;
+}
 
 BShkbAnimationGraph *GetAnimationGraph(hkbCharacter *character)
 {
-    hkbBehaviorGraph *behaviorGraph = character->behaviorGraph;
-    if (!behaviorGraph) return nullptr;
-
-    BShkbAnimationGraph *graph = (BShkbAnimationGraph *)behaviorGraph->userData;
-    return graph;
+    return GetAnimationGraph(character->behaviorGraph);
 }
 
 Actor *GetActorFromCharacter(hkbCharacter *character)
@@ -427,5 +428,15 @@ NiPoint3 hkpRigidBody_getPointVelocity(const hkpRigidBody *body, const hkVector4
 {
     hkVector4 pointVelocity; body->getPointVelocity(pos, pointVelocity);
     return HkVectorToNiPoint(pointVelocity);
+}
+
+int hkbBehaviorGraph_getInternalEventId(hkbBehaviorGraph *graph, int externalEventId)
+{
+	if (!graph->eventIDMap) {
+		return externalEventId;
+	}
+	else {
+        return (externalEventId < 0) ? externalEventId : hkPointerMap_getWithDefault((void *)&graph->eventIDMap->m_externalToInternalMap, externalEventId + 1, -1);
+	}
 }
 

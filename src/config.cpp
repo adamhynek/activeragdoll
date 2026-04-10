@@ -323,6 +323,7 @@ namespace Config {
         if (!RegisterFloat("grabbedActorMovementNoStrafeLateralStopAngle", options.grabbedActorMovementNoStrafeLateralStopAngle)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeStartOffset", options.grabbedActorMovementNoStrafeStartOffset)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeStopOffset", options.grabbedActorMovementNoStrafeStopOffset)) success = false;
+        if (!RegisterFloat("grabbedActorMovementNoStrafeMinAngleForAnim", options.grabbedActorMovementNoStrafeMinAngleForAnim)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeHeadingSpeed", options.grabbedActorMovementNoStrafeHeadingSpeed)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeMoveSpeed", options.grabbedActorMovementNoStrafeMoveSpeed)) success = false;
         if (!RegisterFloat("grabbedActorMovementPlayerDirectionHeadingSpeed", options.grabbedActorMovementPlayerDirectionHeadingSpeed)) success = false;

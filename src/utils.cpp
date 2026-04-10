@@ -677,8 +677,15 @@ void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<
     SimpleLocker lock(&graphManager->updateLock);
     for (int i = 0; i < graphManager->graphs.size; i++) {
         BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
-        if (!graph.ptr) continue;
         f(graph.ptr);
+    }
+}
+
+void ForEachAnimationGraph(Actor *actor, std::function<void(BShkbAnimationGraph *)> f)
+{
+    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    if (GetAnimationGraphManager(actor, animGraphManager)) {
+        ForEachAnimationGraph(animGraphManager.ptr, f);
     }
 }
 
@@ -1153,7 +1160,7 @@ bool HasKeepOffsetInterface(Actor *actor)
     return hasInterface;
 }
 
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue)
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool stopTurnOrIdle)
 {
     if (Actor_IsGhost(actor)) return;
 
@@ -1170,7 +1177,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
         ActorProcess_ResetBumpWaitTimer(process);
     }
 
-    Actor_sub_140600400(actor, 1.f);
+    Actor_StopMoving(actor, 1.f);
 
     if (pauseCurrentDialogue) {
         get_vfunc<_Actor_PauseCurrentDialogue>(actor, 0x4F)(actor);
@@ -1188,7 +1195,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
     PackageTarget_ResetValueByTargetType((PackageTarget *)package->unk40, 0);
     PackageTarget_SetFromReference((PackageTarget *)package->unk40, bumper);
 
-    TESPackage_sub_140439BE0(package, 0);
+    TESPackage_CalculateProcedureType(package, 0);
 
     if (TESPackage *currentPackage = process->unk18.package) {
         TESPackage_CopyFlagsFromOtherPackage(package, currentPackage);
@@ -1197,9 +1204,18 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
     get_vfunc<_Actor_PutCreatedPackage>(actor, 0xE1)(actor, package, !exitFurniture, 1);
 
     if (isLargeBump) {
-        Actor_sub_140600400(actor, 1.f);
-        sub_140654E10(process, 1);
+        Actor_StopMoving(actor, 1.f);
+        ActorProcess_SetPickNewIdle(process, 1);
         ActorProcess_PlayIdle(process, actor, 90, 0, 1, 0, nullptr);
+    }
+
+    if (stopTurnOrIdle) {
+        static BSFixedString sTurnInPlaceEnd("TurnInPlaceEnd");
+        get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sTurnInPlaceEnd);
+        // static BSFixedString sAnimObjectStop("AnimObjectStop");
+        // get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sAnimObjectStop);
+        // static BSFixedString sIdleForceDefaultState("IdleForceDefaultState");
+        // get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sIdleForceDefaultState);
     }
 
     if (triggerDialogue) {
@@ -1266,6 +1282,45 @@ std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(const std::vector<UInt32
         }
     }
     return validTopicInfos;
+}
+
+bool IsAnimationDriven(Actor *actor)
+{
+    bool isAnimationDriven = false;
+    static BSFixedString sbAnimationDriven("bAnimationDriven");
+    get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
+    return isAnimationDriven;
+}
+
+bool IsAllowRotation(Actor *actor)
+{
+    bool isAllowRotation = false;
+    static BSFixedString sbAllowRotation("bAllowRotation");
+    get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAllowRotation, isAllowRotation);
+    return isAllowRotation;
+}
+
+bool BSTHashMapLookup(BSTHashMap<BSFixedString, hkInt32> &map, const BSFixedString &key, hkInt32 &valueOut)
+{
+    if (map.capacity - map.free == 0) return false;
+    if (!map.entries) return false;
+
+    UInt32 hash; CalculateCRC32_64(&hash, (UInt64)key.data);
+    int index = hash & (map.capacity - 1);
+    auto *entry = &map.entries[index];
+    if (entry->next) {
+        do {
+            if (entry->key == key) {
+                // Found the key
+                valueOut = entry->value;
+                return true;
+            }
+            else {
+                entry = entry->next;
+            }
+        } while (entry != map.sentinel);
+    }
+    return false;
 }
 
 class IsInFactionVisitor : public Actor::FactionVisitor

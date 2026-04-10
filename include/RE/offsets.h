@@ -284,6 +284,12 @@ extern RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor;
 typedef bhkListShape *(*_bhkListShape_ctor)(bhkListShape *, bhkListShapeCinfo *);
 extern RelocAddr<_bhkListShape_ctor> bhkListShape_ctor;
 
+typedef int(*_hkbStateMachine_getStateIndex)(hkbStateMachine *stateMachine, int stateID);
+extern RelocAddr<_hkbStateMachine_getStateIndex> hkbStateMachine_getStateIndex;
+
+typedef SInt64(*_hkPointerMap_getWithDefault)(void *pointerMap, SInt64 key, SInt64 defaultValue);
+extern RelocAddr<_hkPointerMap_getWithDefault> hkPointerMap_getWithDefault;
+
 
 // More havok-related
 typedef bhkWorld *(*_GetHavokWorldFromCell)(TESObjectCELL *cell);
@@ -674,8 +680,8 @@ extern RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage;
 typedef TESPackage *(*_Actor_DoCombatSpellApply)(Actor *_this, SpellItem *spell, TESObjectREFR *target);
 extern RelocAddr<_Actor_DoCombatSpellApply> Actor_DoCombatSpellApply;
 
-typedef void(*_Actor_sub_140600400)(Actor *_this, float a2);
-extern RelocAddr<_Actor_sub_140600400> Actor_sub_140600400;
+typedef void(*_Actor_StopMoving)(Actor *_this, float a2);
+extern RelocAddr<_Actor_StopMoving> Actor_StopMoving;
 
 typedef float(*_GetHeadingFromVector)(const NiPoint3 &vector);
 extern RelocAddr<_GetHeadingFromVector> GetHeadingFromVector;
@@ -947,8 +953,8 @@ extern RelocAddr<_PackageTarget_ResetValueByTargetType> PackageTarget_ResetValue
 typedef void(*_PackageTarget_SetFromReference)(PackageTarget *_this, TESObjectREFR *refr);
 extern RelocAddr<_PackageTarget_SetFromReference> PackageTarget_SetFromReference;
 
-typedef void(*_TESPackage_sub_140439BE0)(TESPackage *_this, UInt64 a2);
-extern RelocAddr<_TESPackage_sub_140439BE0> TESPackage_sub_140439BE0;
+typedef void(*_TESPackage_CalculateProcedureType)(TESPackage *_this, UInt64 a2);
+extern RelocAddr<_TESPackage_CalculateProcedureType> TESPackage_CalculateProcedureType;
 
 typedef void(*_TESPackage_CopyFlagsFromOtherPackage)(TESPackage *_this, TESPackage *other);
 extern RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFromOtherPackage;
@@ -962,8 +968,8 @@ extern RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle;
 typedef bool(*_WeaponSwingHandler_Handle)(void *_this, Actor *actor);
 extern RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle;
 
-typedef void(*_sub_140654E10)(ActorProcessManager *_this, bool a2);
-extern RelocAddr<_sub_140654E10> sub_140654E10;
+typedef void(*_ActorProcess_SetPickNewIdle)(ActorProcessManager *_this, bool a2);
+extern RelocAddr<_ActorProcess_SetPickNewIdle> ActorProcess_SetPickNewIdle;
 
 typedef void(*_ActorProcess_TriggerDialogue)(ActorProcessManager *_this, Actor *actor, int dialogueType, int dialogueSubtype, Actor *target, UInt64 a6, bool a7, bool a8, bool a9, bool a10);
 extern RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue;
@@ -1039,6 +1045,9 @@ extern RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeR
 
 typedef bool(*_MovementControllerNPC_GetMovementAgent)(MovementControllerNPC *_this, BSFixedString &agentName, BSTSmartPointer<MovementAgent> &movementAgentOut);
 extern RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent;
+
+typedef bool(*_GetAnimationEventForAction)(TESObjectREFR *source, int *actionID, BSFixedString *eventNameOut);
+extern RelocAddr<_GetAnimationEventForAction> GetAnimationEventForAction;
 
 typedef void(*_Debug_MessageBox)(UInt64 a1, UInt64 a2, UInt64 a3, BSFixedString *messageBoxText);
 extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;

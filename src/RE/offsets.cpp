@@ -152,6 +152,8 @@ RelocAddr<_hkpTransformShape_setTransform> hkpTransformShape_setTransform(0xAA28
 RelocAddr<_CreatebhkTransformShape> CreatebhkTransformShape(0xE5F620);
 RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor(0xE18CF0);
 RelocAddr<_bhkListShape_ctor> bhkListShape_ctor(0xE18840);
+RelocAddr<_hkbStateMachine_getStateIndex> hkbStateMachine_getStateIndex(0xA535E0);
+RelocAddr<_hkPointerMap_getWithDefault> hkPointerMap_getWithDefault(0xA05520);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
@@ -294,7 +296,7 @@ RelocAddr<_Actor_GetBumped> Actor_GetBumped(0x5E4B70);
 RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta(0x6116C0);
 RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage(0x985060);
 RelocAddr<_Actor_DoCombatSpellApply> Actor_DoCombatSpellApply(0x6311B0);
-RelocAddr<_Actor_sub_140600400> Actor_sub_140600400(0x608C10);
+RelocAddr<_Actor_StopMoving> Actor_StopMoving(0x608C10);
 RelocAddr<_GetHeadingFromVector> GetHeadingFromVector(0xC97030);
 RelocAddr<_ActorProcess_ResetLipSync> ActorProcess_ResetLipSync(0x659BE0);
 RelocAddr<_ActorProcess_ClearGreetTopic> ActorProcess_ClearGreetTopic(0x6579A0);
@@ -385,12 +387,12 @@ RelocAddr<_PackageTarget_CTOR> PackageTarget_CTOR(0x452E70);
 RelocAddr<_TESPackage_SetPackageTarget> TESPackage_SetPackageTarget(0x4459B0);
 RelocAddr<_PackageTarget_ResetValueByTargetType> PackageTarget_ResetValueByTargetType(0x4531E0);
 RelocAddr<_PackageTarget_SetFromReference> PackageTarget_SetFromReference(0x453250);
-RelocAddr<_TESPackage_sub_140439BE0> TESPackage_sub_140439BE0(0x449730);
+RelocAddr<_TESPackage_CalculateProcedureType> TESPackage_CalculateProcedureType(0x449730);
 RelocAddr<_TESPackage_CopyFlagsFromOtherPackage> TESPackage_CopyFlagsFromOtherPackage(0x4447E0);
 RelocAddr<_VRMeleeData_ComputeAngularVelocities> VRMeleeData_ComputeAngularVelocities(0x6B45C0);
 RelocAddr<_WeaponSwingHandler_Handle> WeaponRightSwingHandler_Handle(0x74B340);
 RelocAddr<_WeaponSwingHandler_Handle> WeaponLeftSwingHandler_Handle(0x74B3D0);
-RelocAddr<_sub_140654E10> sub_140654E10(0x654E10);
+RelocAddr<_ActorProcess_SetPickNewIdle> ActorProcess_SetPickNewIdle(0x654E10);
 RelocAddr<_ActorProcess_TriggerDialogue> ActorProcess_TriggerDialogue(0x6580B0);
 RelocAddr<_BGSStoryTeller_GetTopicInfoForDialogue> BGSStoryTeller_GetTopicInfoForDialogue(0x4E9470);
 RelocAddr<_TESTopicInfo_EvaluateConditions> TESTopicInfo_EvaluateConditions(0x3A2610);
@@ -417,6 +419,7 @@ RelocAddr<_BSAnimationGraphManager_GetWorldFromModel> BSAnimationGraphManager_Ge
 RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingSlowEnoughToGetUp(0x600DF0);
 RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeRotationFromDelta(0x1156F00);
 RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent(0x115DB00);
+RelocAddr<_GetAnimationEventForAction> GetAnimationEventForAction(0x75A0F0);
 RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);
 
 RelocPtr<ProcessLists *> g_processLists(0x1F831B0);

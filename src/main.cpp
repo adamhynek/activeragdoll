@@ -454,6 +454,11 @@ UInt16 g_rightHeldActorCollisionGroup = 0;
 UInt16 g_leftHeldActorCollisionGroup = 0;
 UInt32 g_higgsCollisionLayer = 56;
 
+int g_rightHeldMoveStartEventId = -1;
+int g_leftHeldMoveStartEventId = -1;
+bool g_rightHeldAllowsMoveStart = false;
+bool g_leftHeldAllowsMoveStart = false;
+
 bhkRigidBody *g_prevRightHeldRigidBody = nullptr;
 bhkRigidBody *g_prevLeftHeldRigidBody = nullptr;
 TESObjectREFR *g_prevRightHeldRefr = nullptr;
@@ -538,7 +543,7 @@ void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool
 
     ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
     ActorProcess_SetBumpDirection(process, bumpDirection);
-    Actor_GetBumpedEx(actor, *g_thePlayer, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue);
+    Actor_GetBumpedEx(actor, *g_thePlayer, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue, true); // TODO: Proper handling of last arg
     ActorProcess_SetBumpDirection(process, 0.f);
 }
 
@@ -680,8 +685,10 @@ struct GrabbedActorState
     bool isRotate = false;
     bool isNoStrafeRotating = false;
     bool isNoStrafeTranslating = false;
+    float noStrafeTotalRemainingAngle = 0.f;
     float prevSpeed = 0.f;
     double noSpeedTime = 0.0;
+    bool didResetAI = false;
 };
 std::mutex g_grabbedActorStatesLock;
 std::unordered_map<Actor *, GrabbedActorState> g_grabbedActorStates{};
@@ -4055,6 +4062,28 @@ void UpdateHiggsInfo(bhkWorld *world)
     }
 }
 
+int GetMoveStartEventId(Actor *actor)
+{
+    int eventId = -1;
+
+    int actionIndex = 97; // kActionMoveStart
+    BSFixedString eventName;
+    if (GetAnimationEventForAction(actor, &actionIndex, &eventName)) {
+        ForEachAnimationGraph(actor, [&eventName, &eventId](BShkbAnimationGraph *graph) {
+            if (ProjectDBData *dbData = graph->projectDBData) {
+                if (dbData->projectData) {
+                    hkInt32 externalEventId;
+                    if (BSTHashMapLookup(dbData->eventNamesToIds, eventName, externalEventId)) {
+                        eventId = externalEventId;
+                    }
+                }
+            }
+        });
+    }
+
+    return eventId;
+}
+
 int g_frameAlternate = 1;
 
 _ProcessHavokHitJobs ProcessHavokHitJobs_Original = 0;
@@ -4350,6 +4379,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     UInt16 rightHeldCollisionGroup = 0;
     UInt16 leftHeldCollisionGroup = 0;
 
+    int rightHeldMoveStartEventId = -1;
+    int leftHeldMoveStartEventId = -1;
+
     for (UInt32 i = 0; i < processManager->actorsHigh.count; i++) {
         UInt32 actorHandle = processManager->actorsHigh[i];
         NiPointer<TESObjectREFR> refr;
@@ -4386,10 +4418,12 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
             if (isHeldRight) {
                 rightHeldCollisionGroup = collisionGroup; // ignore collision with player capsule
                 g_physicsListener.IgnoreCollisionForSeconds(false, actor, Config::options.droppedActorIgnoreCollisionTime); // ignore collision with hands/weapons
+                rightHeldMoveStartEventId = GetMoveStartEventId(actor);
             }
             if (isHeldLeft) {
                 leftHeldCollisionGroup = collisionGroup;
                 g_physicsListener.IgnoreCollisionForSeconds(true, actor, Config::options.droppedActorIgnoreCollisionTime);
+                leftHeldMoveStartEventId = GetMoveStartEventId(actor);
             }
 
             bool didRagdoll = false;
@@ -4525,6 +4559,9 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
     g_rightHeldActorCollisionGroup = rightHeldCollisionGroup;
     g_leftHeldActorCollisionGroup = leftHeldCollisionGroup;
+
+    g_rightHeldMoveStartEventId = rightHeldMoveStartEventId;
+    g_leftHeldMoveStartEventId = leftHeldMoveStartEventId;
 
     //g_playerPosDelta = player->pos - g_prevPlayerPos;
     g_prevPlayerPositions.pop_back();
@@ -5954,10 +5991,24 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
             float targetRotZ = targetAngle.z;
             float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
 
+            // TODO: We can gradually drive the "grabbed point" in the nostrafe actor's space towards the actual spot relative to the bone. If we do it quite gradually it should not lead to oscillations just gradual correction.
+
             // Force the rotation amount to be what we want.
             // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
-            ActorProcess_SetRotationSpeedZ(process, deltaZ / a_deltaTime);
-            a_rotAmt.z = deltaZ;
+            // Use the total remaining angle (not the per-frame clamped delta) for the threshold check,
+            // since deltaZ is clamped to the desired speed and would never be large enough to exceed the threshold.
+            float totalRemainingAngle = 0.f;
+            {
+                std::scoped_lock lock(g_grabbedActorStatesLock);
+                auto it = g_grabbedActorStates.find(actor);
+                if (it != g_grabbedActorStates.end()) {
+                    totalRemainingAngle = it->second.noStrafeTotalRemainingAngle;
+                }
+            }
+            if (fabs(totalRemainingAngle) >= Config::options.grabbedActorMovementNoStrafeMinAngleForAnim) {
+                ActorProcess_SetRotationSpeedZ(process, deltaZ / a_deltaTime); // This drives the rotation animation
+            }
+            a_rotAmt.z = deltaZ; // This drives the actual rotation
         }
     }
 }
@@ -6050,6 +6101,15 @@ void hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook(hkQsTransform *
 }
 
 
+typedef bool(*_j_BShkbAnimationGraph_SetVariableBool)(BShkbAnimationGraph *graph, BSFixedString *name, bool value);
+RelocAddr<_j_BShkbAnimationGraph_SetVariableBool> j_BShkbAnimationGraph_SetVariableBool(0xB320F0);
+RelocAddr<uintptr_t> j_BShkbAnimationGraph_SetVariableBool_HookLoc(0xB2EB10);
+bool j_BShkbAnimationGraph_SetVariableBool_Hook(BShkbAnimationGraph *graph, BSFixedString *name, bool value)
+{
+    return j_BShkbAnimationGraph_SetVariableBool(graph, name, value);
+}
+
+
 typedef void(*_Character_InitLoadGame)(Actor *character, void *loadGameBuffer);
 _Character_InitLoadGame g_Character_InitLoadGame_Original = 0;
 static RelocPtr<_Character_InitLoadGame> Character_InitLoadGame_vtbl(0x16D6E60);
@@ -6088,18 +6148,22 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
 
     if (!IsPlannerDirectControl(movementController)) {
-        bool isAnimationDriven = false;
-        static BSFixedString sbAnimationDriven("bAnimationDriven");
-        get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAnimationDriven, isAnimationDriven);
-
-        bool isAllowRotation = false;
-        static BSFixedString sbAllowRotation("bAllowRotation");
-        get_vfunc<_IAnimationGraphManagerHolder_GetAnimationVariableBool>(&actor->animGraphHolder, 0x12)(&actor->animGraphHolder, sbAllowRotation, isAllowRotation);
+        bool isAnimationDriven = IsAnimationDriven(actor);
+        bool isAllowRotation = IsAllowRotation(actor);
 
         bool doMotionDrivenWithoutForce = !isAnimationDriven && !isAllowRotation; // Same condition as the base game
         bool forceMotionDriven = Config::options.forceMotionDrivenDuringGrabbedActorMovement;
         bool doMotionDriven = forceMotionDriven || doMotionDrivenWithoutForce;
 
+        // if (!doMotionDrivenWithoutForce && !state.didResetAI) {
+        //     bool isInCombat = actor->IsInCombat();
+        //     if (!isInCombat) {
+        //         g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
+        //         state.didResetAI = true;
+        //     }
+        // }
+
+        // if (doMotionDrivenWithoutForce) {
         if (doMotionDriven) {
 #ifdef _DEBUG
             _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
@@ -6108,19 +6172,36 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             movementController->movementPlannerDirectControl.SetPlannerDirectControl();
             movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
 
+            state.didResetAI = true;
+
             // Reset AI if we are forcing motion driven and they weren't already capable of being so. This will for example make someone stop sweeping with a broom and start walking.
             // However, don't reset AI if in combat, as that would make them sheathe and then unsheathe again to attack you. This will make them slide though if they are performing an animation such as a power attack.
             bool isInCombat = actor->IsInCombat();
             bool resetAI = Config::options.resetAIWhenForcingMotionDriven && !doMotionDrivenWithoutForce && !isInCombat;
             if (resetAI) {
                 // If they are anim driven, kick them out of their animation so that they actually show the motions.
-                g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
+                // g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
+                QueueBumpActor(actor, actor->pos - (*g_thePlayer)->pos, false, false, false, false);
+                // QueueBumpActor(actor, actor->pos - (*g_thePlayer)->pos, true, false, false, false);
             }
         }
     }
 
     // Check again after potentially forcing planner direct control.
     if (!IsPlannerDirectControl(movementController)) return;
+
+    bool isAnimationDriven = IsAnimationDriven(actor);
+    bool isAllowRotation = IsAllowRotation(actor);
+    if (isAnimationDriven || isAllowRotation) {
+        // float speed = ActorState_NormalizeSpeed(&actor->actorState, 100.f);
+        // movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
+        // movementController->movementPlannerDirectControl.SetTargetDirection({ 0.f, 0.f, 1.f });
+
+        // movementController->movementPlannerDirectControl.SetTargetAngle({ 0.f, 0.f, 1.f });
+
+        // TODO: Right now returning here means we are bumping every frame until they become motion driven
+        return;
+    }
 
 
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
@@ -6185,6 +6266,8 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         }
 
         if (numHandsGrabbing > 0) {
+            state.noStrafeTotalRemainingAngle = combinedDeltaAngle;
+
             float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
             float totalForwardAmt = combinedForwardMoveAmt + playerForwardMoveAmt;
             float absTotalForward = fabsf(totalForwardAmt);
@@ -6412,13 +6495,45 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
 typedef void(*_hkbUtils_collectActiveNodesLeafFirst)(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9);
 _hkbUtils_collectActiveNodesLeafFirst hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original = 0;
 RelocAddr<uintptr_t> hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_HookLoc(0xA88B6A);
-void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a9)
+void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *a1, hkbBehaviorGraph *a2, UInt64 a_flags, hkArray<hkbNodeInfo> *a_nodeInfoOut, void *a_activeNodeToIndexMap, void *a_activeNodesChildrenIndices, hkArray<hkbNodeInfo> *a_prevActiveNodes, void *a_nodeToIndexMap, hkbContext *a_context)
 {
-    hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original(a1, a2, a_flags, a_nodeInfoOut, a_activeNodeToIndexMap, a_activeNodesChildrenIndices, a_prevActiveNodes, a_nodeToIndexMap, a9);
+    hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Original(a1, a2, a_flags, a_nodeInfoOut, a_activeNodeToIndexMap, a_activeNodesChildrenIndices, a_prevActiveNodes, a_nodeToIndexMap, a_context);
 
     if (Config::options.forceDontIgnoreCyclicBlendTransitionEvents) {
+        Actor *actor = GetActorFromCharacter(a_context->character);
+
+        bool rightAllowsMoveStart = false;
+        bool leftAllowsMoveStart = false;
+
         for (UInt32 i = 0; i < a_nodeInfoOut->m_size; i++) {
             hkbNodeInfo &nodeInfo = a_nodeInfoOut->m_data[i];
+
+            if (g_rightHeldMoveStartEventId != -1 || g_leftHeldMoveStartEventId != -1) {
+                if (nodeInfo.isStateMachine) {
+                    if (hkbStateMachine *stateMachine = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, hkbStateMachine)) {
+                        SInt32 currentStateID = stateMachine->currentStateID;
+                        int currentStateIndex = currentStateID >= 0 ? hkbStateMachine_getStateIndex(stateMachine, currentStateID) : -1;
+                        if (currentStateIndex >= 0) {
+                            hkbStateMachine::StateInfo *currentState = stateMachine->states[currentStateIndex];
+                            if (hkbStateMachine::TransitionInfoArray *transitions = currentState->transitions) {
+                                int rightHeldMoveStartEventInternalId = g_rightHeldMoveStartEventId != -1 ? hkbBehaviorGraph_getInternalEventId(nodeInfo.m_behavior, g_rightHeldMoveStartEventId) : -1;
+                                int leftHeldMoveStartEventInternalId = g_leftHeldMoveStartEventId != -1 ? hkbBehaviorGraph_getInternalEventId(nodeInfo.m_behavior, g_leftHeldMoveStartEventId) : -1;
+
+                                for (hkbStateMachine::TransitionInfo &transitionInfo : transitions->transitions) {
+                                    if (rightHeldMoveStartEventInternalId == transitionInfo.eventId) {
+                                        // They have an active state (either in one or transitioning into one) which allows for a moveStart transition
+                                        rightAllowsMoveStart = true;
+                                    }
+                                    if (leftHeldMoveStartEventInternalId == transitionInfo.eventId) {
+                                        leftAllowsMoveStart = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (BSCyclicBlendTransitionGenerator *cyclicBlendGenerator = DYNAMIC_CAST(nodeInfo.m_nodeTemplate, hkbNode, BSCyclicBlendTransitionGenerator)) {
                 // The event we care about not ignoring is CyclicFreeze/CyclicCrossBlend.
                 // This is handled by the BSCyclicBlendTransitionGenerator node, so it is the only one we need to make sure is not ignoring events. Its downstream nodes don't matter for that.
@@ -6426,6 +6541,14 @@ void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *
                 nodeInfo.ignoreEventsParentIdx = -1;
             }
         }
+
+        // The theory: This function will get called when active nodes _change_, and so this value should be up to date if we always update it here.
+        if (g_rightHeldRefr == actor) {
+            g_rightHeldAllowsMoveStart = rightAllowsMoveStart;
+        }
+        if (g_leftHeldRefr == actor) {
+            g_leftHeldAllowsMoveStart = leftAllowsMoveStart;
+        } 
     }
 }
 
@@ -6454,6 +6577,14 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
     if (Config::options.forceContinueSelfTransitionForCyclicBlends) {
         for (hkbStateMachine::ActiveTransitionInfo &transitionInfo : _this->activeTransitions) {
             if (hkbTransitionEffect *transition = transitionInfo.m_transitionEffect) {
+                if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
+
+                    Actor *actor = GetActorFromCharacter(context.character);
+                    if (actor == g_leftHeldRefr || actor == g_rightHeldRefr) {
+                        _MESSAGE("%d: %x %s - %s to %s", *g_currentFrameCounter, _this, blendingTransitionEffect->name.cString(), blendingTransitionEffect->fromGenerator ? blendingTransitionEffect->fromGenerator->name.cString() : "null", blendingTransitionEffect->toGenerator ? blendingTransitionEffect->toGenerator->name.cString() : "null");
+                    }
+
+                }
                 if (transition->selfTransitionMode != 0) {
                     if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
                         if (blendingTransitionEffect->toGenerator && DYNAMIC_CAST(blendingTransitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) {
@@ -6774,6 +6905,10 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc.GetUIntPtr(), uintptr_t(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook));
         hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = (_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)originalFunc;
+    }
+
+    {
+        // std::uintptr_t originalFunc = g_branchTrampoline.Write5Branch(j_BShkbAnimationGraph_SetVariableBool_HookLoc.GetUIntPtr(), uintptr_t(j_BShkbAnimationGraph_SetVariableBool_Hook));
     }
 
     {
@@ -7232,6 +7367,15 @@ bool IAnimationGraphManagerHolder_NotifyAnimationGraph_Hook(IAnimationGraphManag
         }
     }
 
+    if (Actor *actor = DYNAMIC_CAST(_this, IAnimationGraphManagerHolder, Actor)) {
+        if (actor == g_rightHeldRefr || actor == g_leftHeldRefr) {
+        // if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+            // if (std::string_view(name->name.c_str()) == "Sven") {
+                _MESSAGE("%d %p: %s %d", *g_currentFrameCounter, _this, animationName.c_str(), accepted);
+            // }
+        }
+    }
+
     return accepted;
 }
 
@@ -7242,7 +7386,7 @@ bool PlayerCharacter_NotifyAnimationGraph_Hook(IAnimationGraphManagerHolder *_th
     bool accepted = g_originalPlayerCharacterNotifyAnimationGraph(_this, animationName);
     if (accepted) {
         // Event was accepted by the graph
-        _MESSAGE("%p: %s", _this, animationName.c_str());
+        // _MESSAGE("%p: %s", _this, animationName.c_str());
     }
     return accepted;
 }

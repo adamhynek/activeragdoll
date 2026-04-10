@@ -159,6 +159,7 @@ namespace Config {
         float grabbedActorMovementNoStrafeLateralStopAngle= 0.02f;
         float grabbedActorMovementNoStrafeStartOffset= 5.f;
         float grabbedActorMovementNoStrafeStopOffset = 1.f;
+        float grabbedActorMovementNoStrafeMinAngleForAnim = 0.001f;
         float grabbedActorMovementNoStrafeHeadingSpeed= 2.f;
         float grabbedActorMovementNoStrafeMoveSpeed= 100.f;
         float grabbedActorMovementPlayerDirectionHeadingSpeed = 2.f;

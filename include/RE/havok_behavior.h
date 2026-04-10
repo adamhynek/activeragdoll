@@ -253,6 +253,15 @@ struct hkbBehaviorGraphData
     void *stringData;              // 78
 };
 
+struct hkbSymbolIdMap : hkReferencedObject
+{
+	hkArray<int> m_internalToExternalMap; // 10
+	hkMap<int, int> m_externalToInternalMap; // 20
+};
+static_assert(offsetof(hkbSymbolIdMap, m_internalToExternalMap) == 0x10);
+static_assert(offsetof(hkbSymbolIdMap, m_externalToInternalMap) == 0x20);
+static_assert(sizeof(hkbSymbolIdMap) == 0x30);
+
 struct hkbGenerator : hkbNode { /* TODO */ };
 
 struct hkbBehaviorGraph : hkbGenerator
@@ -272,7 +281,7 @@ struct hkbBehaviorGraph : hkbGenerator
     hkRefVariant activeNodeTemplateToIndexMap;     // 0A0
     hkRefVariant                                 activeNodesChildrenIndices;       // 0A8
     hkRefVariant                                 globalTransitionData;             // 0B0
-    hkRefVariant                                 eventIDMap;                       // 0B8
+    hkbSymbolIdMap *                                 eventIDMap;                       // 0B8
     hkRefVariant                                 attributeIDMap;                   // 0C0
     hkRefVariant                                 variableIDMap;                    // 0C8
     hkRefVariant                                 characterPropertyIDMap;           // 0D0
@@ -325,13 +334,6 @@ struct hkbStateMachine : hkbGenerator
 		SInt16 priority; // 40
 		UInt16 flags; // 42
 	};
-	
-	struct hkArray_TransitionInfo_
-	{
-		TransitionInfo * m_data_0;
-		SInt32 m_size_8;
-		SInt32 m_capacityAndFlags_C;
-	};
 
 	struct TransitionInfoArray
 	{
@@ -339,7 +341,7 @@ struct hkbStateMachine : hkbGenerator
 		UInt16 m_memSizeAndFlags_8;
 		SInt16 m_referenceCount_A;
 		char _pad_C [0x4];
-		hkArray_TransitionInfo_ transitions; // 10
+		hkArray<TransitionInfo> transitions; // 10
 	};
 
 	struct StateInfo
@@ -635,12 +637,31 @@ struct ProjectDBData
 {
     void *vtbl; // 00
     UInt8 unk08[0x70 - 0x08]; // 08
-    UInt8 variableNamesToIds[0x30]; // 70 - BSTHashMap<char *, hkInt32> // variable name -> event id
-    UInt8 eventNamesToIds[0x30]; // A0 - BSTHashMap<char *, hkInt32> // event name -> event id. This one is read from when handling anim events.
+    BSTHashMap<BSFixedString, hkInt32> variableNamesToIds; // 70 - variable name -> event id
+    BSTHashMap<BSFixedString, hkInt32> eventNamesToIds; // A0 - event name -> event id. This one is read from when handling anim events.
     tArray<char *> eventNames; // D0 - all anim events (~2000 total)
     tArray<char *> unkE8; // E8 - state names?
+    uint64_t unk100;                                         // 100
+    uint64_t unk108;                                         // 108
+    uint64_t unk110;                                         // 110
+    uint64_t unk118;                                         // 118
+    uint64_t unk120;                                         // 120
+    uint64_t unk128;                                         // 128
+    uint64_t unk130;                                         // 130
+    uint64_t unk138;                                         // 138
+    uint64_t unk140;                                         // 140
+    uint64_t unk148;                                         // 148
+    hkbAnimationBindingSet* bindings;                        // 150
+    struct hkbSymbolIdMap* characterPropertyIdMap;                  // 158
+    struct hkbProjectData* projectData;                             // 160
+    uint32_t unk168;                                         // 168
+    uint32_t unk16C;                                         // 16C
+    uint64_t unk170;                                         // 170
+    uint64_t unk178;                                         // 178
 };
+static_assert(offsetof(ProjectDBData, variableNamesToIds) == 0x70);
 static_assert(offsetof(ProjectDBData, eventNamesToIds) == 0xA0);
+static_assert(offsetof(ProjectDBData, eventNames) == 0xD0);
 
 struct BShkbAnimationGraph
 {
@@ -709,7 +730,7 @@ struct BShkbAnimationGraph
     float interpolationTimeOffsets[2]; // 1E8
     BSFixedString projectName; // 1F0
     UInt64 unk1F8;
-    UInt64 projectDBData; // 200 - BShkbHkxDB::ProjectDBData*
+    ProjectDBData *projectDBData; // 200 - BShkbHkxDB::ProjectDBData*
     hkbBehaviorGraph *behaviorGraph; // 208
     Actor *holder; // 210
     BSFadeNode *rootNode; // 218
@@ -929,6 +950,8 @@ NiPointer<bhkCharacterController> GetCharacterController(Actor *actor);
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
 NiPointer<bhkCharProxyController> GetCharProxyController(Actor *actor);
 BShkbAnimationGraph *GetAnimationGraph(hkbCharacter *character);
+BShkbAnimationGraph *GetAnimationGraph(hkbBehaviorGraph *behavior);
 Actor *GetActorFromCharacter(hkbCharacter *character);
 Actor *GetActorFromRagdollDriver(hkbRagdollDriver *driver);
 void ReSyncLayerBitfields(bhkCollisionFilter *filter, UInt8 layer);
+int hkbBehaviorGraph_getInternalEventId(hkbBehaviorGraph *graph, int externalEventId);

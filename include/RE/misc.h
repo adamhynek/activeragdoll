@@ -866,13 +866,41 @@ struct ProcessLists
 };
 static_assert(offsetof(ProcessLists, runSchedules) == 0x1E4);
 
+template <class Key, class T>
+struct BSTHashMap
+{
+    struct Entry
+    {
+        union
+        {
+            struct
+            {
+                const Key key;
+                T         value;
+            };
+            std::byte buffer[sizeof(Key) + sizeof(T)]{};
+        };
+        Entry* next{ nullptr };  // nullptr = empty, 0xDEADBEEF = end of chain, else = next in chain
+    };
+
+    std::uint64_t pad00;        // 00
+    std::uint32_t pad08;        // 08
+    std::uint32_t capacity;     // 0C - total slots, always power of 2
+    std::uint32_t free;         // 10 - number of free slots
+    std::uint32_t good;         // 14 - last free index hint
+    Entry*        sentinel;     // 18 - points to 0xDEADBEEF marker
+    std::uint64_t allocPad;     // 20
+    Entry*        entries;      // 28 - heap array of Entry[capacity]
+};
+static_assert(sizeof(BSTHashMap<int, int>) == 0x30);
+
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, SInt32 &a_out); // 11
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, bool &a_out); // 12
 typedef void(*_Actor_UpdateAnimation)(Actor *_this, float deltaTime);
 typedef void(*_Actor_WeaponSwingCallback)(Actor *_this); // F1
 typedef void(*_Actor_PauseCurrentDialogue)(Actor *_this);
-typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool dontExitFurniture, bool a4);
+typedef void(*_Actor_PutCreatedPackage)(Actor *_this, TESPackage *package, bool tempPackage, bool isCreatedPackage);
 typedef float(*_Actor_GetHeading)(Actor *_this, bool a_ignoreRaceSettings);
 typedef ActorCause *(*_TESObjectREFR_GetActorCause)(TESObjectREFR *_this);
 typedef void(*_TESObjectREFR_SetActorCause)(TESObjectREFR *_this, ActorCause *a_cause);

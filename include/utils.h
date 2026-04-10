@@ -104,6 +104,7 @@ NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignor
 void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f);
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f);
 void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<void(BShkbAnimationGraph *)> f);
+void ForEachAnimationGraph(Actor *actor, std::function<void(BShkbAnimationGraph *)> f);
 void ForEachAdjacentBody(NiAVObject *root, bhkRigidBody *body, std::function<void(bhkRigidBody *, int)> f, int waves);
 NiTransform GetRigidBodyTLocalTransform(bhkRigidBody *rigidBody, bool useHavokScale = true);
 bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node);
@@ -135,11 +136,14 @@ bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
 void TriggerDialogueByType(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
 void ExitFurniture(Actor *actor);
 bool HasKeepOffsetInterface(Actor *actor);
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue);
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool stopTurnOrIdle);
 void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo = nullptr);
 inline TESTopic *GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
 TESTopicInfo *GetRandomTopicInfo(const std::vector<TESTopicInfo *> &topicInfos, TESTopicInfo *exclude1 = nullptr, TESTopicInfo *exclude2 = nullptr);
 std::vector<TESTopicInfo *> EvaluateTopicInfoConditions(const std::vector<UInt32> &topicInfoIDs, Actor *source, Actor *target, const std::vector<UInt16> &skipConditions);
+bool IsAnimationDriven(Actor *actor);
+bool IsAllowRotation(Actor *actor);
+bool BSTHashMapLookup(BSTHashMap<BSFixedString, hkInt32> &map, const BSFixedString &key, hkInt32 &valueOut);
 inline void DamageAV(Actor *actor, UInt32 av, float value) { get_vfunc<_ActorValueOwner_RestoreActorValue>(&actor->actorValueOwner, 6)(&actor->actorValueOwner, 2, av, value); }
 inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags04 & 0x3C000; }
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
