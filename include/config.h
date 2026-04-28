@@ -150,8 +150,8 @@ namespace Config {
         float yankImpulseDownwardsMultiplier = 1.f;
 
         bool doGrabbedActorMovement = true;
-        bool forceMotionDrivenDuringGrabbedActorMovement = true;
-        bool resetAIWhenForcingMotionDriven = true;
+        bool allowMotionDrivenDuringTransitionToMoveableState = true;
+        bool doForcefulBumpWhenMotionDrivenNotPossible = true;
         float grabbedActorMovementAngleStartThreshold = 0.25f;
         float grabbedActorMovementAngleStopThreshold = 0.25f;
         float grabbedActorMovementTwoHandedRotationSpeed = 2.f;

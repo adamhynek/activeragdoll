@@ -6109,7 +6109,7 @@ bool ShouldDoMotionDriven(Actor *actor)
     bool isAllowRotation = IsAllowRotation(actor);
     bool doMotionDrivenNormally = !isAnimationDriven && !isAllowRotation; // Same condition as the base game
 
-    return doMotionDrivenNormally || isStateActiveThatAllowsForMoveStart;
+    return doMotionDrivenNormally || (Config::options.allowMotionDrivenDuringTransitionToMoveableState && isStateActiveThatAllowsForMoveStart);
 }
 
 typedef void(*_Actor_CheckAndHandleMotionOrAnimationDrivenChange)(Actor *actor);
@@ -6150,7 +6150,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             movementController->movementPlannerDirectControl.SetPlannerDirectControl();
             movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
         }
-        else if (Config::options.resetAIWhenForcingMotionDriven && !actor->IsInCombat()) {
+        else if (Config::options.doForcefulBumpWhenMotionDrivenNotPossible && !actor->IsInCombat()) {
 #ifdef _DEBUG
             _MESSAGE("%d Bump", *g_currentFrameCounter);
 #endif // _DEBUG

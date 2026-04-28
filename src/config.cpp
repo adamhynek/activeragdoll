@@ -314,8 +314,8 @@ namespace Config {
         if (!RegisterFloat("yankImpulseDownwardsMultiplier", options.yankImpulseDownwardsMultiplier)) success = false;
 
         if (!RegisterBool("doGrabbedActorMovement", options.doGrabbedActorMovement)) success = false;
-        if (!RegisterBool("forceMotionDrivenDuringGrabbedActorMovement", options.forceMotionDrivenDuringGrabbedActorMovement)) success = false;
-        if (!RegisterBool("resetAIWhenForcingMotionDriven", options.resetAIWhenForcingMotionDriven)) success = false;
+        if (!RegisterBool("allowMotionDrivenDuringTransitionToMoveableState", options.allowMotionDrivenDuringTransitionToMoveableState)) success = false;
+        if (!RegisterBool("doForcefulBumpWhenMotionDrivenNotPossible", options.doForcefulBumpWhenMotionDrivenNotPossible)) success = false;
         if (!RegisterFloat("grabbedActorMovementAngleStartThreshold", options.grabbedActorMovementAngleStartThreshold)) success = false;
         if (!RegisterFloat("grabbedActorMovementAngleStopThreshold", options.grabbedActorMovementAngleStopThreshold)) success = false;
         if (!RegisterFloat("grabbedActorMovementTwoHandedRotationSpeed", options.grabbedActorMovementTwoHandedRotationSpeed)) success = false;
