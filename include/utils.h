@@ -136,7 +136,7 @@ bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
 void TriggerDialogueByType(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
 void ExitFurniture(Actor *actor);
 bool HasKeepOffsetInterface(Actor *actor);
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool interruptTurn);
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool force);
 void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo = nullptr);
 inline TESTopic *GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
 TESTopicInfo *GetRandomTopicInfo(const std::vector<TESTopicInfo *> &topicInfos, TESTopicInfo *exclude1 = nullptr, TESTopicInfo *exclude2 = nullptr);

@@ -1160,7 +1160,7 @@ bool HasKeepOffsetInterface(Actor *actor)
     return hasInterface;
 }
 
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool interruptTurn)
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool force)
 {
     if (Actor_IsGhost(actor)) return;
 
@@ -1171,7 +1171,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
     if (!middleProcess) return;
 
     TESPackage *runOncePackage = middleProcess->unk058.package;
-    if (runOncePackage && runOncePackage->type == 32 && !interruptTurn) return; // already bumped
+    if (runOncePackage && runOncePackage->type == 32 && !force) return; // already bumped - don't skip this if forcing because we need to stop their turn or idle
 
     // Usually the game would only do this if the actor is moving, but I don't see why you would want a stale bump wait timer.
     ActorProcess_ResetBumpWaitTimer(process);
@@ -1216,7 +1216,7 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
         ActorProcess_PlayIdle(process, actor, 90, 0, 1, 0, nullptr);
     }
 
-    if (interruptTurn) {
+    if (force) {
         static BSFixedString sTurnInPlaceEnd("TurnInPlaceEnd");
         get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sTurnInPlaceEnd);
     }
