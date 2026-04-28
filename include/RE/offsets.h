@@ -1052,6 +1052,9 @@ extern RelocAddr<_GetAnimationEventForAction> GetAnimationEventForAction;
 typedef void(*_Debug_MessageBox)(UInt64 a1, UInt64 a2, UInt64 a3, BSFixedString *messageBoxText);
 extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;
 
+typedef void(*_PathingRequest_CTOR)(void *_this);
+extern RelocAddr<_PathingRequest_CTOR> PathingRequest_CTOR;
+
 
 struct UnkSwingData
 {

@@ -1160,7 +1160,7 @@ bool HasKeepOffsetInterface(Actor *actor)
     return hasInterface;
 }
 
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool stopTurnOrIdle)
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool interruptTurn)
 {
     if (Actor_IsGhost(actor)) return;
 
@@ -1171,10 +1171,17 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
     if (!middleProcess) return;
 
     TESPackage *runOncePackage = middleProcess->unk058.package;
-    if (runOncePackage && runOncePackage->type == 32) return; // already bumped
+    if (runOncePackage && runOncePackage->type == 32 && !interruptTurn) return; // already bumped
 
-    if (Actor_HasLargeMovementDelta(actor)) {
-        ActorProcess_ResetBumpWaitTimer(process);
+    // Usually the game would only do this if the actor is moving, but I don't see why you would want a stale bump wait timer.
+    ActorProcess_ResetBumpWaitTimer(process);
+
+    // In order for the game to trigger a bump pathing request / stop their current idle, their current pathing request needs to be different from the last bump pathing request.
+    // So by creating a pathing request but not doing anything with it, the game will always trigger the bump pathing request.
+    if (void *pathingRequest = Heap_Allocate(0x100)) {
+        PathingRequest_CTOR(pathingRequest);
+        *((UInt32 *)((UInt64)pathingRequest + 8)) = 1; // set refcount to 1
+        ActorProcess_SetLastBumpPathingRequest(process, pathingRequest);
     }
 
     Actor_StopMoving(actor, 1.f);
@@ -1209,13 +1216,9 @@ void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitF
         ActorProcess_PlayIdle(process, actor, 90, 0, 1, 0, nullptr);
     }
 
-    if (stopTurnOrIdle) {
+    if (interruptTurn) {
         static BSFixedString sTurnInPlaceEnd("TurnInPlaceEnd");
         get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sTurnInPlaceEnd);
-        // static BSFixedString sAnimObjectStop("AnimObjectStop");
-        // get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sAnimObjectStop);
-        // static BSFixedString sIdleForceDefaultState("IdleForceDefaultState");
-        // get_vfunc<_IAnimationGraphManagerHolder_NotifyAnimationGraph>(&actor->animGraphHolder, 0x1)(&actor->animGraphHolder, sIdleForceDefaultState);
     }
 
     if (triggerDialogue) {

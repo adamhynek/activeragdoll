@@ -421,6 +421,7 @@ RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeRotation
 RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent(0x115DB00);
 RelocAddr<_GetAnimationEventForAction> GetAnimationEventForAction(0x75A0F0);
 RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);
+RelocAddr<_PathingRequest_CTOR> PathingRequest_CTOR(0x48F5A0);
 
 RelocPtr<ProcessLists *> g_processLists(0x1F831B0);
 

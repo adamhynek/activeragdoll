@@ -136,7 +136,7 @@ bool SendAction(Actor *source, TESObjectREFR *target, BGSAction *action);
 void TriggerDialogueByType(Character *source, Character *target, int dialogueSubtype, bool interruptDialogue);
 void ExitFurniture(Actor *actor);
 bool HasKeepOffsetInterface(Actor *actor);
-void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool stopTurnOrIdle);
+void Actor_GetBumpedEx(Actor *actor, Actor *bumper, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue, bool triggerDialogue, bool interruptTurn);
 void Actor_SayToEx(Actor *source, Actor *target, TESTopic *topic, TESTopicInfo *topicInfo = nullptr);
 inline TESTopic *GetCurrentTopic(Actor *actor) { if (ActorProcessManager *process = actor->processManager) { return *(TESTopic **)((UInt64)process + 0x128); } return nullptr; }
 TESTopicInfo *GetRandomTopicInfo(const std::vector<TESTopicInfo *> &topicInfos, TESTopicInfo *exclude1 = nullptr, TESTopicInfo *exclude2 = nullptr);
@@ -149,6 +149,7 @@ inline bool IsActorUsingFurniture(Actor *actor) { return actor->actorState.flags
 inline bool IsTeammate(Actor *actor) { return actor->flags1 >> 26 & 1; }
 inline UInt32 ActorProcess_GetCommandingActor(ActorProcessManager *process) { return process->middleProcess ? process->middleProcess->unk218 : *g_invalidRefHandle; }
 inline UInt32 GetCommandingActor(Actor *actor) { return actor->processManager ? ActorProcess_GetCommandingActor(actor->processManager) : *g_invalidRefHandle; }
+inline void ActorProcess_SetLastBumpPathingRequest(ActorProcessManager *process, void *pathingRequest) { if (process->unk10) { *((void **)((UInt64)process->unk10 + 0x3F0)) = pathingRequest; } }
 bool IsInFaction(Actor *actor, TESFaction *faction);
 bool IsCalmed(Actor *actor);
 NiPointer<NiAVObject> GetFirstPersonHandNode(bool isLeft);

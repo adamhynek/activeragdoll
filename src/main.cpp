@@ -536,14 +536,14 @@ bool ShouldShoveActor(Actor *actor)
     return true;
 }
 
-void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool exitFurniture = false, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
+void BumpActor(Actor *actor, float bumpDirection, bool isLargeBump = false, bool exitFurniture = false, bool pauseCurrentDialogue = true, bool triggerDialogue = true, bool interruptTurn = false)
 {
     ActorProcessManager *process = actor->processManager;
     if (!process) return;
 
     ActorProcess_SetBumpState(process, isLargeBump ? 1 : 0);
     ActorProcess_SetBumpDirection(process, bumpDirection);
-    Actor_GetBumpedEx(actor, *g_thePlayer, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue, true); // TODO: Proper handling of last arg
+    Actor_GetBumpedEx(actor, *g_thePlayer, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue, interruptTurn);
     ActorProcess_SetBumpDirection(process, 0.f);
 }
 
@@ -555,6 +555,7 @@ struct BumpRequest
     bool exitFurniture = false;
     bool pauseCurrentDialogue = true;
     bool triggerDialogue = true;
+    bool interruptTurn = false;
 };
 std::mutex g_bumpActorsLock;
 std::unordered_map<Actor *, BumpRequest> g_bumpActors{};
@@ -572,20 +573,20 @@ std::unordered_map<IAnimationGraphManagerHolder *, ShoveData> g_shoveData{};
 std::mutex g_shoveAnimLock;
 std::unordered_map<IAnimationGraphManagerHolder *, double> g_shoveAnimTimes{};
 
-void QueueBumpActor(Actor *actor, NiPoint3 direction, float bumpDirection, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
+void QueueBumpActor(Actor *actor, NiPoint3 direction, float bumpDirection, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true, bool interruptTurn = false)
 {
     std::scoped_lock lock(g_bumpActorsLock);
     auto it = g_bumpActors.find(actor);
     if (it == g_bumpActors.end()) {
-        g_bumpActors[actor] = { direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue };
+        g_bumpActors[actor] = { direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue, interruptTurn };
     }
 }
 
-void QueueBumpActor(Actor *actor, NiPoint3 direction, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true)
+void QueueBumpActor(Actor *actor, NiPoint3 direction, bool isLargeBump, bool exitFurniture, bool pauseCurrentDialogue = true, bool triggerDialogue = true, bool interruptTurn = false)
 {
     float heading = GetHeadingFromVector(-direction);
     float bumpDirection = heading - get_vfunc<_Actor_GetHeading>(actor, 0xA5)(actor, false);
-    QueueBumpActor(actor, direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue);
+    QueueBumpActor(actor, direction, bumpDirection, isLargeBump, exitFurniture, pauseCurrentDialogue, triggerDialogue, interruptTurn);
 }
 
 void StaggerActor(Actor *actor, NiPoint3 direction, float magnitude)
@@ -2794,7 +2795,7 @@ struct NPCData
         if (Actor_IsInRagdollState(character)) return;
 
         if (force || g_currentFrameTime - bumpTime > Config::options.aggressionBumpCooldownTime) {
-            QueueBumpActor(character, character->pos - (*g_thePlayer)->pos, false, exitFurniture, false, false);
+            QueueBumpActor(character, VectorNormalized(character->pos - (*g_thePlayer)->pos), false, exitFurniture, false, false);
             bumpTime = g_currentFrameTime;
         }
     }
@@ -3474,31 +3475,6 @@ struct EndGrabbedActorMovementTask : TaskDelegate
     UInt32 source;
 };
 
-struct ResetAITask : TaskDelegate
-{
-    static ResetAITask * Create(UInt32 source) {
-        ResetAITask *cmd = new ResetAITask;
-        if (cmd) {
-            cmd->source = source;
-        }
-        return cmd;
-    }
-
-    virtual void Run() {
-        NiPointer<TESObjectREFR> refr;
-        if (LookupREFRByHandle(source, refr)) {
-            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                Actor_EvaluatePackage(actor, false, true);
-            }
-        }
-    }
-
-    virtual void Dispose() {
-        delete this;
-    }
-
-    UInt32 source;
-};
 
 float g_savedSpeedReduction = 0.f;
 
@@ -4049,6 +4025,13 @@ void UpdateHiggsInfo(bhkWorld *world)
 
     g_rightHeldRefr = g_higgsInterface->GetGrabbedObject(false);
     g_leftHeldRefr = g_higgsInterface->GetGrabbedObject(true);
+
+    if (!g_rightHeldRefr) {
+        g_rightHeldAllowsMoveStart = false;
+    }
+    if (!g_leftHeldRefr) {
+        g_leftHeldAllowsMoveStart = false;
+    }
 
     g_currentGrabTransforms[0] = g_higgsInterface->GetGrabTransform(false);
     g_currentGrabTransforms[1] = g_higgsInterface->GetGrabTransform(true);
@@ -5477,7 +5460,7 @@ void MovementControllerUpdateHook(MovementControllerNPC *movementController, Act
     {
         std::scoped_lock lock(g_bumpActorsLock);
         if (auto it = g_bumpActors.find(actor); it != g_bumpActors.end()) {
-            BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.exitFurniture, it->second.pauseCurrentDialogue, it->second.triggerDialogue);
+            BumpActor(actor, it->second.bumpDirection, it->second.isLargeBump, it->second.exitFurniture, it->second.pauseCurrentDialogue, it->second.triggerDialogue, it->second.interruptTurn);
             if (it->second.isLargeBump) {
                 std::scoped_lock lock2(g_shoveTimesLock);
                 g_shoveData[&actor->animGraphHolder] = { it->second.bumpDirectionVec, g_currentFrameTime };
@@ -6144,8 +6127,13 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     GrabbedActorState &state = it->second;
 
     MovementControllerNPC *movementController = GetMovementController(actor);
-    if (!movementController) return;
+    if (!movementController) {
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
+        return;
+    }
 
+
+    bool isStateActiveThatAllowsForMoveStart = (actor == g_rightHeldRefr && g_rightHeldAllowsMoveStart) || (actor == g_leftHeldRefr && g_leftHeldAllowsMoveStart);
 
     if (!IsPlannerDirectControl(movementController)) {
         bool isAnimationDriven = IsAnimationDriven(actor);
@@ -6155,51 +6143,43 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         bool forceMotionDriven = Config::options.forceMotionDrivenDuringGrabbedActorMovement;
         bool doMotionDriven = forceMotionDriven || doMotionDrivenWithoutForce;
 
-        // if (!doMotionDrivenWithoutForce && !state.didResetAI) {
-        //     bool isInCombat = actor->IsInCombat();
-        //     if (!isInCombat) {
-        //         g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
-        //         state.didResetAI = true;
-        //     }
-        // }
-
-        // if (doMotionDrivenWithoutForce) {
         if (doMotionDriven) {
 #ifdef _DEBUG
-            _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
+            _MESSAGE("%d Do Motion Driven", *g_currentFrameCounter);
 #endif // _DEBUG
-            movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
-            movementController->movementPlannerDirectControl.SetPlannerDirectControl();
-            movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
 
-            state.didResetAI = true;
+            if (doMotionDrivenWithoutForce || isStateActiveThatAllowsForMoveStart) {
+                _MESSAGE("%d Start Motion Driven", *g_currentFrameCounter);
+
+                movementController->movementMotionDrivenControl.MoveToHigh(); // Sometimes when loading a save, the movement controller isn't in high process mode
+                movementController->movementPlannerDirectControl.SetPlannerDirectControl();
+                movementController->movementMotionDrivenControl.SetMotionDriven(); // reads from isDirectControl
+            }
 
             // Reset AI if we are forcing motion driven and they weren't already capable of being so. This will for example make someone stop sweeping with a broom and start walking.
             // However, don't reset AI if in combat, as that would make them sheathe and then unsheathe again to attack you. This will make them slide though if they are performing an animation such as a power attack.
-            bool isInCombat = actor->IsInCombat();
-            bool resetAI = Config::options.resetAIWhenForcingMotionDriven && !doMotionDrivenWithoutForce && !isInCombat;
+            bool resetAI = Config::options.resetAIWhenForcingMotionDriven && !doMotionDrivenWithoutForce;
             if (resetAI) {
                 // If they are anim driven, kick them out of their animation so that they actually show the motions.
-                // g_taskInterface->AddTask(ResetAITask::Create(GetOrCreateRefrHandle(actor)));
-                QueueBumpActor(actor, actor->pos - (*g_thePlayer)->pos, false, false, false, false);
-                // QueueBumpActor(actor, actor->pos - (*g_thePlayer)->pos, true, false, false, false);
+                _MESSAGE("%d Bump", *g_currentFrameCounter);
+                QueueBumpActor(actor, VectorNormalized(actor->pos - (*g_thePlayer)->pos), false, false, false, false, true);
             }
         }
     }
 
-    // Check again after potentially forcing planner direct control.
-    if (!IsPlannerDirectControl(movementController)) return;
-
     bool isAnimationDriven = IsAnimationDriven(actor);
     bool isAllowRotation = IsAllowRotation(actor);
-    if (isAnimationDriven || isAllowRotation) {
-        // float speed = ActorState_NormalizeSpeed(&actor->actorState, 100.f);
-        // movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
-        // movementController->movementPlannerDirectControl.SetTargetDirection({ 0.f, 0.f, 1.f });
+    if ((isAnimationDriven || isAllowRotation) && !isStateActiveThatAllowsForMoveStart) {
+        // If they went into e.g. an attack animation, switch them back to that mode.
+        _MESSAGE("%d Not Motion Driven", *g_currentFrameCounter);
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
+        return;
+    }
 
-        // movementController->movementPlannerDirectControl.SetTargetAngle({ 0.f, 0.f, 1.f });
-
-        // TODO: Right now returning here means we are bumping every frame until they become motion driven
+    // Check again after potentially forcing planner direct control.
+    if (!IsPlannerDirectControl(movementController)) {
+        _MESSAGE("%d Not Planner Direct Control", *g_currentFrameCounter);
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
         return;
     }
 
@@ -6542,12 +6522,18 @@ void hkbBehaviorGraph_update_hkbUtils_collectActiveNodesLeafFirst_Hook(hkbNode *
             }
         }
 
-        // The theory: This function will get called when active nodes _change_, and so this value should be up to date if we always update it here.
+        // I think this function will get called when active nodes _change_, and so this value should be up to date if we always update it here.
         if (g_rightHeldRefr == actor) {
             g_rightHeldAllowsMoveStart = rightAllowsMoveStart;
+#ifdef _DEBUG
+            _MESSAGE("%d rightAllowsMoveStart: %d", *g_currentFrameCounter, rightAllowsMoveStart);
+#endif // _DEBUG
         }
         if (g_leftHeldRefr == actor) {
             g_leftHeldAllowsMoveStart = leftAllowsMoveStart;
+#ifdef _DEBUG
+            _MESSAGE("%d leftAllowsMoveStart: %d", *g_currentFrameCounter, leftAllowsMoveStart);
+#endif // _DEBUG
         } 
     }
 }
