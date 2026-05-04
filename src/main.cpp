@@ -730,12 +730,14 @@ std::optional<hkQsTransform> GetAnimPreLookAtPoseForRigidBody(Actor *actor, cons
     std::optional<hkQsTransform> pose = std::nullopt;
     ForEachRagdollDriver(actor, [desiredBody, &pose](hkbRagdollDriver *driver) -> void {
         if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
-            if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
-                if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
-                    for (int i = 0; i < ragdoll->getNumBones(); ++i) {
-                        if (ragdoll->m_rigidBodies[i] == desiredBody) {
-                            pose = activeRagdoll->lowResAnimPosePreLookAtWSnoRigidBodyT[i];
-                            return;
+            if (activeRagdoll->lowResAnimPosePreLookAtWSnoRigidBodyT.size() > 0) {
+                if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
+                    if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+                        for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                            if (ragdoll->m_rigidBodies[i] == desiredBody) {
+                                pose = activeRagdoll->lowResAnimPosePreLookAtWSnoRigidBodyT[i];
+                                return;
+                            }
                         }
                     }
                 }
