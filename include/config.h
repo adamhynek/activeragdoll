@@ -22,7 +22,7 @@ namespace Config {
         double getUpBlendInTime = 0.3;
 
         bool blendInWhenAddingToWorld = true;
-        double blendInTime = 0.2;
+        double blendInTime = 0.075;
         double addToWorldSnapTime = 0.1;
 
         bool knockDownAfterBuggedGetUp = true;
@@ -33,16 +33,16 @@ namespace Config {
         double computeWorldFromModelFadeInTime = 0.5;
         double computeWorldFromModelFadeOutTime = 0.3;
 
-        double hitCooldownTimeStoppedColliding = 0.2;
-        double hitCooldownTimeFallback = 1.0;
+        double hitCooldownTimeStoppedColliding = 0.25;
+        double hitCooldownTimeFallback = 1.2;
         double physicsHitRecoveryTime = 0.01;
 
         double thrownObjectLingerTime = 5.0;
-        double thrownObjectIgnoreHitTime = 0.1;
-        double droppedActorIgnoreCollisionTime = 0.1;
+        double thrownObjectIgnoreHitTime = 0.4;
+        double droppedActorIgnoreCollisionTime = 0.2;
 
-        double worldChangedWaitTime = 0.4;
-        int minFramesBetweenActorAdds = 2;
+        double worldChangedWaitTime = 4.0;
+        int minFramesBetweenActorAdds = 3;
 
         bool disablePlayerFollowerCollision = false;
         bool disablePlayerSummonCollision = false;
@@ -50,7 +50,7 @@ namespace Config {
         bool enableActorShove = true;
         bool disableShoveWhileWeaponsDrawn = true;
         bool enableShoveFromFurniture = true;
-        float shoveStaggerMagnitude = 0.25f;
+        float shoveStaggerMagnitude = 0.35f;
         float shoveStaminaCost = 40.f;
         float shoveSpeedThreshold = 2.5f;
         float shoveRumbleIntensity = 0.2f;
@@ -64,6 +64,9 @@ namespace Config {
             0x0006CB2D, // Hey, watch it!
             0x0006AE39, // What are you doing that for?
             0x0002A460, // Hey! Hands off!
+            0x000142BA, // Watch what you're doing
+            0x00023C19, // Watch it!
+            0x00023C1A, // Hey, be careful!
         };
 
         bool enableBump = true;
@@ -74,16 +77,16 @@ namespace Config {
         bool stopUsingFurnitureOnHighAggression = true;
         bool dontDoAggressionWhileMenusAreOpen = true;
         double aggressionBumpCooldownTime = 2.0;
-        double aggressionStopDelay = 2.0;
+        double aggressionStopDelay = 10.0;
         double aggressionDialogueInitMaxTime = 0.2f;
         double aggressionDialogueCooldownFallback = 1.8;
-        double aggressionDialogueCooldown = 0.2f;
-        float aggressionRequiredGrabTimeLow = 0.2f;
-        float aggressionRequiredGrabTimeHigh = 3.5f;
-        float aggressionRequiredGrabTimeAssault = 7.f;
+        double aggressionDialogueCooldown = 0.25f;
+        float aggressionRequiredGrabTimeLow = 0.5f;
+        float aggressionRequiredGrabTimeHigh = 4.5f;
+        float aggressionRequiredGrabTimeAssault = 9.f;
         float aggressionMaxAccumulatedGrabTime = 20.f;
-        float aggressionStopCombatAlarmDistance = 1500.f;
-        float aggressionRequiredHandWithinHmdConeHalfAngle = 75.f;
+        float aggressionStopCombatAlarmDistance = 1600.f;
+        float aggressionRequiredHandWithinHmdConeHalfAngle = 65.f;
         int aggressionMaxRelationshipRank = 0; // Acquantaince
         std::vector<UInt32> aggressionLowTopicInfos = {
             0x0006CB2D, // Hey, watch it!
@@ -93,19 +96,26 @@ namespace Config {
             0x000142B7, // Hands off
             0x0002A460, // Hey! Hands off!
             0x000142BA, // Watch what you're doing
-            //			0x000142BB, // Don't even think about it
+            0x000880DE, // Watch it there, brother - The Companions members only
+            0x000880DF, // Watch it there, sister - The Companions members only
+            0x00023C1C, // What are you doing?
+            0x00023C19, // Watch it!
         };
         std::vector<UInt32> aggressionHighTopicInfos = {
             0x000BABE1, // I'm warning you, back off!
             0x000D3E92, // Get away from me
             0x000BABE0, // That's close enough
             0x0007038E, // What do you think you're doing?
+            0x00023C18, // Stop that!
+            0x000B9BF5, // Are you looking for a fight? - Civil War Soldiers only
+            0x000D361B, // How dare you! - Female only
+            0x00023C17, // What's the matter with you?
         };
 
         bool doSpeedReduction = true;
         float smallRaceSpeedReduction = 35.f;
-        float mediumRaceSpeedReduction = 55.f;
-        float largeRaceSpeedReduction = 70.f;
+        float mediumRaceSpeedReduction = 65.f;
+        float largeRaceSpeedReduction = 75.f;
         float extraLargeRaceSpeedReduction = 85.f;
         float maxSpeedReduction = 85.f;
         float speedReductionHealthInfluence = 0.5f;
@@ -117,89 +127,101 @@ namespace Config {
         float grabbedActorStaminaCost = 3.f;
         float grabbedActorHostileStaminaCost = 10.f;
         float grabbedActorStaminaCostHealthInfluence = 0.8f;
-        int grabbedstaminaDrainMaxRelationshipRank = 1; // Friend
+        int grabbedstaminaDrainMaxRelationshipRank = 2; // Confidant
 
         float maxHealthToConsiderActorAsSmall = 6.f;
-        std::set<std::string, std::less<>> smallIgnoreRaces;
+        std::set<std::string, std::less<>> smallIgnoreRaces = {
+            "ElderRaceVampire",
+        };
 
-        bool ragdollOnGrab = false;
+        bool ragdollOnGrab = true;
         bool ragdollSmallRacesOnGrab = true;
-        float ragdollHealthThreshold = 5.f;
+        float ragdollHealthThreshold = 0.f;
         float ragdollAggressionImpact = 10.f;
         bool ragdollOnYank = true;
         bool requireTwoHandsToYank = false;
-        float yankRequiredHandSpeedRoomspace = 1.5f;
+        float yankRequiredHandSpeedRoomspace = 4.f;
         bool ragdollOnFootYank = true;
-        float yankStaminaCost = 40.f;
-        float yankHostileStaminaCost = 40.f;
-        float footYankStaminaCost = 40.f;
-        double yankTwoHandedTimeWindow = 0.2;
+        float yankStaminaCost = 30.f;
+        float yankHostileStaminaCost = 50.f;
+        float footYankStaminaCost = 30.f;
+        double yankTwoHandedTimeWindow = 0.25;
         bool disableGrabbedActorMovementWhenFootHeld = true;
         double footYankCooldown = 2.0;
-        float footYankRequiredStressAmount = 35.f;
-        float yankImpulseDecayExponent = 0.8f;
-        int yankImpulseBoneRadius = 4;
+        float footYankRequiredStressAmount = 22.f;
+        float yankImpulseDecayExponent = 0.9f;
+        int yankImpulseBoneRadius = 8;
         bool playRagdollSound = true;
-        int ragdollSoundFallbackDialogueSubtype = 33;
+        int ragdollSoundFallbackDialogueSubtype = 29;
         std::vector<UInt32> ragdollTopicInfos = {
             0x0006F41E, // Agh!
+            0x00042ED2, // Oof!
+            0x00042ED3, // Nargh!
+            0x00042ED4, // Argh!
+            0x00042ED5, // Weergh!
+            0x00013EF7, // Yeagh!
+            0x0003E249, // Gah!
+            0x0003E24A, // Nargh!
+            0x0003E24B, // Unf!
+            0x0003E9A1, // Grrh!
+            0x0003E9A2, // Nnh!
         };
 
-        float yankImpulseHorizontalMultiplier = 1.f;
-        float yankImpulseUpwardsMultiplier = 1.f;
-        float yankImpulseDownwardsMultiplier = 1.f;
+        float yankImpulseHorizontalMultiplier = 0.45f;
+        float yankImpulseUpwardsMultiplier = 0.35f;
+        float yankImpulseDownwardsMultiplier = 0.35f;
 
         bool doGrabbedActorMovement = true;
         bool allowMotionDrivenDuringTransitionToMoveableState = true;
         bool doForcefulBumpWhenMotionDrivenNotPossible = true;
-        float grabbedActorMovementAngleStartThreshold = 0.25f;
-        float grabbedActorMovementAngleStopThreshold = 0.25f;
+        float grabbedActorMovementAngleStartThreshold = 0.7f;
+        float grabbedActorMovementAngleStopThreshold = 0.1f;
         float grabbedActorMovementTwoHandedRotationSpeed = 2.f;
-        float grabbedActorMovementNoStrafeLateralStartAngle = 0.05f;
-        float grabbedActorMovementNoStrafeLateralStopAngle= 0.02f;
-        float grabbedActorMovementNoStrafeStartOffset= 5.f;
+        float grabbedActorMovementNoStrafeLateralStartAngle = 0.02f;
+        float grabbedActorMovementNoStrafeLateralStopAngle= 0.005f;
+        float grabbedActorMovementNoStrafeStartOffset= 15.f;
         float grabbedActorMovementNoStrafeStopOffset = 1.f;
-        float grabbedActorMovementNoStrafeMinAngleForAnim = 0.001f;
-        float grabbedActorMovementNoStrafeHeadingSpeedNoAnim = 2.f;
-        float grabbedActorMovementNoStrafeHeadingSpeed = 2.f;
-        float grabbedActorMovementNoStrafeMoveSpeed = 100.f;
-        float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 10.f;
+        float grabbedActorMovementNoStrafeMinAngleForAnim = 0.18f;
+        float grabbedActorMovementNoStrafeHeadingSpeedNoAnim = 0.035f;
+        float grabbedActorMovementNoStrafeHeadingSpeed = 0.5f;
+        float grabbedActorMovementNoStrafeMoveSpeed = 50.f;
+        float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 2.5f;
         float grabbedActorMovementPlayerDirectionHeadingSpeed = 2.f;
-        float grabbedActorMovementDirectionMultiplier = 1.f;
-        float grabbedActorMovementPlayerMovementInfluence = 1.f;
-        float grabbedActorMovementPlayerSmoothingTime = 0.1f;
-        float grabbedActorMovementActorSmoothingTime = 0.1f;
-        float grabbedActorMovementStartThreshold = 10.f;
-        float grabbedActorMovementStopThreshold = 5.f;
-        float grabbedActorMovementStartThresholdTwoHanded = 10.f;
-        float grabbedActorMovementStopThresholdTwoHanded = 5.f;
+        float grabbedActorMovementDirectionMultiplier = 0.1f;
+        float grabbedActorMovementPlayerMovementInfluence = 0.85f;
+        float grabbedActorMovementPlayerSmoothingTime = 0.15f;
+        float grabbedActorMovementActorSmoothingTime = 0.3f;
+        float grabbedActorMovementStartThreshold = 3.f;
+        float grabbedActorMovementStopThreshold = 2.f;
+        float grabbedActorMovementStartThresholdTwoHanded = 6.5f;
+        float grabbedActorMovementStopThresholdTwoHanded = 3.5f;
         float grabbedActorMovementMinPlayerMoveAmtToForceTranslation = 0.001f;
-        float grabbedActorMovementSpeedDirectionCutoff = 0.1;
+        float grabbedActorMovementSpeedDirectionCutoff = 0.01f;
         float grabbedActorMovementMinPlayerMoveAmtForHeading = 0.1;
-        float grabbedActorMovementPlayerDirectionHeadingForwardThreshold = 1.57f;
-        float grabbedActorMovementOverwriteParamAcceleration = 0.1f;
-        float grabbedActorMovementOverwriteParamDeceleration = 0.1f;
-        float grabbedActorMovementOverwriteParamRotationPercent = 0.1f;
-        float grabbedActorMovementOverwriteParamAngleAcceleration = 0.1f;
-        float grabbedActorMovementZeroSpeedThreshold = 5.f;
-        double grabbedActorMovementHoldZeroSpeedTime = 0.0;
+        float grabbedActorMovementPlayerDirectionHeadingForwardThreshold = 2.f;
+        float grabbedActorMovementOverwriteParamAcceleration = 200.f;
+        float grabbedActorMovementOverwriteParamDeceleration = 200.f;
+        float grabbedActorMovementOverwriteParamRotationPercent = 2000.f;
+        float grabbedActorMovementOverwriteParamAngleAcceleration = 2000.f;
+        float grabbedActorMovementZeroSpeedThreshold = 45.f;
+        double grabbedActorMovementHoldZeroSpeedTime = 0.35;
 
         bool zeroOutRootTranslationDuringGrabbedActorMovement = true;
 
-        bool doContinuousSlerp = true;
+        bool doContinuousSlerp = false;
 
         float collisionDamageMinSpeedPlayerInflicted = 400.f; // skyrim units
-        float collisionDamageMinMassPlayerInflicted = 6.f;
+        float collisionDamageMinMassPlayerInflicted = 0.1f;
         bool damageHittingObjectOnPhysicalHit = true;
-        float hittingObjectSelfDamage = 10.f;
+        float hittingObjectSelfDamage = 1.f;
 
         bool doWarp = true;
         bool disableWarpWhenGettingUp = true;
-        float maxAllowedDistBeforeWarp = 15.f;
+        float maxAllowedDistBeforeWarp = 3.f;
         double warpDisableActorTime = 3.0;
 
-        double disableActorOnSetPositionTime = 3.0;
-        double disableActorOnSetPositionTimeJitter = 2.0;
+        double disableActorOnSetPositionTime = 2.5;
+        double disableActorOnSetPositionTimeJitter = 2.5;
 
         float hierarchyGain = 0.6f;
         float velocityGain = 0.6f;
@@ -226,7 +248,7 @@ namespace Config {
         double getUpDisableCollisionSoundsTime = 0.5;
 
         bool overrideSoundVelForRagdollCollisions = true;
-        float ragdollSoundVel = 1000.f;
+        float ragdollSoundVel = 1000000.f;
 
         float playerVsBipedInteractionImpulseMultiplier = 0.f;
         bool dontCollidePlayerWithSmallRaces = true;
@@ -244,7 +266,7 @@ namespace Config {
         bool doBipedSelfCollision = true;
         bool doBipedSelfCollisionForNPCs = true;
         bool doBipedNonSelfCollision = true;
-        bool enableBipedDeadBipCollision = true;
+        bool enableBipedDeadBipCollision = false;
         bool enablePlayerBipedCollision = true;
         bool disableBipedCollisionWithWorld = true;
         bool enableBipedClutterCollision = true;
@@ -271,14 +293,14 @@ namespace Config {
         bool doBlending = true;
         bool applyImpulseOnHit = true;
         bool useHandVelocityForStabHitDirection = true;
-        bool disableHitIfSheathed = false;
+        bool disableHitIfSheathed = true;
         bool seamlessFurnitureTransition = true;
         bool disableConstraintMotorsOnFurnitureExit = true;
         bool disableConstraints = false;
 
         bool applyRigidBodyTWhenReadingRigidBodies = true;
         bool applyRigidBodyTWhenWritingRigidBodies = true;
-        bool dontRestrictBoneLengthsWhenMappingFromRagdollToAnim = true;
+        bool dontRestrictBoneLengthsWhenMappingFromRagdollToAnim = false;
         bool dontRestrictBoneLengthsWhenMappingFromAnimToRagdoll = true;
         bool processRagdolledActors = true;
         bool activateActorsOnAdd = true;
@@ -300,19 +322,19 @@ namespace Config {
         bool dontRemoveRagdollWhenDoneGettingUp = true;
         float getUpMinTimeRagdolled = 0.1f;
 
-        float hitImpulseBaseStrength = 1.f;
-        float hitImpulseProportionalStrength = -0.15f;
+        float hitImpulseBaseStrength = 1.75f;
+        float hitImpulseProportionalStrength = -0.22f;
         float hitImpulseMassExponent = 0.5f;
 
-        float powerAttackImpulseMultiplier = 2.f;
-        float fatalHitImpulseMultiplier = 0.5f;
-        float ragdolledHitImpulseMultiplier = 0.5f;
+        float powerAttackImpulseMultiplier = 1.75f;
+        float fatalHitImpulseMultiplier = 0.3f;
+        float ragdolledHitImpulseMultiplier = 0.3f;
 
-        float hitImpulseMinStrength = 0.2f;
-        float hitImpulseMaxStrength = 1.f;
+        float hitImpulseMinStrength = 0.25f;
+        float hitImpulseMaxStrength = 1.75f;
         float hitImpulseMaxVelocity = 1500.f; // skyrim units
 
-        float hitImpulseDownwardsMultiplier = 0.5f;
+        float hitImpulseDownwardsMultiplier = 0.6f;
 
         float hitSwingSpeedThreshold = 5.f;
         float hitSwingImpulseMult = 1.f;
@@ -327,17 +349,17 @@ namespace Config {
 
         float hitRequiredHandSpeedRoomspace = 1.f;
 
-        float hitImpulseDecayMult1 = 0.225f;
-        float hitImpulseDecayMult2 = 0.125f;
-        float hitImpulseDecayMult3 = 0.075f;
+        float hitImpulseDecayMult1 = 0.35f;
+        float hitImpulseDecayMult2 = 0.25f;
+        float hitImpulseDecayMult3 = 0.15f;
 
         bool playMeleeWorldImpactSounds = true;
         bool playMeleeImpactEffects = true;
 
         bool preventActorSelfHits = true;
 
-        float controllerVelocitySmoothingTime = 0.055f;
-        float controllerAngularVelocityTrackingTime = 0.11f;
+        float controllerVelocitySmoothingTime = 0.05555f;
+        float controllerAngularVelocityTrackingTime = 0.1111f;
 
         bool enableWeaponBash = true;
         bool failBashWhenOutOfStamina = true;
@@ -345,16 +367,16 @@ namespace Config {
         float weaponBashWeaponInHmdDirectionThreshold = 0.2f;
 
         float swingFailedRumbleIntensity = 0.5f;
-        float swingFailedRumbleDuration = 0.5f;
+        float swingFailedRumbleDuration = 0.6f;
 
-        float swingLinearVelocityThreshold = 3.f;
+        float swingLinearVelocityThreshold = 4.5f;
         float swingDownwardsSpeedMultipler = 4.5f;
         float forwardsPowerAttackStickForwardThreshold = 0.5f;
         float swingRequiredHandHmdDirection = -0.8f;
-        float swingCooldown = 0.5f;
+        float swingCooldown = 0.55f;
         float swingDuration = 0.2f;
 
-        int swingSkipAnimFrames = 2;
+        int swingSkipAnimFrames = 3;
         int swingSkipAnimFramesBash = 3;
         float skipAnimationDeltaTime = 10000.f;
 
@@ -380,11 +402,52 @@ namespace Config {
         bool allowCyclicFreezeFromCrossBlend = true;
         bool forceContinueSelfTransitionForCyclicBlends = true;
 
-        std::set<std::string, std::less<>> additionalSelfCollisionRaces;
-        std::set<std::string, std::less<>> excludeRaces;
-        std::set<std::string, std::less<>> aggressionExcludeRaces;
-        std::set<std::string, std::less<>> disableConstraintsRaces;
-        std::set<std::string, std::less<>> footNodeNames;
+        std::set<std::string, std::less<>> additionalSelfCollisionRaces = {
+            "DraugrRace",
+            "FalmerRace",
+            "DwarvenCenturionRace",
+            "HagravenRace",
+            "TrollRace",
+            "TrollFrostRace",
+            "SkeletonRace",
+            "skeletonRace",
+            "RigidSkeletonRace",
+            "SkeletonArmorRace",
+            "SkeletonNecroRace",
+            "SkeletonNecroPriestRace",
+            "DraugrMagicRace",
+            "DLC1SoulCairnSkeletonNecroRace",
+            "DLC1SoulCairnKeeperRace",
+            "DLC1SoulCairnSkeletonArmorRace",
+            "DLC1TrollFrostRaceArmored",
+            "DLC1TrollRaceArmored",
+            "DLC1LD_ForgemasterRace",
+            "DLC2AshSpawnRace",
+            "DLC2HulkingDraugrRace",
+            "DLC2RigidSkeletonRace",
+            "DLC2MiraakRace",
+            "DLC2RieklingRace",
+            "DLC2ThirskRieklingRace",
+        };
+        std::set<std::string, std::less<>> excludeRaces = {
+            "ManakinRace",
+        };
+        std::set<std::string, std::less<>> aggressionExcludeRaces = {
+            "ManakinRace",
+        };
+        std::set<std::string, std::less<>> disableConstraintsRaces = {
+            "AtronachStormRace",
+        };
+        std::set<std::string, std::less<>> footNodeNames = {
+            "NPC R Foot [Rft ]",
+            "NPC L Foot [Lft ]",
+            "NPC R Calf [RClf]",
+            "NPC L Calf [LClf]",
+            "NPC R Foot",
+            "NPC R Calf",
+            "NPC L Foot",
+            "NPC L Calf",
+        };
 
         float dummyFloat0 = 0.f;
         float dummyFloat1 = 0.f;
