@@ -317,7 +317,7 @@ void hkpRagdollConstraintData_setPivotInWorldSpace(hkpRagdollConstraintData *con
     hkVector4_setTransformedInversePos(constraint->m_atoms.m_transforms.m_transformB.m_translation, bodyBTransform, pivot);
 }
 
-void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut)
+void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut, bool applyRigidBodyT)
 {
     // We need this because hkbRagdollDriver::mapHighResPoseLocalToLowResPoseWorld() does not actually give correct results.
     // This is essentially what hkbRagdollDriver::driveToPose() does when computing what transforms to drive the rigidbodies to.
@@ -341,7 +341,9 @@ void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTr
     CopyAndPotentiallyApplyHavokScaleToTransform(true, &worldFromModel, &worldFromModelWithScaledPositionButScaleIs1);
     worldFromModelWithScaledPositionButScaleIs1.m_scale = hkVector4(1.f, 1.f, 1.f, 1.f);
 
-    ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
+    if (applyRigidBodyT) {
+        ApplyRigidBodyTTransformsToPose(driver->ragdoll, worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, scaledLowResPoseLocal.m_data);
+    }
 
     hkbPoseLocalToPoseWorld(numPosesLow, driver->ragdoll->m_skeleton->m_parentIndices.begin(), worldFromModelWithScaledPositionButScaleIs1, scaledLowResPoseLocal.m_data, lowResPoseWorldOut);
 }

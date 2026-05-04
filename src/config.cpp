@@ -324,8 +324,10 @@ namespace Config {
         if (!RegisterFloat("grabbedActorMovementNoStrafeStartOffset", options.grabbedActorMovementNoStrafeStartOffset)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeStopOffset", options.grabbedActorMovementNoStrafeStopOffset)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeMinAngleForAnim", options.grabbedActorMovementNoStrafeMinAngleForAnim)) success = false;
+        if (!RegisterFloat("grabbedActorMovementNoStrafeHeadingSpeedNoAnim", options.grabbedActorMovementNoStrafeHeadingSpeedNoAnim)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeHeadingSpeed", options.grabbedActorMovementNoStrafeHeadingSpeed)) success = false;
         if (!RegisterFloat("grabbedActorMovementNoStrafeMoveSpeed", options.grabbedActorMovementNoStrafeMoveSpeed)) success = false;
+        if (!RegisterFloat("grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed", options.grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed)) success = false;
         if (!RegisterFloat("grabbedActorMovementPlayerDirectionHeadingSpeed", options.grabbedActorMovementPlayerDirectionHeadingSpeed)) success = false;
         if (!RegisterFloat("grabbedActorMovementDirectionMultiplier", options.grabbedActorMovementDirectionMultiplier)) success = false;
         if (!RegisterFloat("grabbedActorMovementPlayerMovementInfluence", options.grabbedActorMovementPlayerMovementInfluence)) success = false;

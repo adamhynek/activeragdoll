@@ -160,8 +160,10 @@ namespace Config {
         float grabbedActorMovementNoStrafeStartOffset= 5.f;
         float grabbedActorMovementNoStrafeStopOffset = 1.f;
         float grabbedActorMovementNoStrafeMinAngleForAnim = 0.001f;
-        float grabbedActorMovementNoStrafeHeadingSpeed= 2.f;
-        float grabbedActorMovementNoStrafeMoveSpeed= 100.f;
+        float grabbedActorMovementNoStrafeHeadingSpeedNoAnim = 2.f;
+        float grabbedActorMovementNoStrafeHeadingSpeed = 2.f;
+        float grabbedActorMovementNoStrafeMoveSpeed = 100.f;
+        float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 10.f;
         float grabbedActorMovementPlayerDirectionHeadingSpeed = 2.f;
         float grabbedActorMovementDirectionMultiplier = 1.f;
         float grabbedActorMovementPlayerMovementInfluence = 1.f;

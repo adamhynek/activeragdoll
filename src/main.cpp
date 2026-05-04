@@ -686,9 +686,9 @@ struct GrabbedActorState
     bool isRotate = false;
     bool isNoStrafeRotating = false;
     bool isNoStrafeTranslating = false;
-    float noStrafeTotalRemainingAngle = 0.f;
     float prevSpeed = 0.f;
     double noSpeedTime = 0.0;
+    bool turnAnim = false;
 };
 std::mutex g_grabbedActorStatesLock;
 std::unordered_map<Actor *, GrabbedActorState> g_grabbedActorStates{};
@@ -725,7 +725,7 @@ std::optional<float> GetStress(Actor *actor, const hkpRigidBody *desiredBody)
     return stress;
 }
 
-std::optional<hkQsTransform> GetAnimPoseForRigidBody(Actor *actor, const hkpRigidBody *desiredBody)
+std::optional<hkQsTransform> GetAnimPreLookAtPoseForRigidBody(Actor *actor, const hkpRigidBody *desiredBody)
 {
     std::optional<hkQsTransform> pose = std::nullopt;
     ForEachRagdollDriver(actor, [desiredBody, &pose](hkbRagdollDriver *driver) -> void {
@@ -734,7 +734,7 @@ std::optional<hkQsTransform> GetAnimPoseForRigidBody(Actor *actor, const hkpRigi
                 if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                     for (int i = 0; i < ragdoll->getNumBones(); ++i) {
                         if (ragdoll->m_rigidBodies[i] == desiredBody) {
-                            pose = activeRagdoll->lowResAnimPoseWS[i];
+                            pose = activeRagdoll->lowResAnimPosePreLookAtWSnoRigidBodyT[i];
                             return;
                         }
                     }
@@ -3886,17 +3886,38 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 
             if (isHeldByHand && !state.handFromRoot[isLeft]) {
                 // Hand just grabbed but we don't have a stored transform yet - set it now
-                NiTransform handTransform = g_rawHandTransforms[isLeft];
+                NiTransform handTransformOnHeldNode = g_rawHandTransforms[isLeft];
                 if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
                     NiTransform handToNode = g_currentGrabTransforms[isLeft];
                     NiTransform nodeToHand = InverseTransform(handToNode);
-                    handTransform = heldNode->m_worldTransform * nodeToHand;
+                    handTransformOnHeldNode = heldNode->m_worldTransform * nodeToHand;
                 }
-                state.handFromRoot[isLeft] = InverseTransform(refrTransform) * handTransform;
+                state.handFromRoot[isLeft] = InverseTransform(refrTransform) * handTransformOnHeldNode;
             }
             else if (!isHeldByHand && state.handFromRoot[isLeft]) {
                 // Hand no longer grabbing - clear the stored transform
                 state.handFromRoot[isLeft] = std::nullopt;
+            }
+            else if (state.handFromRoot[isLeft]) {
+                // Already grabbed and already have the initial stored transform - gradually update it to account for node movement after we grabbed it.
+                if (NiPointer<NiAVObject> heldNode = GetGrabbedNode(actor, isLeft)) {
+                    if (NiPointer<bhkRigidBody> heldBody = GetRigidBody(heldNode)) {
+                        // Use the pre LookAt pose here because the actor (ex. a horse) will move its head to look at you while you are near it. If you grabbed the head, this causes a bad feedback loop.
+                        if (std::optional<hkQsTransform> animPose = GetAnimPreLookAtPoseForRigidBody(actor, heldBody->hkBody)) {
+                            NiTransform handToNode = g_currentGrabTransforms[isLeft];
+                            NiTransform nodeToHand = InverseTransform(handToNode);
+
+                            NiTransform nodeTransformFromAnim = hkQsTransformToNiTransform(*animPose);
+                            NiTransform targetHandTransform = nodeTransformFromAnim * nodeToHand;
+
+                            NiTransform currentHandTransform = refrTransform * *state.handFromRoot[isLeft];
+                            // update current to target by grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed
+                            NiTransform newHandTransform = currentHandTransform;
+                            newHandTransform.pos += VectorNormalized(targetHandTransform.pos - currentHandTransform.pos) * Config::options.grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed * *g_deltaTime;
+                            state.handFromRoot[isLeft] = InverseTransform(refrTransform) * newHandTransform;
+                        }
+                    }
+                }
             }
         }
 
@@ -5085,6 +5106,13 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
                             ragdoll->lowResAnimPoseWS.assign(lowResPoseWorld.m_data, lowResPoseWorld.m_data + lowResPoseWorld.m_size);
 
+                            if (ragdoll->animPosePreLookAt.size() == poseHeader->m_numData) {
+                                hkStackArray<hkQsTransform> lowResPosePreLookAtWorld(ragdoll->animPosePreLookAt.size());
+                                MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, ragdoll->animPosePreLookAt.data(), lowResPosePreLookAtWorld.m_data, false);
+
+                                ragdoll->lowResAnimPosePreLookAtWSnoRigidBodyT.assign(lowResPosePreLookAtWorld.m_data, lowResPosePreLookAtWorld.m_data + lowResPosePreLookAtWorld.m_size);
+                            }
+
                             if (ragdoll->warpAllBones) {
                                 // Set rigidbody transforms to the anim pose ones
                                 for (int i = 0; i < lowResPoseWorld.m_size; i++) {
@@ -5926,7 +5954,7 @@ void UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Hook(
     UpdateRagdollPostPhysics_Actor_UpdateFromCharacterControllerAndFootIK_Original(actor);
 
     if (bhkCharacterController *controller = GetCharacterController(actor)) {
-        bool needsOrientationUpdate = fabs(controller->pitchAngle) > 0.001f || fabs(controller->rollAngle) > 0.001f;
+        bool needsOrientationUpdate = fabsf(controller->pitchAngle) > 0.001f || fabsf(controller->rollAngle) > 0.001f;
         bool wouldDoOrientationUpdate = controller->calculatePitchTimer > 0.f && controller->doOrientationUpdate && ((controller->flags & 0x6000000) != 0 || controller->pitchAngle != 0.f || controller->rollAngle != 0.f);
         if (needsOrientationUpdate && !wouldDoOrientationUpdate) {
             if (Config::options.enableForcedOrientationUpdate) {
@@ -5981,17 +6009,18 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
             // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
             // Use the total remaining angle (not the per-frame clamped delta) for the threshold check,
             // since deltaZ is clamped to the desired speed and would never be large enough to exceed the threshold.
-            float totalRemainingAngle = 0.f;
+            bool anim = false;
             {
                 std::scoped_lock lock(g_grabbedActorStatesLock);
                 auto it = g_grabbedActorStates.find(actor);
                 if (it != g_grabbedActorStates.end()) {
-                    totalRemainingAngle = it->second.noStrafeTotalRemainingAngle;
+                    anim = it->second.turnAnim;
                 }
             }
-            if (fabs(totalRemainingAngle) >= Config::options.grabbedActorMovementNoStrafeMinAngleForAnim) {
-                ActorProcess_SetRotationSpeedZ(process, deltaZ / a_deltaTime); // This drives the rotation animation
-            }
+
+            float turnSpeed = anim ? deltaZ / a_deltaTime : 0.f;
+            ActorProcess_SetRotationSpeedZ(process, turnSpeed); // This drives the rotation animation
+
             a_rotAmt.z = deltaZ; // This drives the actual rotation
         }
     }
@@ -6241,8 +6270,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         }
 
         if (numHandsGrabbing > 0) {
-            state.noStrafeTotalRemainingAngle = combinedDeltaAngle;
-
             float playerForwardMoveAmt = DotProduct(moveAmtFromPlayerMovement, forward);
             float totalForwardAmt = combinedForwardMoveAmt + playerForwardMoveAmt;
             float absTotalForward = fabsf(totalForwardAmt);
@@ -6266,10 +6293,18 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             }
             else if (state.isNoStrafeRotating && rotateStopCondition) {
                 state.isNoStrafeRotating = false;
+                state.turnAnim = false;
             }
 
             if (state.isNoStrafeRotating) {
-                float maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeed * *g_deltaTime;
+                float maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeedNoAnim * *g_deltaTime;
+                if (absAngle >= Config::options.grabbedActorMovementNoStrafeMinAngleForAnim) {
+                    maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeed * *g_deltaTime;
+                    state.turnAnim = true;
+                }
+                else if (state.turnAnim) {
+                    maxHeadingChange = lerp(Config::options.grabbedActorMovementNoStrafeHeadingSpeedNoAnim, Config::options.grabbedActorMovementNoStrafeHeadingSpeed, absAngle / Config::options.grabbedActorMovementNoStrafeMinAngleForAnim) * *g_deltaTime;
+                }
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
                 offsetAngle.z += clampedDeltaAngle;
             }
@@ -6584,6 +6619,30 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
 }
 
 
+typedef void(*_BSLookAtModifier_modify)(BSLookAtModifier *_this, const hkbContext &context, hkbGeneratorOutput &generatorOutput);
+_BSLookAtModifier_modify BSLookAtModifier_modify_Original = nullptr;
+static RelocPtr<_BSLookAtModifier_modify> BSLookAtModifier_modify_vtbl(0x17C68F0);
+void BSLookAtModifier_modify_Hook(BSLookAtModifier *_this, const hkbContext &context, hkbGeneratorOutput &generatorOutput)
+{
+    Actor *actor = GetActorFromCharacter(context.character);
+
+    if (actor && IsActiveActor(actor)) {
+        ForEachRagdollDriver(actor, [&generatorOutput](hkbRagdollDriver *driver) {
+            if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                hkbGeneratorOutput::TrackHeader *poseHeader = GetTrackHeader(generatorOutput, hkbGeneratorOutput::StandardTracks::TRACK_POSE);
+                if (poseHeader && poseHeader->m_onFraction > 0.f) {
+                    int numPoses = poseHeader->m_numData;
+                    hkQsTransform *animPose = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+                    ragdoll->animPosePreLookAt.assign(animPose, animPose + numPoses); // TODO: This is NOT incorporating foot IK
+                }
+            }
+        });
+    }
+
+    BSLookAtModifier_modify_Original(_this, context, generatorOutput);
+}
+
+
 void DebugDrawSphere(const NiTransform &transform, const NiColorA &color)
 {
 #ifdef _DEBUG
@@ -6890,6 +6949,11 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_HookLoc.GetUIntPtr(), uintptr_t(hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Hook));
         hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData_Original = (_hkaKeyFrameHierarchyUtility_CalculateApplyKeyframeData)originalFunc;
+    }
+
+    {
+        BSLookAtModifier_modify_Original = *BSLookAtModifier_modify_vtbl;
+        SafeWrite64(BSLookAtModifier_modify_vtbl.GetUIntPtr(), uintptr_t(BSLookAtModifier_modify_Hook));
     }
 
     {

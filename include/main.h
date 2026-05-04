@@ -20,7 +20,9 @@ struct ActiveRagdoll
     Blender blender{};
     std::vector<hkQsTransform> animPose{};
     std::vector<hkQsTransform> ragdollPose{};
+    std::vector<hkQsTransform> animPosePreLookAt{};
     std::vector<hkQsTransform> lowResAnimPoseWS{};
+    std::vector<hkQsTransform> lowResAnimPosePreLookAtWSnoRigidBodyT{};
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
     std::vector<std::optional<NiQuaternion>> prevKeyframeBoneRots{};

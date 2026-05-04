@@ -920,6 +920,57 @@ struct BGSFootIkRaycastInterfaceDB
 };
 static_assert(offsetof(BGSFootIkRaycastInterfaceDB, raycastData) == 0x40);
 
+struct hkbModifier : hkbNode
+{
+    bool enable;          // 48
+	UInt32 pad4C;     // 4c
+};
+
+struct BSLookAtModifierBoneData
+{
+    int16_t index;               // 00
+    uint8_t pad2[14];            // 02
+    hkVector4 fwdAxisLS;         // 10
+    float limitAngleDegrees;     // 20
+    float onGain;                // 24
+    float offGain;               // 28
+    bool enabled;                // 2C
+    uint8_t pad45[3];            // 2d
+    hkVector4 currentFwdAxisLS;  // 30
+};
+static_assert(sizeof(BSLookAtModifierBoneData) == 0x40);
+
+struct BSLookAtModifier : hkbModifier
+{
+    bool lookAtTarget;                           // 50
+    uint8_t pad81[7];                            // 51
+    hkArray<BSLookAtModifierBoneData> bones;     // 58
+    hkArray<BSLookAtModifierBoneData> eyeBones;  // 68
+    float limitAngleDegrees;                     // 78
+    float limitAngleThresholdDegrees;            // 7C
+    bool continueLookOutsideOfLimit;             // 80
+    uint8_t pad129[3];                           // 81
+    float onGain;                                // 84
+    float offGain;                               // 88
+    bool useBoneGains;                           // 8C
+    uint8_t pad141[3];                           // 8d
+    hkVector4 targetLocation;                    // 90
+    bool targetOutsideLimits;                    // A0
+    uint8_t pad161[7];                           // a1
+    hkbEventProperty targetOutOfLimitEvent;      // A8
+    bool lookAtCamera;                           // B8
+    uint8_t pad185[3];                           // b9
+    float lookAtCameraX;                         // BC
+    float lookAtCameraY;                         // C0
+    float lookAtCameraZ;                         // C4
+    float timeStep;                              // C8
+    bool allBonesValid;                         // CC
+    uint8_t pad205[3];                           // cd
+    void* skeletonMemory;                       // D0
+    uint8_t padD8[8];                            // d8
+};
+static_assert(sizeof(BSLookAtModifier) == 0xe0);
+
 
 inline hkReal *Track_getData(hkbGeneratorOutput &output, hkbGeneratorOutput::TrackHeader &header) {
     return reinterpret_cast<hkReal *>(reinterpret_cast<char *>(output.m_tracks) + header.m_dataOffset);
@@ -944,7 +995,7 @@ inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGr
     return ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, out);
 }
 
-void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut);
+void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut, bool applyRigidBodyT = true);
 void ApplyRigidBodyTTransformsToPose(const hkaRagdollInstance *ragdoll, const hkQsTransform &worldFromModel, const hkQsTransform *poseLocalIn, hkQsTransform *poseLocalOut);
 NiPointer<bhkCharacterController> GetCharacterController(Actor *actor);
 NiPointer<bhkCharRigidBodyController> GetCharRigidBodyController(Actor *actor);
