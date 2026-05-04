@@ -266,6 +266,7 @@ namespace Config {
         bool doClutterVsBipedCollisionDamage = true;
         bool showCollisionDamageHitFx = false;
         bool forceAnimPose = false;
+        bool forceAnimPoseNoLookAt = false;
         bool forceRagdollPose = false;
         bool doBlending = true;
         bool applyImpulseOnHit = true;

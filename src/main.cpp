@@ -5412,6 +5412,12 @@ void PostPostPhysicsHook(hkbRagdollDriver *driver, const hkbContext &context, hk
             memcpy(poseOut, ragdoll->animPose.data(), ragdoll->animPose.size() * sizeof(hkQsTransform));
         }
     }
+    else if (Config::options.forceAnimPoseNoLookAt) {
+        if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->animPosePreLookAt.data()) {
+            hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
+            memcpy(poseOut, ragdoll->animPosePreLookAt.data(), ragdoll->animPosePreLookAt.size() * sizeof(hkQsTransform));
+        }
+    }
     else if (Config::options.forceRagdollPose) {
         if (poseHeader && poseHeader->m_onFraction > 0.f && ragdoll->ragdollPose.data()) {
             hkQsTransform *poseOut = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
@@ -6003,12 +6009,9 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
             float targetRotZ = targetAngle.z;
             float deltaZ = ConstrainAngle180(targetRotZ - currentRotZ);
 
-            // TODO: We can gradually drive the "grabbed point" in the nostrafe actor's space towards the actual spot relative to the bone. If we do it quite gradually it should not lead to oscillations just gradual correction.
-
             // Force the rotation amount to be what we want.
             // This bypasses the AngleController (applies thresholds which are too high for the per-frame movement we want) and StrafeController (applies fBackPedalAngle which messes with rotation).
-            // Use the total remaining angle (not the per-frame clamped delta) for the threshold check,
-            // since deltaZ is clamped to the desired speed and would never be large enough to exceed the threshold.
+
             bool anim = false;
             {
                 std::scoped_lock lock(g_grabbedActorStatesLock);
@@ -6216,6 +6219,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
+    bool disableHoldZeroSpeed = false;
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car.
@@ -6284,6 +6288,11 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 state.isNoStrafeTranslating = false;
             }
 
+            if (isPlayerMovingAlongForward) {
+                // If we do something like snap-turn while moving with the actor, this can cause the speed to go low briefly, and we don't want to stop them in this case.
+                disableHoldZeroSpeed = true;
+            }
+
             // Hysteresis for rotation. Check this after computing whether to translate.
             bool rotateStartCondition = state.isNoStrafeTranslating || absAngle >= Config::options.grabbedActorMovementNoStrafeLateralStartAngle;
             bool rotateStopCondition = !state.isNoStrafeTranslating && absAngle < Config::options.grabbedActorMovementNoStrafeLateralStopAngle;
@@ -6298,7 +6307,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
             if (state.isNoStrafeRotating) {
                 float maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeedNoAnim * *g_deltaTime;
-                if (absAngle >= Config::options.grabbedActorMovementNoStrafeMinAngleForAnim) {
+                if (absAngle >= Config::options.grabbedActorMovementNoStrafeMinAngleForAnim || state.isNoStrafeTranslating) {
                     maxHeadingChange = Config::options.grabbedActorMovementNoStrafeHeadingSpeed * *g_deltaTime;
                     state.turnAnim = true;
                 }
@@ -6423,7 +6432,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 state.noSpeedTime = g_currentFrameTime;
             }
         }
-        if (g_currentFrameTime - state.noSpeedTime < Config::options.grabbedActorMovementHoldZeroSpeedTime) {
+        if (g_currentFrameTime - state.noSpeedTime < Config::options.grabbedActorMovementHoldZeroSpeedTime && !disableHoldZeroSpeed) {
             speed = 0.f;
         }
     }

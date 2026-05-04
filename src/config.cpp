@@ -433,6 +433,7 @@ namespace Config {
         if (!RegisterBool("doClutterVsBipedCollisionDamage", options.doClutterVsBipedCollisionDamage)) success = false;
         if (!RegisterBool("showCollisionDamageHitFx", options.showCollisionDamageHitFx)) success = false;
         if (!RegisterBool("forceAnimPose", options.forceAnimPose)) success = false;
+        if (!RegisterBool("forceAnimPoseNoLookAt", options.forceAnimPoseNoLookAt)) success = false;
         if (!RegisterBool("forceRagdollPose", options.forceRagdollPose)) success = false;
         if (!RegisterBool("doBlending", options.doBlending)) success = false;
         if (!RegisterBool("applyImpulseOnHit", options.applyImpulseOnHit)) success = false;
