@@ -689,6 +689,7 @@ struct GrabbedActorState
     float prevSpeed = 0.f;
     double noSpeedTime = 0.0;
     bool turnAnim = false;
+    bool endMotionDriven = false;
 };
 std::mutex g_grabbedActorStatesLock;
 std::unordered_map<Actor *, GrabbedActorState> g_grabbedActorStates{};
@@ -3443,10 +3444,10 @@ void EnableGravity(Actor *actor)
 }
 
 
-struct EndGrabbedActorMovementTask : TaskDelegate
+struct EvaluatePackageTask : TaskDelegate
 {
-    static EndGrabbedActorMovementTask * Create(UInt32 source) {
-        EndGrabbedActorMovementTask *cmd = new EndGrabbedActorMovementTask;
+    static EvaluatePackageTask * Create(UInt32 source) {
+        EvaluatePackageTask *cmd = new EvaluatePackageTask;
         if (cmd) {
             cmd->source = source;
         }
@@ -3457,14 +3458,7 @@ struct EndGrabbedActorMovementTask : TaskDelegate
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(source, refr)) {
             if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                MovementControllerNPC *movementController = GetMovementController(actor);
-                if (!movementController) return;
-
-                if (IsPlannerDirectControl(movementController)) {
-                    movementController->movementPlannerDirectControl.ClearPlannerDirectControl();
-
-                    Actor_EvaluatePackage(actor, false, false);
-                }
+                Actor_EvaluatePackage(actor, false, false);
             }
         }
     }
@@ -3857,9 +3851,7 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
 
     if (!doGrabbedActorMovement) {
         if (g_grabbedActorStates.size() > 0 && g_grabbedActorStates.count(actor)) {
-            // TODO: Is there a possible race condition here? Where we end grabbed actor movement and then start it?
-            g_taskInterface->AddTask(EndGrabbedActorMovementTask::Create(GetOrCreateRefrHandle(actor)));
-            g_grabbedActorStates.erase(actor);
+            g_grabbedActorStates[actor].endMotionDriven = true;
         }
         return;
     }
@@ -6165,6 +6157,18 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
     MovementControllerNPC *movementController = GetMovementController(actor);
     if (!movementController) {
+        Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
+        return;
+    }
+
+    if (state.endMotionDriven) {
+        if (IsPlannerDirectControl(movementController)) {
+            movementController->movementPlannerDirectControl.ClearPlannerDirectControl(); 
+        }
+        g_grabbedActorStates.erase(it);
+
+        g_taskInterface->AddTask(EvaluatePackageTask::Create(GetOrCreateRefrHandle(actor)));
+
         Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
         return;
     }
