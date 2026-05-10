@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <mutex>
 
 #include "skse64/GameReferences.h"
 
@@ -20,13 +21,16 @@ struct ActiveRagdoll
     Blender blender{};
     std::vector<hkQsTransform> animPose{};
     std::vector<hkQsTransform> ragdollPose{};
+    std::mutex animPosePreLookAtLock{};
     std::vector<hkQsTransform> animPosePreLookAt{};
+    std::mutex lowResAnimPoseLock{};
     std::vector<hkQsTransform> lowResAnimPoseWS{};
+    std::mutex lowResAnimPosePreLookAtWSLock{};
     std::vector<hkQsTransform> lowResAnimPosePreLookAtWSnoRigidBodyT{};
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
     std::vector<std::optional<NiQuaternion>> prevKeyframeBoneRots{};
-    std::vector<NiAVObject *> coreNodes{};
+    std::vector<hkpRigidBody *> coreNodes{};
     hkQsTransform worldFromModel{};
     hkQsTransform worldFromModelPostPhysics{};
     hkQsTransform stickyWorldFromModel{};

@@ -250,10 +250,12 @@ struct LinearImpulseJob : GenericJob
 };
 
 
+std::shared_mutex g_activeRagdollsLock{};
 std::unordered_map<hkbRagdollDriver *, std::shared_ptr<ActiveRagdoll>> g_activeRagdolls{};
 
 std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driver)
 {
+    std::shared_lock lock(g_activeRagdollsLock);
     auto it = g_activeRagdolls.find(driver);
     if (it == g_activeRagdolls.end()) return nullptr;
     return it->second;
@@ -732,6 +734,9 @@ std::optional<hkQsTransform> GetAnimPreLookAtPoseForRigidBody(Actor *actor, cons
     std::optional<hkQsTransform> pose = std::nullopt;
     ForEachRagdollDriver(actor, [desiredBody, &pose](hkbRagdollDriver *driver) -> void {
         if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+
+            std::scoped_lock lock(activeRagdoll->lowResAnimPosePreLookAtWSLock);
+
             if (activeRagdoll->lowResAnimPosePreLookAtWSnoRigidBodyT.size() > 0) {
                 if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                     if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
@@ -757,6 +762,9 @@ std::optional<NiPoint3> GetBoneDisplacement(Actor *actor, const hkpRigidBody *de
         if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
             if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                 if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
+
+                    std::scoped_lock lock(activeRagdoll->lowResAnimPoseLock);
+
                     for (int i = 0; i < ragdoll->getNumBones(); ++i) {
                         if (ragdoll->m_rigidBodies[i] == desiredBody) {
                             NiTransform handToNode = g_currentGrabTransforms[isLeft];
@@ -3224,7 +3232,7 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 int g_lastActorAddedToWorldFrame = 0;
 
 
-std::optional<std::vector<NiAVObject *>> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
+std::optional<std::vector<hkpRigidBody *>> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
 {
     hkbCharacter *character = driver->character;
     if (!character) return {};
@@ -3235,21 +3243,18 @@ std::optional<std::vector<NiAVObject *>> GetCoreNodes(Actor *actor, hkbRagdollDr
     hkpRigidBody *rootBody = ragdoll->getRigidBodyOfBone(0);
     if (!rootBody) return {};
 
-    NiPointer<NiAVObject> rootNode = GetNodeFromCollidable(rootBody->getCollidable());
-    if (!rootNode) return {};
-
     // Get the torso node from race data; fall back to closest parent with collision if it has none
     NiAVObject *rawTorsoNode = GetTorsoNode(actor);
     NiPointer<NiAVObject> torsoNode = rawTorsoNode ? GetClosestParentWithCollision(rawTorsoNode, true) : nullptr;
     if (!torsoNode) {
-        return {{ rootNode }};
+        return {{ rootBody }};
     }
 
     hkpRigidBody *torsoBody = GetRigidBody(torsoNode)->hkBody;
 
     // If the root IS the torso, just return the root
     if (rootBody == torsoBody) {
-        return {{ rootNode }};
+        return {{ rootBody }};
     }
 
     // BFS from rootBody through the constraint graph, tracking parents so we can reconstruct the path.
@@ -3283,14 +3288,13 @@ std::optional<std::vector<NiAVObject *>> GetCoreNodes(Actor *actor, hkbRagdollDr
 
     if (!parent.count(torsoBody)) {
         // Torso not reachable via the constraint graph; fall back to just root
-        return {{ rootNode }};
+        return {{ rootBody }};
     }
 
     // Reconstruct the path from torsoBody back to rootBody, then reverse
-    std::vector<NiAVObject *> path;
+    std::vector<hkpRigidBody *> path;
     for (hkpRigidBody *cur = torsoBody; cur; cur = parent.at(cur)) {
-        if (NiAVObject *node = GetNodeFromCollidable(cur->getCollidable()))
-            path.push_back(node);
+        path.push_back(cur);
     }
     std::reverse(path.begin(), path.end());
     return path;
@@ -3317,10 +3321,7 @@ bool AddRagdollToWorld(Actor *actor)
                 for (int i = 0; i < manager->graphs.size; i++) {
                     BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
                     if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
-                        g_activeActors.insert(actor);
-
                         std::shared_ptr<ActiveRagdoll> activeRagdoll = std::make_shared<ActiveRagdoll>();
-                        g_activeRagdolls[driver] = activeRagdoll;
 
                         if (Config::options.blendInWhenAddingToWorld) {
                             Blender &blender = activeRagdoll->blender;
@@ -3346,6 +3347,16 @@ bool AddRagdollToWorld(Actor *actor)
 
                         if (auto coreNodes = GetCoreNodes(actor, driver)) {
                             activeRagdoll->coreNodes = *coreNodes;
+                        }
+
+                        {
+                            std::scoped_lock lock2(g_activeRagdollsLock);
+                            g_activeRagdolls[driver] = activeRagdoll;
+                        }
+
+                        {
+                            std::scoped_lock lock2(g_activeActorsLock);
+                            g_activeActors.insert(actor);
                         }
                     }
                 }
@@ -3394,10 +3405,14 @@ void CleanupActiveRagdollTracking(Actor *actor)
                             graph.ptr->world = nullptr;
                         }
                     }
-                    g_activeRagdolls.erase(driver);
 
                     {
-                        std::unique_lock lock2(g_activeActorsLock);
+                        std::scoped_lock lock2(g_activeRagdollsLock);
+                        g_activeRagdolls.erase(driver);
+                    }
+
+                    {
+                        std::scoped_lock lock2(g_activeActorsLock);
                         g_activeActors.erase(actor);
                     }
                 }
@@ -3830,7 +3845,7 @@ void ResetObjects()
 #endif // _DEBUG
 
     {
-        std::unique_lock lock(g_activeActorsLock);
+        std::scoped_lock lock(g_activeActorsLock);
         g_activeActors.clear();
     }
 
@@ -3839,8 +3854,12 @@ void ResetObjects()
         g_grabbedActorStates.clear();
     }
 
+    {
+        std::scoped_lock lock(g_activeRagdollsLock);
+        g_activeRagdolls.clear();
+    }
+
     g_npcs.clear();
-    g_activeRagdolls.clear();
     g_activeBipedGroups.clear();
     g_noPlayerCharControllerCollideGroups.clear();
     g_hittableCharControllerGroups.clear();
@@ -4014,12 +4033,17 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
                         rbPos.push_back(HkVectorToNiPoint(rb->getTransform().getTranslation()) - refrTransform.pos * *g_havokWorldScale);
                     }
 
-                    std::vector weights(ragdoll->lowResAnimPoseWS.size(), 1.f);
                     std::vector<NiPoint3> animPos{};
-                    for (const hkQsTransform &t : ragdoll->lowResAnimPoseWS) {
-                        animPos.push_back(HkVectorToNiPoint(t.m_translation) - refrTransform.pos * *g_havokWorldScale);
+                    int lowResNumPoses;
+                    {
+                        std::scoped_lock lock(ragdoll->lowResAnimPoseLock);
+                        lowResNumPoses = ragdoll->lowResAnimPoseWS.size();
+                        for (const hkQsTransform &t : ragdoll->lowResAnimPoseWS) {
+                            animPos.push_back(HkVectorToNiPoint(t.m_translation) - refrTransform.pos * *g_havokWorldScale);
+                        }
                     }
 
+                    std::vector weights(lowResNumPoses, 1.f);
                     MathUtils::PlanarFit2D fit = SolvePlanarYaw(animPos, rbPos, weights);
 
                     state.animCentroidWS = fit.restCentroid + refrTransform.pos * *g_havokWorldScale;
@@ -5175,13 +5199,25 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                             hkStackArray<hkQsTransform> lowResPoseWorld(driver->ragdoll->getNumBones());
                             MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, highResPoseLocal, lowResPoseWorld.m_data);
 
-                            ragdoll->lowResAnimPoseWS.assign(lowResPoseWorld.m_data, lowResPoseWorld.m_data + lowResPoseWorld.m_size);
+                            {
+                                std::scoped_lock lock(ragdoll->lowResAnimPoseLock);
+                                ragdoll->lowResAnimPoseWS.assign(lowResPoseWorld.m_data, lowResPoseWorld.m_data + lowResPoseWorld.m_size);
+                            }
 
-                            if (ragdoll->animPosePreLookAt.size() == poseHeader->m_numData) {
-                                hkStackArray<hkQsTransform> lowResPosePreLookAtWorld(ragdoll->animPosePreLookAt.size());
-                                MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, ragdoll->animPosePreLookAt.data(), lowResPosePreLookAtWorld.m_data, false);
+                            {
+                                std::unique_lock lock(ragdoll->animPosePreLookAtLock);
 
-                                ragdoll->lowResAnimPosePreLookAtWSnoRigidBodyT.assign(lowResPosePreLookAtWorld.m_data, lowResPosePreLookAtWorld.m_data + lowResPosePreLookAtWorld.m_size);
+                                if (ragdoll->animPosePreLookAt.size() == poseHeader->m_numData) {
+                                    hkStackArray<hkQsTransform> lowResPosePreLookAtWorld(ragdoll->animPosePreLookAt.size());
+                                    MapHighResPoseLocalToLowResPoseWorld(driver, worldFromModel, ragdoll->animPosePreLookAt.data(), lowResPosePreLookAtWorld.m_data, false);
+
+                                    lock.unlock(); // unlock here so we don't have to hold both locks at once. We aren't reading the data after this point.
+
+                                    {
+                                        std::scoped_lock lock2(ragdoll->lowResAnimPosePreLookAtWSLock);
+                                        ragdoll->lowResAnimPosePreLookAtWSnoRigidBodyT.assign(lowResPosePreLookAtWorld.m_data, lowResPosePreLookAtWorld.m_data + lowResPosePreLookAtWorld.m_size);
+                                    }
+                                }
                             }
 
                             if (ragdoll->warpAllBones) {
@@ -6725,7 +6761,11 @@ void BSLookAtModifier_modify_Hook(BSLookAtModifier *_this, const hkbContext &con
                 if (poseHeader && poseHeader->m_onFraction > 0.f) {
                     int numPoses = poseHeader->m_numData;
                     hkQsTransform *animPose = (hkQsTransform *)Track_getData(generatorOutput, *poseHeader);
-                    ragdoll->animPosePreLookAt.assign(animPose, animPose + numPoses); // TODO: This is NOT incorporating foot IK
+
+                    {
+                        std::scoped_lock lock(ragdoll->animPosePreLookAtLock);
+                        ragdoll->animPosePreLookAt.assign(animPose, animPose + numPoses); // TODO: This is NOT incorporating foot IK
+                    }
                 }
             }
         });
