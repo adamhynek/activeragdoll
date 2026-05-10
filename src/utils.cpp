@@ -634,15 +634,15 @@ NiPointer<bhkRigidBody> FindRigidBody(NiAVObject *root, bhkRigidBody *query)
         }
     }
 
-    return false;
+    return nullptr;
 }
 
-NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignoreSelf)
+NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignoreWorld, bool ignoreSelf)
 {
     NiPointer<NiAVObject> nodeWithCollision = node;
     while (nodeWithCollision) {
         if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(nodeWithCollision)) {
-            if (rigidBody->hkBody->m_world) {
+            if (ignoreWorld || rigidBody->hkBody->m_world) {
                 if (!ignoreSelf || nodeWithCollision != node) {
                     return nodeWithCollision;
                 }
@@ -651,6 +651,62 @@ NiPointer<NiAVObject> GetClosestParentWithCollision(NiAVObject *node, bool ignor
         nodeWithCollision = nodeWithCollision->m_parent;
     }
     return nullptr;
+}
+
+bool CollectAllConnectedRigidBodiesHelper(NiAVObject *root, std::set<RE::hkRefPtr<hkpRigidBody>> &out)
+{
+    if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(root)) {
+        if (rigidBody->hkBody) {
+            for (int i = 0; i < rigidBody->constraints.count; i++) {
+                bhkConstraint *constraint = rigidBody->constraints.entries[i];
+
+                bool isConstraintEnabled; hkpConstraintInstance_isEnabled(constraint->constraint, &isConstraintEnabled);
+                if (!isConstraintEnabled) continue;
+
+                hkpRigidBody *rigidBodyA = (hkpRigidBody *)constraint->constraint->getEntityA();
+                hkpRigidBody *rigidBodyB = (hkpRigidBody *)constraint->constraint->getEntityB();
+
+                bool isAInSet = out.count(rigidBodyA) != 0;
+                bool isBInSet = out.count(rigidBodyB) != 0;
+
+                if (isAInSet || isBInSet) {
+                    // The constraint is connected to the existing connected component
+                    if (!isAInSet || !isBInSet) {
+                        // Part of the constraint is not part of the connected component yet, so add it
+                        out.insert(rigidBodyA);
+                        out.insert(rigidBodyB);
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (NiNode *node = root->GetAsNiNode()) {
+        bool didAddAny = false;
+        for (int i = 0; i < node->m_children.m_emptyRunStart; i++) {
+            if (NiAVObject *child = node->m_children.m_data[i]) {
+                bool didAdd = CollectAllConnectedRigidBodiesHelper(child, out);
+                didAddAny |= didAdd;
+            }
+        }
+        return didAddAny;
+    }
+
+    return false;
+}
+
+void CollectAllConnectedRigidBodies(NiAVObject *root, bhkRigidBody *connectee, std::set<RE::hkRefPtr<hkpRigidBody>> &out)
+{
+    // Start us off with just the first node being part of the connected component
+    out.insert(connectee->hkBody);
+
+    // Continuously add nodes to the connected component until a pass where no nodes are added
+    bool done = false;
+    while (!done) {
+        bool didAddAny = CollectAllConnectedRigidBodiesHelper(root, out);
+        done = !didAddAny;
+    }
 }
 
 void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<void(hkbRagdollDriver *)> f)

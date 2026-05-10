@@ -26,6 +26,7 @@ struct ActiveRagdoll
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
     std::vector<std::optional<NiQuaternion>> prevKeyframeBoneRots{};
+    std::vector<NiAVObject *> coreNodes{};
     hkQsTransform worldFromModel{};
     hkQsTransform worldFromModelPostPhysics{};
     hkQsTransform stickyWorldFromModel{};

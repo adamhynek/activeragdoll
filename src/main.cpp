@@ -3,6 +3,7 @@
 #include <regex>
 #include <limits>
 #include <deque>
+#include <optional>
 #include <shared_mutex>
 
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
@@ -3223,6 +3224,78 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 int g_lastActorAddedToWorldFrame = 0;
 
 
+std::optional<std::vector<NiAVObject *>> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
+{
+    hkbCharacter *character = driver->character;
+    if (!character) return {};
+
+    hkaRagdollInstance *ragdoll = driver->ragdoll;
+    if (!ragdoll || ragdoll->getNumBones() == 0) return {};
+
+    hkpRigidBody *rootBody = ragdoll->getRigidBodyOfBone(0);
+    if (!rootBody) return {};
+
+    NiPointer<NiAVObject> rootNode = GetNodeFromCollidable(rootBody->getCollidable());
+    if (!rootNode) return {};
+
+    // Get the torso node from race data; fall back to closest parent with collision if it has none
+    NiAVObject *rawTorsoNode = GetTorsoNode(actor);
+    NiPointer<NiAVObject> torsoNode = rawTorsoNode ? GetClosestParentWithCollision(rawTorsoNode, true) : nullptr;
+    if (!torsoNode) {
+        return {{ rootNode }};
+    }
+
+    hkpRigidBody *torsoBody = GetRigidBody(torsoNode)->hkBody;
+
+    // If the root IS the torso, just return the root
+    if (rootBody == torsoBody) {
+        return {{ rootNode }};
+    }
+
+    // BFS from rootBody through the constraint graph, tracking parents so we can reconstruct the path.
+    // We scan ragdoll->getConstraintArray() for neighbors rather than bhkRigidBody::constraints,
+    // since only the master body has constraints in its own array.
+    std::unordered_map<hkpRigidBody *, hkpRigidBody *> parent;
+    std::deque<hkpRigidBody *> bfsQueue;
+    bfsQueue.push_back(rootBody);
+    parent[rootBody] = nullptr;
+
+    while (!bfsQueue.empty()) {
+        hkpRigidBody *current = bfsQueue.front();
+        bfsQueue.pop_front();
+
+        for (hkpConstraintInstance *constraint : ragdoll->getConstraintArray()) {
+            bool isEnabled; hkpConstraintInstance_isEnabled(constraint, &isEnabled);
+            if (!isEnabled) continue;
+
+            hkpRigidBody *bodyA = (hkpRigidBody *)constraint->getEntityA();
+            hkpRigidBody *bodyB = (hkpRigidBody *)constraint->getEntityB();
+            if (bodyA != current && bodyB != current) continue;
+
+            hkpRigidBody *neighbor = (bodyA == current) ? bodyB : bodyA;
+
+            if (parent.count(neighbor) == 0) {
+                parent[neighbor] = current;
+                bfsQueue.push_back(neighbor);
+            }
+        }
+    }
+
+    if (!parent.count(torsoBody)) {
+        // Torso not reachable via the constraint graph; fall back to just root
+        return {{ rootNode }};
+    }
+
+    // Reconstruct the path from torsoBody back to rootBody, then reverse
+    std::vector<NiAVObject *> path;
+    for (hkpRigidBody *cur = torsoBody; cur; cur = parent.at(cur)) {
+        if (NiAVObject *node = GetNodeFromCollidable(cur->getCollidable()))
+            path.push_back(node);
+    }
+    std::reverse(path.begin(), path.end());
+    return path;
+}
+
 bool AddRagdollToWorld(Actor *actor)
 {
     if (!Config::options.processRagdolledActors && Actor_IsInRagdollState(actor)) return false;
@@ -3269,6 +3342,10 @@ bool AddRagdollToWorld(Actor *actor)
 
                         if (Config::options.fixupSkeletonMappings) {
                             SynchronizeAndFixupRagdollAndAnimSkeletonMappers(driver);
+                        }
+
+                        if (auto coreNodes = GetCoreNodes(actor, driver)) {
+                            activeRagdoll->coreNodes = *coreNodes;
                         }
                     }
                 }
@@ -5279,7 +5356,7 @@ void PostDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCo
             // TODO: In order to have the weapon act upon the ragdoll, we need to introduce a constraint to binds the weapon to the hand
             // TODO: This should actually be the closest ragdoll rigidbody with collision
             // TODO: We also want to make sure it's actually a hand, as there can be frames when initially unsheathing where it is still parented to the pelvis
-            if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, true)) {
+            if (NiPointer<NiAVObject> parent = GetClosestParentWithCollision(weaponRoot, false, true)) {
                 // assume the parent is the hand
                 if (NiPointer<bhkRigidBody> handBody = GetRigidBody(parent)) {
                     NiTransform handTransform = hkTransformToNiTransform(handBody->hkBody->getTransform(), 1.f);
