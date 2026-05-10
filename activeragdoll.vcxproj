@@ -76,8 +76,9 @@
       <FloatingPointExceptions>true</FloatingPointExceptions>
       <CompileAs>CompileAsCpp</CompileAs>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <UseFullPaths>false</UseFullPaths>
+      <ConformanceMode>false</ConformanceMode>
     </ClCompile>
     <Link>
       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
@@ -121,9 +122,10 @@
       <MultiProcessorCompilation>
       </MultiProcessorCompilation>
       <CompileAs>CompileAsCpp</CompileAs>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <EnforceTypeConversionRules>true</EnforceTypeConversionRules>
       <UseFullPaths>false</UseFullPaths>
+      <ConformanceMode>false</ConformanceMode>
     </ClCompile>
     <Link>
       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
