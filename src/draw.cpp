@@ -407,10 +407,13 @@ PS_OUTPUT main(PS_INPUT input) {
         }
 
         g_renderGlobals->deviceContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        g_rendererShadowState->m_StateUpdateFlags |= 0x800;
 
         g_renderGlobals->deviceContext->RSSetState(g_rasterizerState);
+        g_rendererShadowState->m_StateUpdateFlags |= 0x1070;
 
         g_renderGlobals->deviceContext->IASetInputLayout(g_inputLayout);
+        g_rendererShadowState->m_StateUpdateFlags |= 0xA;
 
         g_renderGlobals->deviceContext->VSSetShader(g_vertexShader, nullptr, 0);
         g_renderGlobals->deviceContext->PSSetShader(g_pixelShader, nullptr, 0);
