@@ -3,6 +3,7 @@
 #include <Physics/Collide/Shape/Convex/Box/hkpBoxShape.h>
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Misc/Transform/hkpTransformShape.h>
+#include <Physics/Collide/Query/Collector/PointCollector/hkpAllCdPointCollector.h>
 #include <Physics/Dynamics/Action/hkpUnaryAction.h>
 #include <Physics/Dynamics/Constraint/Bilateral/BallAndSocket/hkpBallAndSocketConstraintData.h>
 #include <Physics/Utilities/Constraint/Keyframe/hkpKeyFrameUtility.h>
@@ -117,6 +118,8 @@ extern RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator;
 
 extern RelocPtr<bhkCollisionFilter *> g_collisionFilter;
 
+extern RelocPtr<BSFadeNode *> g_globalFadeNode;
+
 
 // Havok / Bethesda havok wrappers
 
@@ -137,6 +140,9 @@ extern RelocAddr<_hkpWorld_GetPenetrations> hkpWorld_GetPenetrations;
 
 typedef void(*_hkpWorld_GetClosestPoints)(hkpWorld *world, const hkpCollidable *collA, const hkpCollisionInput *input, hkpCdPointCollector *collector);
 extern RelocAddr<_hkpWorld_GetClosestPoints> hkpWorld_GetClosestPoints;
+
+typedef void(*_hkpAllCdPointCollector_sortHits)(hkpAllCdPointCollector *collector);
+extern RelocAddr<_hkpAllCdPointCollector_sortHits> hkpAllCdPointCollector_sortHits;
 
 typedef hkpEntity *(*_hkpWorld_AddEntity)(hkpWorld *world, hkpEntity *entity, hkpEntityActivation initialActivationState);
 extern RelocAddr<_hkpWorld_AddEntity> hkpWorld_AddEntity;
@@ -289,6 +295,9 @@ extern RelocAddr<_hkbStateMachine_getStateIndex> hkbStateMachine_getStateIndex;
 
 typedef SInt64(*_hkPointerMap_getWithDefault)(void *pointerMap, SInt64 key, SInt64 defaultValue);
 extern RelocAddr<_hkPointerMap_getWithDefault> hkPointerMap_getWithDefault;
+
+typedef void(*_bhkCharacterController_ApplyVelocityForDuration)(bhkCharacterController *_this, const NiPoint3 &moveAmt, float duration);
+extern RelocAddr<_bhkCharacterController_ApplyVelocityForDuration> bhkCharacterController_ApplyVelocityForDuration;
 
 
 // More havok-related
@@ -671,8 +680,11 @@ extern RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo;
 typedef void(*_Actor_GetBumped)(Actor *_this, Actor *bumper, bool isLargeBump, bool exitFurniture);
 extern RelocAddr<_Actor_GetBumped> Actor_GetBumped;
 
-typedef bool(*_Actor_HasLargeMovementDelta)(Actor *_this);
-extern RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta;
+typedef bool(*_Actor_IsMoving)(Actor *_this);
+extern RelocAddr<_Actor_IsMoving> Actor_IsMoving;
+
+typedef bool(*_Actor_IsInCombatWithActor)(Actor *a1, Actor *a2);
+extern RelocAddr<_Actor_IsInCombatWithActor> Actor_IsInCombatWithActor;
 
 typedef TESPackage *(*_Actor_GetCurrentPackage)(UInt64 a1, UInt64 a2, Actor *_this);
 extern RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage;
@@ -1054,6 +1066,21 @@ extern RelocAddr<_Debug_MessageBox> Debug_MessageBox;
 
 typedef void(*_PathingRequest_CTOR)(void *_this);
 extern RelocAddr<_PathingRequest_CTOR> PathingRequest_CTOR;
+
+typedef void(*_NiAVObject_SetFadeNodeRecurse)(NiAVObject *a1, BSFadeNode *a2);
+extern RelocAddr<_NiAVObject_SetFadeNodeRecurse> NiAVObject_SetFadeNodeRecurse;
+
+typedef BSFadeNode * (*_BSFadeNode_CtorFromNiNode)(BSFadeNode *_this, NiAVObject *node);
+extern RelocAddr<_BSFadeNode_CtorFromNiNode> BSFadeNode_CtorFromNiNode;
+
+typedef UInt32(*_BSBoneMap_RefreshMap)(NiExtraData *_this, const NiAVObject *root);
+extern RelocAddr<_BSBoneMap_RefreshMap> BSBoneMap_RefreshMap;
+
+typedef NiExtraData *(*_NiAVObject_GetExtraDataByName)(NiAVObject *_this, BSFixedString *name);
+extern RelocAddr<_NiAVObject_GetExtraDataByName> NiAVObject_GetExtraDataByName;
+
+typedef int(*_BSFlattenedBoneTree_GetBoneIndex)(BSFlattenedBoneTree *_this, BSFixedString *boneName);
+extern RelocAddr<_BSFlattenedBoneTree_GetBoneIndex> BSFlattenedBoneTree_GetBoneIndex;
 
 
 struct UnkSwingData

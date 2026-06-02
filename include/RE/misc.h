@@ -2,6 +2,7 @@
 
 #include "skse64_common/Relocation.h"
 #include "skse64/NiTypes.h"
+#include "skse64/NiNodes.h"
 #include "skse64/GameTypes.h"
 
 #include "RE/havok.h"
@@ -894,6 +895,36 @@ struct BSTHashMap
 };
 static_assert(sizeof(BSTHashMap<int, int>) == 0x30);
 
+struct BSFlattenedBoneTree : NiNode
+{
+	struct BoneEntry
+	{
+		NiTransform local; // 00
+		NiTransform world; // 34
+		SInt16 parentIndex; // 68
+		SInt16 unk6A;
+		SInt16 unk6C;
+		SInt16 unk6E;
+		NiAVObject *node; // 70
+		BSFixedString nodeName; // 78
+	};
+
+	UInt32 numBones; // 150
+	UInt32 unk154; // 154
+	BoneEntry * boneEntries; // 158
+	UInt64 unk160;
+	UInt32 unk168;
+	UInt32 unk16C;
+	UInt32 unk170;
+	UInt32 unk174;
+	UInt64 unk178;
+	UInt64 unk180;
+	UInt64 unk188;
+};
+static_assert(offsetof(BSFlattenedBoneTree, numBones) == 0x150);
+static_assert(offsetof(BSFlattenedBoneTree, boneEntries) == 0x158);
+static_assert(sizeof(BSFlattenedBoneTree) == 0x190);
+
 typedef bool(*_IAnimationGraphManagerHolder_NotifyAnimationGraph)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_eventName); // 01
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableInt)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, SInt32 &a_out); // 11
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationVariableBool)(IAnimationGraphManagerHolder *_this, const BSFixedString &a_variableName, bool &a_out); // 12
@@ -917,4 +948,7 @@ typedef void(*_Actor_MoveHavok)(Actor *actor);
 typedef void (*_bhkWorld_dtor)(bhkWorld *);
 typedef void(*_ActorState_GetActorRotationEuler)(ActorState *actorState, NiPoint3 &outEuler); // 4
 typedef float(*_ActorState_GetRotationSpeedZ)(ActorState *actorState); // 6
+typedef void(*_Actor_SetAlpha)(Actor *actor, float alpha); // E3
+typedef float(*_Actor_GetAlpha)(Actor *actor); // E4
+typedef void(*_NiNode_SetAt2)(NiNode *node, UInt32 index, NiAVObject *child);
 

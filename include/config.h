@@ -35,6 +35,7 @@ namespace Config {
 
         double hitCooldownTimeStoppedColliding = 0.25;
         double hitCooldownTimeFallback = 1.2;
+        double hitCooldownTimeUntilWeaponFade = 0.15;
         double physicsHitRecoveryTime = 0.01;
 
         double thrownObjectLingerTime = 5.0;
@@ -390,6 +391,21 @@ namespace Config {
         bool centerPlayerCapsule = true;
         float playerCharControllerRadius = 0.15f;
         float playerCapsuleRadius = 0.15f;
+
+        float playerVsBipedCollisionPushVelocityMin = 0.f;
+        float playerVsBipedCollisionPushVelocityMax = 0.f;
+        float playerVsBipedCollisionPushDuration = 0.2f;
+        float playerVsBipedCollisionMoveRestrictionDuration = 0.2f;
+        float playerVsBipedCollisionPushMinIntersectDistance = 5.f;
+        float playerVsBipedCollisionPushMaxIntersectDistance = 5.f;
+        bool playerVsBipedDisableLookAt = false;
+        float playerVsBipedDisableLookAtDuration = 0.1f;
+        bool playerVsBipedCollisionAlwaysPush = false;
+        float playerVsBipedCollisionPhaseThroughMinIntersectDistance = 5.f;
+        float playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat = 5.f;
+        float playerVsBipedCollisionPhaseThroughAlphaMult = 0.5f;
+
+        float playerMeleeCollisionDisabledWeaponAlpha = 0.3f;
 
         bool convertNonRagdollBipedObjectsToDeadBip = true;
 

@@ -218,6 +218,7 @@ namespace Config {
 
         if (!RegisterDouble("hitCooldownTimeStoppedColliding", options.hitCooldownTimeStoppedColliding)) success = false;
         if (!RegisterDouble("hitCooldownTimeFallback", options.hitCooldownTimeFallback)) success = false;
+        if (!RegisterDouble("hitCooldownTimeUntilWeaponFade", options.hitCooldownTimeUntilWeaponFade)) success = false;
         if (!RegisterDouble("physicsHitRecoveryTime", options.physicsHitRecoveryTime)) success = false;
 
         if (!RegisterDouble("thrownObjectLingerTime", options.thrownObjectLingerTime)) success = false;
@@ -535,6 +536,21 @@ namespace Config {
         if (!RegisterBool("centerPlayerCapsule", options.centerPlayerCapsule)) success = false;
         if (!RegisterFloat("playerCharControllerRadius", options.playerCharControllerRadius)) success = false;
         if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
+
+        if (!RegisterFloat("playerVsBipedCollisionPushVelocityMin", options.playerVsBipedCollisionPushVelocityMin)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPushVelocityMax", options.playerVsBipedCollisionPushVelocityMax)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPushDuration", options.playerVsBipedCollisionPushDuration)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionMoveRestrictionDuration", options.playerVsBipedCollisionMoveRestrictionDuration)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPushMinIntersectDistance", options.playerVsBipedCollisionPushMinIntersectDistance)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPushMaxIntersectDistance", options.playerVsBipedCollisionPushMaxIntersectDistance)) success = false;
+        if (!RegisterBool("playerVsBipedCollisionAlwaysPush", options.playerVsBipedCollisionAlwaysPush)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughMinIntersectDistance", options.playerVsBipedCollisionPhaseThroughMinIntersectDistance)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat", options.playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat)) success = false;
+        if (!RegisterBool("playerVsBipedDisableLookAt", options.playerVsBipedDisableLookAt)) success = false;
+        if (!RegisterFloat("playerVsBipedDisableLookAtDuration", options.playerVsBipedDisableLookAtDuration)) success = false;
+        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughAlphaMult", options.playerVsBipedCollisionPhaseThroughAlphaMult)) success = false;
+
+        if (!RegisterFloat("playerMeleeCollisionDisabledWeaponAlpha", options.playerMeleeCollisionDisabledWeaponAlpha)) success = false;
 
         if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;
 

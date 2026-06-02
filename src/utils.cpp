@@ -114,15 +114,28 @@ bool DoesNodeHaveConstraint(NiNode *rootNode, NiAVObject *node)
 NiAVObject *GetTorsoNode(Actor *actor)
 {
     TESRace *race = actor->race;
-    BGSBodyPartData *partData = race->bodyPartData;
-    if (partData) {
-        auto torsoData = partData->part[0];
+    if (BGSBodyPartData *partData = race->bodyPartData) {
+        BGSBodyPartData::Data *torsoData = partData->part[0];
         if (torsoData && torsoData->unk08.data) {
-            NiAVObject *actorNode = actor->GetNiNode();
-            if (actorNode) {
-                NiAVObject *torsoNode = actorNode->GetObjectByName(&torsoData->unk08.data);
-                if (torsoNode) {
+            if (NiAVObject *actorNode = actor->GetNiNode()) {
+                if (NiAVObject *torsoNode = actorNode->GetObjectByName(&torsoData->unk08.data)) {
                     return torsoNode;
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
+NiAVObject *GetHeadNode(Actor *actor)
+{
+    TESRace *race = actor->race;
+    if (BGSBodyPartData *partData = race->bodyPartData) {
+        BGSBodyPartData::Data *headData = partData->part[1];
+        if (headData && headData->unk08.data) {
+            if (NiAVObject *actorNode = actor->GetNiNode()) {
+                if (NiAVObject *headNode = actorNode->GetObjectByName(&headData->unk08.data)) {
+                    return headNode;
                 }
             }
         }
@@ -1483,4 +1496,26 @@ bool IsHandWithinConeFromHmd(bool isLeft, float halfAngle)
 int GetNumSmoothingFrames(float smoothingTime)
 {
     return round(smoothingTime / *g_secondsSinceLastFrame_Unmultiplied);
+}
+
+NiPointer<NiAVObject> GetWeaponNode(bool isLeft, bool thirdPerson)
+{
+    static BSFixedString weaponNodeName("WEAPON");
+    static BSFixedString shieldNodeName("SHIELD");
+    bool useLeft = *g_leftHandedMode != isLeft;
+    BSFixedString &handWeaponNodeName = useLeft ? shieldNodeName : weaponNodeName;
+    return (*g_thePlayer)->GetNiRootNode(!thirdPerson)->GetObjectByName(&handWeaponNodeName.data);
+}
+
+BSFlattenedBoneTree * GetParentBoneTree(NiAVObject *node)
+{
+    NiAVObject *parent = node;
+    while (parent) {
+        if (BSFlattenedBoneTree *boneTree = DYNAMIC_CAST(parent, NiAVObject, BSFlattenedBoneTree)) {
+            return boneTree;
+        }
+        parent = parent->m_parent;
+    }
+
+    return nullptr;
 }

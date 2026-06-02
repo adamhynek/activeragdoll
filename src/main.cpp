@@ -55,6 +55,8 @@ SKSETrampolineInterface *g_trampoline = nullptr;
 SKSETaskInterface *g_taskInterface = nullptr;
 SKSEPapyrusInterface *g_papyrus = nullptr;
 
+bool g_isVrikPresent = false;
+
 BGSKeyword *g_keyword_actorTypeAnimal = nullptr;
 BGSKeyword *g_keyword_actorTypeNPC = nullptr;
 
@@ -65,8 +67,9 @@ std::vector<UInt16> g_dialogueSkipConditions = { 0x4D, 0x90, 0x91, 0x120 }; // 4
 
 NiPoint3 g_prevPlayerPos{};
 NiPoint3 g_playerPosDelta{};
+NiPoint3 g_playerPosDeltaSmoothed{};
 
-std::deque<NiPoint3> g_prevPlayerPositions{ 100, NiPoint3() };
+std::deque<NiPoint3> g_prevPlayerDeltas{ 100, NiPoint3() };
 
 
 RelocAddr<void *> CheckHitEventsFunctor_vtbl(0x16E6BA0);
@@ -1823,14 +1826,22 @@ struct PhysicsListener :
     };
     std::unordered_map<TESObjectREFR *, CooldownData> hitCooldownTargets[2]{}; // each hand has its own cooldown
     std::unordered_map<TESObjectREFR *, double> collisionCooldownTargets[2]{};
+    static std::mutex collisionCooldownTargetsLock;
     std::map<std::pair<Actor *, hkpRigidBody *>, double> physicsHitCooldownTargets{};
     std::vector<CollisionEvent> events{};
 
     UInt32 lastPhysicsDamageFormId = 0;
 
-    void IgnoreCollisionForSeconds(bool isLeft, Actor *actor, double duration)
+    void IgnoreCollisionForSeconds(bool isLeft, TESObjectREFR *actor, double duration)
     {
+        std::scoped_lock lock(collisionCooldownTargetsLock);
         collisionCooldownTargets[isLeft][actor] = g_currentFrameTime + duration;
+    }
+
+    bool IsIgnoringCollision(bool isLeft, TESObjectREFR *actor)
+    {
+        std::scoped_lock lock(collisionCooldownTargetsLock);
+        return collisionCooldownTargets[isLeft].contains(actor);
     }
 
     inline std::pair<hkpRigidBody *, hkpRigidBody *> SortPair(hkpRigidBody *a, hkpRigidBody *b) {
@@ -2175,7 +2186,7 @@ struct PhysicsListener :
 
         if (g_higgsLingeringRefrs[isLeft].count(hitRefr)) {
             // This refr is currently held / was recently dropped in this hand. Don't eat the collision but don't allow the hit.
-            if (!isHittingObjectHeld && collisionCooldownTargets[isLeft].count(hitRefr)) {
+            if (!isHittingObjectHeld && IsIgnoringCollision(isLeft, hitRefr)) {
                 // refr shouldn't be hit OR collided with
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                 return;
@@ -2285,7 +2296,7 @@ struct PhysicsListener :
                 return;
             }
 
-            if (!isHittingObjectHeld && collisionCooldownTargets[isLeft].count(hitRefr)) {
+            if (!isHittingObjectHeld && IsIgnoringCollision(isLeft, hitRefr)) {
                 // refr shouldn't be collided with, but should still be able to be hit (so all code above still runs)
                 evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
                 return;
@@ -2414,14 +2425,43 @@ struct PhysicsListener :
                 ++it;
         }
 
-        // Clear out old collision cooldown targets
-        for (auto &targets : collisionCooldownTargets) { // For each hand's cooldown targets
-            for (auto it = targets.begin(); it != targets.end();) {
-                auto [target, cooldownUntil] = *it;
-                if (g_currentFrameTime > cooldownUntil)
-                    it = targets.erase(it);
-                else
-                    ++it;
+        { // Clear out old collision cooldown targets
+            std::scoped_lock lock(collisionCooldownTargetsLock);
+            for (auto &targets : collisionCooldownTargets) { // For each hand's cooldown targets
+                for (auto it = targets.begin(); it != targets.end();) {
+                    auto [target, cooldownUntil] = *it;
+                    if (g_currentFrameTime > cooldownUntil)
+                        it = targets.erase(it);
+                    else
+                        ++it;
+                }
+            }
+        }
+
+        for (int isLeft = 0; isLeft < 2; ++isLeft) {
+            bool fade = false;
+            if (!hitCooldownTargets[isLeft].empty()) {
+                for (auto &[target, cooldownData] : hitCooldownTargets[isLeft]) {
+                    if (cooldownData.stoppedCollidingTime == g_currentFrameTime && g_currentFrameTime - cooldownData.startTime > Config::options.hitCooldownTimeUntilWeaponFade) {
+                        // Still colliding with the enemy, and past a certain amount of time that it's unlikely to be still colliding as part of a swing that leaves the target.
+                        fade = true;
+                        break;
+                    }
+                }
+            }
+            if (!fade) {
+                std::scoped_lock lock(collisionCooldownTargetsLock);
+                fade = !collisionCooldownTargets[isLeft].empty();
+            }
+            float alpha = fade ? Config::options.playerMeleeCollisionDisabledWeaponAlpha : 1.f;
+            if (NiPointer<NiAVObject> weaponNode = GetWeaponNode(isLeft, g_isVrikPresent)) {
+                // TODO: Blood on the weapon does not react to alpha.
+                // TODO: Bound weapons? Or other weapons with existing alpha
+                // TODO: Probably need to put this in a more safe func
+                if (BSFadeNode *fadeNode = DYNAMIC_CAST(weaponNode, NiAVObject, BSFadeNode)) {
+                    NiAVObject_SetFadeNodeRecurse(weaponNode, fadeNode);
+                    BSFadeNode_SetCurrentFade(fadeNode, alpha);
+                }
             }
         }
     }
@@ -2452,6 +2492,41 @@ struct PhysicsListener :
     bhkWorld *m_world = nullptr;
 };
 PhysicsListener g_physicsListener{};
+std::mutex PhysicsListener::collisionCooldownTargetsLock{};
+
+
+struct MoveRestrictionData
+{
+    double endTime;
+};
+std::unordered_map<Actor *, MoveRestrictionData> g_actorMoveRestrictions;
+
+struct LookAtDisableData
+{
+    double endTime;
+};
+std::unordered_map<Actor *, LookAtDisableData> g_disableLookAtActors{};
+
+struct CollidedActorData
+{
+    float mostPenetrationDistance;
+    int lastCollidedFrame;
+};
+std::unordered_map<Actor *, CollidedActorData> g_collidedActorsPushAway{};
+
+struct ActorAlphaData
+{
+    float originalAlpha;
+    float overriddenAlpha;
+};
+
+// TODO: Clear all this shit when resetting objects
+std::unordered_set<Actor *> g_dontCollideUntilStoppedCollidingActors{};
+std::unordered_map<Actor *, ActorAlphaData> g_dontCollideUntilStoppedCollidingActorAlphas{};
+std::unordered_set<TESObjectREFR *> g_dontCollideActors{};
+std::mutex g_dontCollideActorsLock{};
+std::unordered_set<Actor *> g_prevCollidingActors{};
+
 
 struct PlayerCharacterProxyListener : hkpCharacterProxyListener
 {
@@ -2524,7 +2599,7 @@ struct PlayerCharacterProxyListener : hkpCharacterProxyListener
         //}
     }
 
-    bhkCharProxyController *playerProxy = nullptr; // for reference purposes only, do not dereference
+    bhkCharProxyController *playerProxy = nullptr; // for comparison purposes only, do not dereference
 };
 PlayerCharacterProxyListener g_characterProxyListener{};
 
@@ -3232,7 +3307,7 @@ void SynchronizeAndFixupRagdollAndAnimSkeletonMappers(hkbRagdollDriver *driver)
 int g_lastActorAddedToWorldFrame = 0;
 
 
-std::optional<std::vector<hkpRigidBody *>> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
+std::optional<CoreNodes> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
 {
     hkbCharacter *character = driver->character;
     if (!character) return {};
@@ -3243,19 +3318,23 @@ std::optional<std::vector<hkpRigidBody *>> GetCoreNodes(Actor *actor, hkbRagdoll
     hkpRigidBody *rootBody = ragdoll->getRigidBodyOfBone(0);
     if (!rootBody) return {};
 
-    // Get the torso node from race data; fall back to closest parent with collision if it has none
+    auto getBodyFromNode = [](NiAVObject *node) -> hkpRigidBody * {
+        if (!node) {
+            return nullptr;
+        }
+
+        NiPointer<NiAVObject> collisionNode = GetClosestParentWithCollision(node, true);
+        if (!collisionNode) {
+            return nullptr;
+        }
+
+        bhkRigidBody *rigidBody = GetRigidBody(collisionNode);
+        return rigidBody ? rigidBody->hkBody : nullptr;
+    };
+
     NiAVObject *rawTorsoNode = GetTorsoNode(actor);
-    NiPointer<NiAVObject> torsoNode = rawTorsoNode ? GetClosestParentWithCollision(rawTorsoNode, true) : nullptr;
-    if (!torsoNode) {
-        return {{ rootBody }};
-    }
-
-    hkpRigidBody *torsoBody = GetRigidBody(torsoNode)->hkBody;
-
-    // If the root IS the torso, just return the root
-    if (rootBody == torsoBody) {
-        return {{ rootBody }};
-    }
+    hkpRigidBody *torsoBody = getBodyFromNode(rawTorsoNode);
+    hkpRigidBody *headBody = getBodyFromNode(GetHeadNode(actor));
 
     // BFS from rootBody through the constraint graph, tracking parents so we can reconstruct the path.
     // We scan ragdoll->getConstraintArray() for neighbors rather than bhkRigidBody::constraints,
@@ -3265,7 +3344,10 @@ std::optional<std::vector<hkpRigidBody *>> GetCoreNodes(Actor *actor, hkbRagdoll
     bfsQueue.push_back(rootBody);
     parent[rootBody] = nullptr;
 
-    while (!bfsQueue.empty()) {
+    bool foundTorso = torsoBody == nullptr || torsoBody == rootBody;
+    bool foundHead = headBody == nullptr || headBody == rootBody;
+
+    while (!bfsQueue.empty() && (!foundTorso || !foundHead)) {
         hkpRigidBody *current = bfsQueue.front();
         bfsQueue.pop_front();
 
@@ -3282,22 +3364,34 @@ std::optional<std::vector<hkpRigidBody *>> GetCoreNodes(Actor *actor, hkbRagdoll
             if (parent.count(neighbor) == 0) {
                 parent[neighbor] = current;
                 bfsQueue.push_back(neighbor);
+
+                if (neighbor == torsoBody) {
+                    foundTorso = true;
+                }
+                if (neighbor == headBody) {
+                    foundHead = true;
+                }
             }
         }
     }
 
-    if (!parent.count(torsoBody)) {
-        // Torso not reachable via the constraint graph; fall back to just root
-        return {{ rootBody }};
-    }
+    auto buildPath = [&](hkpRigidBody *targetBody) {
+        std::vector<hkpRigidBody *> path;
 
-    // Reconstruct the path from torsoBody back to rootBody, then reverse
-    std::vector<hkpRigidBody *> path;
-    for (hkpRigidBody *cur = torsoBody; cur; cur = parent.at(cur)) {
-        path.push_back(cur);
-    }
-    std::reverse(path.begin(), path.end());
-    return path;
+        if (!targetBody || !parent.count(targetBody)) {
+            path.push_back(rootBody);
+            return path;
+        }
+
+        for (hkpRigidBody *current = targetBody; current; current = parent.at(current)) {
+            path.push_back(current);
+        }
+
+        std::reverse(path.begin(), path.end());
+        return path;
+    };
+
+    return CoreNodes{ buildPath(torsoBody), buildPath(headBody) };
 }
 
 bool AddRagdollToWorld(Actor *actor)
@@ -3345,8 +3439,16 @@ bool AddRagdollToWorld(Actor *actor)
                             SynchronizeAndFixupRagdollAndAnimSkeletonMappers(driver);
                         }
 
-                        if (auto coreNodes = GetCoreNodes(actor, driver)) {
-                            activeRagdoll->coreNodes = *coreNodes;
+                        if (std::optional<CoreNodes> coreNodes = GetCoreNodes(actor, driver)) {
+#ifdef _DEBUG
+                            for (hkpRigidBody *body : coreNodes->toTorso) {
+                                if (NiAVObject *node = GetNodeFromCollidable(&body->m_collidable)) {
+                                    _MESSAGE("Core node: %s", node->m_name);
+                                }
+                            }
+#endif // _DEBUG
+                            // TODO: Add locking
+                            activeRagdoll->coreNodes = std::move(*coreNodes);
                         }
 
                         {
@@ -4612,7 +4714,6 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
                     g_activeBipedGroups.insert(collisionGroup);
 
                     if (
-                        (Config::options.dontCollidePlayerWithSmallRaces && IsSmallActor(actor)) ||
                         (Config::options.disablePlayerSummonCollision && GetCommandingActor(actor) == *g_playerHandle) ||
                         (Config::options.disablePlayerFollowerCollision && IsTeammate(actor))
                     ) {
@@ -4663,10 +4764,10 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
     g_rightHeldMoveStartEventId = rightHeldMoveStartEventId;
     g_leftHeldMoveStartEventId = leftHeldMoveStartEventId;
 
-    //g_playerPosDelta = player->pos - g_prevPlayerPos;
-    g_prevPlayerPositions.pop_back();
-    g_prevPlayerPositions.push_front(player->pos - g_prevPlayerPos);
-    g_playerPosDelta = GetAverageVector(g_prevPlayerPositions, GetNumSmoothingFrames(Config::options.grabbedActorMovementPlayerSmoothingTime));
+    g_playerPosDelta = player->pos - g_prevPlayerPos;
+    g_prevPlayerDeltas.pop_back();
+    g_prevPlayerDeltas.push_front(g_playerPosDelta);
+    g_playerPosDeltaSmoothed = GetAverageVector(g_prevPlayerDeltas, GetNumSmoothingFrames(Config::options.grabbedActorMovementPlayerSmoothingTime));
     g_prevPlayerPos = player->pos;
 }
 
@@ -6086,7 +6187,37 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 {
     g_Character_ModifyMovementData_Original(actor, a_deltaTime, a_moveAmt, a_rotAmt);
 
-    if (!IsDoingGrabbedActorMovement(actor)) return;
+    if (!IsDoingGrabbedActorMovement(actor)) {
+        // TODO: Locking
+        auto it = g_actorMoveRestrictions.find(actor);
+        if (it != g_actorMoveRestrictions.end()) {
+            MoveRestrictionData &data = it->second;
+            if (g_currentFrameTime < data.endTime) {
+                NiPoint3 direction = VectorNormalized((*g_thePlayer)->pos - actor->pos);
+
+                NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
+                NiPoint3 directionInActorSpace = refrTransform.rot.Transpose() * direction;
+
+                { // moveAmt is in actor space
+                    float dot = DotProduct(a_moveAmt, directionInActorSpace);
+                    if (dot > 0.f) {
+                        a_moveAmt = a_moveAmt - directionInActorSpace * dot;
+                    }
+                }
+
+                // outVelocity is in world space
+                if (bhkCharacterController *controller = GetCharacterController(actor)) {
+                    NiPoint3 controllerVelocity = HkVectorToNiPoint(controller->outVelocity);
+                    float dot = DotProduct(controllerVelocity, direction);
+                    if (dot > 0.f) {
+                        controller->outVelocity = NiPointToHkVector(controllerVelocity - direction * dot);
+                    }
+                }
+            }
+        }
+
+        return;
+    }
 
     MovementControllerNPC *movementController = GetMovementController(actor);
     if (!movementController) return;
@@ -6130,6 +6261,7 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
 
             float turnSpeed = anim ? deltaZ / a_deltaTime : 0.f;
             ActorProcess_SetRotationSpeedZ(process, turnSpeed); // This drives the rotation animation
+            // PrintToFile(std::to_string(turnSpeed), "turnSpeed.txt");
 
             a_rotAmt.z = deltaZ; // This drives the actual rotation
         }
@@ -6330,15 +6462,29 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     }
 
 
+    auto ShouldZeroSpeed = [&state](Actor *actor, float denormSpeed, float prevSpeed) -> bool
+    { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
+        float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, prevSpeed);
+        if (denormSpeed < Config::options.grabbedActorMovementZeroSpeedThreshold) { // 5 is the value below which the character will not move at all
+            if (denormPrevSpeed >= Config::options.grabbedActorMovementZeroSpeedThreshold) {
+                state.noSpeedTime = g_currentFrameTime;
+            }
+        }
+        if (g_currentFrameTime - state.noSpeedTime < Config::options.grabbedActorMovementHoldZeroSpeedTime) {
+            return true;
+        }
+        return false;
+    };
+
+
     NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
-    NiPoint3 playerOffsetXY = { g_playerPosDelta.x, g_playerPosDelta.y, 0.f };
+    NiPoint3 playerOffsetXY = { g_playerPosDeltaSmoothed.x, g_playerPosDeltaSmoothed.y, 0.f };
 
     NiPoint3 moveAmtFromPlayerMovement = playerOffsetXY * Config::options.grabbedActorMovementPlayerMovementInfluence;
 
 
     NiPoint3 finalMoveAmt = { 0.f, 0.f, 0.f };
     NiPoint3 offsetAngle = { 0.f, 0.f, 0.f };
-    bool disableHoldZeroSpeed = false;
 
     if (!IMovementState_CanStrafe(&actor->actorState)) {
         // If they can't strafe, sideways movement actually makes them move forwards/back, rotate, and then move backwards/forwards to the new position like a car.
@@ -6399,17 +6545,38 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
             float absAngle = fabsf(combinedDeltaAngle);
             bool isPlayerMovingAlongForward = fabsf(playerForwardMoveAmt) > Config::options.grabbedActorMovementMinPlayerMoveAmtToForceTranslation;
 
-            // Hysteresis for translation
-            if (!state.isNoStrafeTranslating && (isPlayerMovingAlongForward || absTotalForward >= Config::options.grabbedActorMovementNoStrafeStartOffset)) {
-                state.isNoStrafeTranslating = true;
-            }
-            else if (state.isNoStrafeTranslating && !isPlayerMovingAlongForward && absTotalForward < Config::options.grabbedActorMovementNoStrafeStopOffset) {
-                state.isNoStrafeTranslating = false;
+            // PrintToFile(std::to_string(VectorLength(g_playerPosDelta)), "playerForwardMoveAmt.txt");
+
+            // Apply speed limit to catch-up movement, plus instant player movement
+            float maxMoveAmt = Config::options.grabbedActorMovementNoStrafeMoveSpeed * *g_deltaTime + fabsf(playerForwardMoveAmt);
+            float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
+            NiPoint3 proposedMoveAmt = forward * clampedMoveAmt;
+
+            bool isDebouncingToZero = false;
+            float denormSpeed = VectorLength(proposedMoveAmt) / *g_deltaTime;
+            // PrintToFile(std::to_string(denormSpeed), "denormSpeed.txt");
+            if (ShouldZeroSpeed(actor, denormSpeed, state.prevSpeed)) {
+                // Use the instantaneous player delta rather than the smoothed one here, so that this doesn't also apply when we are actually stopping player movement.
+                // If we do something like snap-turn while moving with the actor, this can cause the speed to go low briefly, and we don't want to stop them in this case.
+                if (VectorLength(g_playerPosDelta) <= Config::options.grabbedActorMovementMinPlayerMoveAmtToForceTranslation) {
+                    isDebouncingToZero = true;
+                }
             }
 
-            if (isPlayerMovingAlongForward) {
-                // If we do something like snap-turn while moving with the actor, this can cause the speed to go low briefly, and we don't want to stop them in this case.
-                disableHoldZeroSpeed = true;
+            bool translateStartCondition = !isDebouncingToZero && (isPlayerMovingAlongForward || absTotalForward >= Config::options.grabbedActorMovementNoStrafeStartOffset);
+            bool translateStopCondition = isDebouncingToZero || (!isPlayerMovingAlongForward && absTotalForward < Config::options.grabbedActorMovementNoStrafeStopOffset);
+
+            // Hysteresis for translation
+            if (!state.isNoStrafeTranslating && translateStartCondition) {
+                state.isNoStrafeTranslating = true;
+            }
+            else if (state.isNoStrafeTranslating && translateStopCondition) {
+                state.isNoStrafeTranslating = false;
+                state.turnAnim = false; // This just turns it off it was latched - will be set to true again if the angle is still actually above the threshold
+            }
+
+            if (state.isNoStrafeTranslating) {
+                finalMoveAmt = proposedMoveAmt;
             }
 
             // Hysteresis for rotation. Check this after computing whether to translate.
@@ -6436,13 +6603,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
                 float clampedDeltaAngle = std::clamp(combinedDeltaAngle, -maxHeadingChange, maxHeadingChange);
                 offsetAngle.z += clampedDeltaAngle;
             }
-
-            if (state.isNoStrafeTranslating) {
-                // Apply speed limit to catch-up movement, plus instant player movement
-                float maxMoveAmt = Config::options.grabbedActorMovementNoStrafeMoveSpeed * *g_deltaTime + fabsf(playerForwardMoveAmt);
-                float clampedMoveAmt = std::clamp(combinedForwardMoveAmt, -maxMoveAmt, maxMoveAmt);
-                finalMoveAmt = forward * clampedMoveAmt;
-            }
         }
     }
     else {
@@ -6458,18 +6618,26 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
 
         NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.grabbedActorMovementDirectionMultiplier; // TODO: Should we be using deltaTime here?
 
-        if (!state.isTranslate) {
-            if (isPlayerMoving || isRagdollMovementStart) {
-                state.isTranslate = true;
-            }
+        NiPoint3 proposedMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+
+        bool isDebouncingToZero = false;
+        float denormSpeed = VectorLength(proposedMoveAmt) / *g_deltaTime;
+        if (ShouldZeroSpeed(actor, denormSpeed, state.prevSpeed)) {
+            isDebouncingToZero = true;
         }
-        else if (state.isTranslate) {
-            if (!isPlayerMoving && isRagdollMovementStop) {
-                state.isTranslate = false;
-            }
+
+        bool translateStart = !isDebouncingToZero && (isPlayerMoving || isRagdollMovementStart);
+        bool translateStop = isDebouncingToZero || (!isPlayerMoving && isRagdollMovementStop);
+
+        if (!state.isTranslate && translateStart) {
+            state.isTranslate = true;
         }
+        else if (state.isTranslate && translateStop) {
+            state.isTranslate = false;
+        }
+
         if (state.isTranslate) {
-            finalMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
+            finalMoveAmt = proposedMoveAmt;
         }
 
         float playerMovementAmt = VectorLength(moveAmtFromPlayerMovement);
@@ -6538,27 +6706,17 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
     }
 #endif // _DEBUG
 
-
-    float speed = ActorState_NormalizeSpeed(&actor->actorState, VectorLength(finalMoveAmt) / *g_deltaTime);
-    NiPoint3 direction = VectorNormalized(finalMoveAmt);
-    NiPoint3 directionEuler = ForwardVectorToEulerRot(direction);
-
-    { // "De-bounce" when we get to a low enough speed. There is a case where we hit zero, but then in the next few frames go back above zero briefly. During those frames, the movement direction can abruptly change and we get a large jerk in the character's movement.
-        float denormSpeed = ActorState_DenormalizeSpeed(&actor->actorState, speed);
-        float denormPrevSpeed = ActorState_DenormalizeSpeed(&actor->actorState, state.prevSpeed);
-        if (denormSpeed < Config::options.grabbedActorMovementZeroSpeedThreshold) { // 5 is the value below which the character will not move at all
-            if (denormPrevSpeed >= Config::options.grabbedActorMovementZeroSpeedThreshold) {
-                state.noSpeedTime = g_currentFrameTime;
-            }
-        }
-        if (g_currentFrameTime - state.noSpeedTime < Config::options.grabbedActorMovementHoldZeroSpeedTime && !disableHoldZeroSpeed) {
-            speed = 0.f;
-        }
-    }
+    float denormSpeed = VectorLength(finalMoveAmt) / *g_deltaTime;
+    float speed = ActorState_NormalizeSpeed(&actor->actorState, denormSpeed);
+    // PrintToFile(std::to_string(speed), "speed.txt");
 
     movementController->movementPlannerDirectControl.SetTargetSpeed(speed);
     if (speed > Config::options.grabbedActorMovementSpeedDirectionCutoff) {
+        NiPoint3 direction = VectorNormalized(finalMoveAmt);
+        NiPoint3 directionEuler = ForwardVectorToEulerRot(direction);
+
         movementController->movementPlannerDirectControl.SetTargetDirection(directionEuler);
+        // PrintToFile(std::to_string(directionEuler.z), "directionEulerZ.txt");
     }
 
     NiPoint3 targetAngle = ConstrainAngle180(actor->rot + offsetAngle);
@@ -6747,6 +6905,219 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
 }
 
 
+typedef void(*_ahkpCharacterProxy_updateManifold)(hkpCharacterProxy *proxy, const hkpAllCdPointCollector& startPointCollector, const hkpAllCdPointCollector& castCollector, hkArray<hkpRootCdPoint>& manifold, hkArray<hkpRigidBody*>& bodies, hkArray<hkpPhantom*>& phantoms, hkBool isMultithreaded);
+_ahkpCharacterProxy_updateManifold ahkpCharacterProxy_updateManifold_Original = nullptr;
+static RelocPtr<_ahkpCharacterProxy_updateManifold> ahkpCharacterProxy_updateManifold_vtbl(0x18620F0);
+void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPointCollector& startPointCollector, hkpAllCdPointCollector& castCollector, hkArray<hkpRootCdPoint>& manifold, hkArray<hkpRigidBody*>& bodies, hkArray<hkpPhantom*>& phantoms, hkBool isMultithreaded)
+{
+    // This is called after trigger volumes have been updated, and collector hits from the castCollector are sorted and have distance converted from fraction to actual distance.
+
+
+    static std::unordered_set<Actor *> disableLookAtActors{};
+    disableLookAtActors.clear();
+
+    static std::unordered_set<Actor *> collidingActors{};
+    collidingActors.clear();
+
+
+    auto ProcessCollector = [](hkpAllCdPointCollector& collector) {
+        for (int i = 0; i < collector.getNumHits(); i++) {
+            hkpRootCdPoint &hit = collector.getHits()[i];
+            hkpRigidBody *rigidBody = hkpGetRigidBody(hit.m_rootCollidableB);
+
+            if (rigidBody && IsMoveableEntity(rigidBody)) {
+                UInt32 layer = GetCollisionLayer(rigidBody);
+                bool isBiped = layer == BGSCollisionLayer::kCollisionLayer_Biped || layer == BGSCollisionLayer::kCollisionLayer_BipedNoCC;
+
+                if (isBiped) {
+                    if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
+                        if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+
+                            if (TESRace *race = actor->race) {
+                                if (race->data.unk40 > Config::options.dontPushPlayerMaxRaceSize) { // race size
+                                    continue;
+                                }
+                            }
+
+                            collidingActors.insert(actor);
+
+                            if (Config::options.playerVsBipedDisableLookAt) {
+                                // Without checking distance here, this will kick in as soon as they are within the keepDistance (so technically not yet colliding).
+                                disableLookAtActors.insert(actor);
+                            }
+
+                            bool isBipedNoCC = layer == BGSCollisionLayer::kCollisionLayer_BipedNoCC;
+
+                            bool isPushable = Config::options.playerVsBipedCollisionAlwaysPush || IsAttacking(actor);
+
+                            bool removeBecauseSmallRace = Config::options.dontCollidePlayerWithSmallRaces && IsSmallActor(actor);
+
+                            ForEachRagdollDriver(actor, [actor, rigidBody, hit, layer, isPushable, isBipedNoCC, removeBecauseSmallRace](hkbRagdollDriver *driver) {
+                                if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
+                                    // If they are using furniture (bipedNoCC), and we push them, they will instead get pushed when they stop using it which we don't want.
+                                    if (!isBipedNoCC && isPushable) {
+                                        // TODO: Locking
+                                        if (std::ranges::find(activeRagdoll->coreNodes.toHead, rigidBody) != activeRagdoll->coreNodes.toHead.end()) {
+                                            float penetrationDistance = hit.m_contact.getDistance() * -1.f; // negative means penetrating
+                                            // PrintToFile(std::to_string(penetrationDistance), "coreNodeDistance.txt");
+
+                                            auto it = g_collidedActorsPushAway.find(actor);
+                                            if (it != g_collidedActorsPushAway.end()) {
+                                                // Actor is already in the list, update the last collided frame and most penetration distance if it's larger
+                                                if (penetrationDistance > it->second.mostPenetrationDistance) {
+                                                    it->second.mostPenetrationDistance = penetrationDistance;
+                                                }
+                                                it->second.lastCollidedFrame = *g_currentFrameCounter;
+                                            }
+                                            else {
+                                                // New actor collision, add to the list with the current frame and initial offset
+                                                g_collidedActorsPushAway[actor] = { penetrationDistance, *g_currentFrameCounter };
+                                            }
+                                        }
+                                    }
+
+                                    // TODO: Maybe if it's not a core node we just don't collide at all??
+                                    // TODO: Locking
+                                    if (!removeBecauseSmallRace) {
+                                        if (std::ranges::find(activeRagdoll->coreNodes.toTorso, rigidBody) != activeRagdoll->coreNodes.toTorso.end()) {
+                                            float penetrationDistance = hit.m_contact.getDistance() * -1.f;
+                                            // PrintToFile(std::to_string(penetrationDistance), "torsoNodeDistance.txt");
+                                            bool isInCombatWithPlayer = Actor_IsInCombatWithActor(actor, *g_thePlayer);
+                                            float minIntersectDistance = isInCombatWithPlayer ? Config::options.playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat : Config::options.playerVsBipedCollisionPhaseThroughMinIntersectDistance;
+                                            if (penetrationDistance > minIntersectDistance) {
+                                                g_dontCollideUntilStoppedCollidingActors.insert(actor);
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+
+                            bool removeBecauseDontCollide = g_dontCollideUntilStoppedCollidingActors.find(actor) != g_dontCollideUntilStoppedCollidingActors.end();
+
+                            if (removeBecauseDontCollide) {
+                                float currentAlpha = get_vfunc<_Actor_GetAlpha>(actor, 0xE4)(actor);
+                                float newAlpha = currentAlpha * Config::options.playerVsBipedCollisionPhaseThroughAlphaMult;
+                                if (currentAlpha >= 2.f) { // game uses +2 alpha to signify no fade in/out
+                                    newAlpha = 2.f + ((currentAlpha - 2.f) * Config::options.playerVsBipedCollisionPhaseThroughAlphaMult);
+                                }
+                                auto it = g_dontCollideUntilStoppedCollidingActorAlphas.find(actor);
+                                if (it == g_dontCollideUntilStoppedCollidingActorAlphas.end()) {
+                                    get_vfunc<_Actor_SetAlpha>(actor, 0xE3)(actor, newAlpha);
+                                    g_dontCollideUntilStoppedCollidingActorAlphas.emplace(actor, ActorAlphaData{ currentAlpha, newAlpha });
+                                }
+                                g_physicsListener.IgnoreCollisionForSeconds(false, actor, *g_deltaTime * 2.f);
+                                g_physicsListener.IgnoreCollisionForSeconds(true, actor, *g_deltaTime * 2.f);
+                            }
+
+                            if (removeBecauseSmallRace || removeBecauseDontCollide) {
+                                {
+                                    std::scoped_lock lock(g_dontCollideActorsLock);
+                                    g_dontCollideActors.insert(actor);
+                                }
+                                // remove the hit by shifting all subsequent hits back by one, because the list is sorted already
+                                for (int j = i; j < collector.getNumHits() - 1; j++) {
+                                    collector.getHits()[j] = collector.getHits()[j + 1];
+                                }
+                                collector.getHits().m_size -= 1;
+                                i -= 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+
+    ProcessCollector(castCollector);
+    ProcessCollector(startPointCollector);
+
+    // TODO: Locking
+    for (Actor *actor : disableLookAtActors) {
+        g_disableLookAtActors[actor] = { g_currentFrameTime + Config::options.playerVsBipedDisableLookAtDuration };  // TODO: Need to remove the entry when it expires
+    }
+
+    for (Actor *actor : g_prevCollidingActors) {
+        if (collidingActors.find(actor) == collidingActors.end()) {
+            // Actor was colliding in the previous frame but not in the current frame
+            if (g_dontCollideUntilStoppedCollidingActors.find(actor) != g_dontCollideUntilStoppedCollidingActors.end()) {
+                g_dontCollideUntilStoppedCollidingActors.erase(actor);
+
+                auto it = g_dontCollideUntilStoppedCollidingActorAlphas.find(actor);
+                if (it != g_dontCollideUntilStoppedCollidingActorAlphas.end()) {
+                    float currentAlpha = get_vfunc<_Actor_GetAlpha>(actor, 0xE4)(actor);
+                    if (currentAlpha == it->second.overriddenAlpha) {
+                        get_vfunc<_Actor_SetAlpha>(actor, 0xE3)(actor, it->second.originalAlpha);
+                    }
+                    g_dontCollideUntilStoppedCollidingActorAlphas.erase(it);
+                }
+            }
+
+            {
+                std::scoped_lock lock(g_dontCollideActorsLock);
+                if (g_dontCollideActors.find(actor) != g_dontCollideActors.end()) {
+                    g_dontCollideActors.erase(actor);
+                }
+            }
+        }
+    }
+
+    for (auto it = g_collidedActorsPushAway.begin(); it != g_collidedActorsPushAway.end();) {
+        auto &[actor, data] = *it;
+        if (data.lastCollidedFrame != *g_currentFrameCounter) {
+            it = g_collidedActorsPushAway.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+
+    for (auto it : g_collidedActorsPushAway) {
+        auto &[actor, data] = it;
+        if (NiPointer<bhkCharacterController> controller = GetCharacterController(actor)) {
+            NiPoint3 playerFromActor = (*g_thePlayer)->pos - actor->pos;
+
+            // TODO: Maybe for the large races, instead of having their ragdoll push you around, we push the player away similar to how we push medium away from the player?
+
+            float intersectDistance = data.mostPenetrationDistance;
+
+#ifdef _DEBUG
+            // PrintToFile(std::to_string(intersectDistance), "distanceDifference.txt");
+#endif
+            if (intersectDistance < Config::options.playerVsBipedCollisionPushMinIntersectDistance) {
+                continue;
+            }
+
+            float intersectAmount = 1.f;
+            if (intersectDistance >= 0.001f) {
+                intersectAmount = std::clamp(
+                    (intersectDistance - Config::options.playerVsBipedCollisionPushMinIntersectDistance) / (Config::options.playerVsBipedCollisionPushMaxIntersectDistance - Config::options.playerVsBipedCollisionPushMinIntersectDistance),
+                    0.f,
+                    1.f
+                );
+            }
+
+#ifdef _DEBUG
+            // PrintToFile(std::to_string(intersectAmount), "ratioVsInitial.txt");
+#endif
+
+            float moveAmt = lerp(Config::options.playerVsBipedCollisionPushVelocityMin, Config::options.playerVsBipedCollisionPushVelocityMax, intersectAmount);
+            NiPoint3 dir = VectorNormalized(playerFromActor) * -1.f;
+            NiPoint3 moveVec = dir * moveAmt;
+            bhkCharacterController_ApplyVelocityForDuration(controller, moveVec, Config::options.playerVsBipedCollisionPushDuration);
+
+            // PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(controller->initialVelocity))), "initialVelocity.txt");
+
+            g_actorMoveRestrictions[actor] = { g_currentFrameTime + Config::options.playerVsBipedCollisionMoveRestrictionDuration}; // TODO: Need to remove the entry when it expires
+        }
+    }
+
+    g_prevCollidingActors = collidingActors;
+
+    ahkpCharacterProxy_updateManifold_Original(proxy, startPointCollector, castCollector, manifold, bodies, phantoms, isMultithreaded);
+}
+
+
 typedef void(*_BSLookAtModifier_modify)(BSLookAtModifier *_this, const hkbContext &context, hkbGeneratorOutput &generatorOutput);
 _BSLookAtModifier_modify BSLookAtModifier_modify_Original = nullptr;
 static RelocPtr<_BSLookAtModifier_modify> BSLookAtModifier_modify_vtbl(0x17C68F0);
@@ -6771,7 +7142,138 @@ void BSLookAtModifier_modify_Hook(BSLookAtModifier *_this, const hkbContext &con
         });
     }
 
+    bool disabledLookAt = false;
+    if (_this->lookAtTarget) {
+        if (!g_disableLookAtActors.empty()) {
+            auto it = g_disableLookAtActors.find(actor);
+            if (it != g_disableLookAtActors.end()) {
+                LookAtDisableData &data = it->second;
+                if (g_currentFrameTime < data.endTime) {
+                    _this->lookAtTarget = false;
+                    disabledLookAt = true;
+                }
+            }
+        }
+    }
+
     BSLookAtModifier_modify_Original(_this, context, generatorOutput);
+
+    if (disabledLookAt) {
+        _this->lookAtTarget = true;
+    }
+}
+
+
+typedef NiAVObject * (*_PlayerCharacter_Load3D)(PlayerCharacter *player, bool a2);
+_PlayerCharacter_Load3D PlayerCharacter_Load3D_Original = nullptr;
+static RelocPtr<_PlayerCharacter_Load3D> PlayerCharacter_Load3D_vtbl(0x16E2580);
+NiAVObject * PlayerCharacter_Load3D_Hook(PlayerCharacter *player, bool a2)
+{
+    NiAVObject *result = PlayerCharacter_Load3D_Original(player, a2);
+
+    NiPointer<NiAVObject> root = player->GetNiRootNode(0);
+    if (g_isVrikPresent && root) {
+        // Essentially duplicate what the base game does with the 1st person skeleton to the 3rd person one, since vrik makes the 3rd person skeleton the main one.
+        static BSFixedString nodeNames[] = {
+            BSFixedString("WEAPON"),
+            BSFixedString("WeaponSword"),
+            BSFixedString("WeaponDagger"),
+            BSFixedString("WeaponAxe"),
+            BSFixedString("WeaponMace"),
+            BSFixedString("SHIELD"),
+            BSFixedString("WeaponBack"),
+        };
+
+        bool anyChanges = false;
+
+        for (BSFixedString &nodeName : nodeNames) {
+            if (NiPointer<NiAVObject> node = root->GetObjectByName(&nodeName.data)) {
+                if (!DYNAMIC_CAST(node, NiAVObject, BSFadeNode)) { // only convert to a BSFadeNode if it isn't already
+                    NiNode *parent = node->m_parent;
+                    UInt32 parentIndex = node->unk038;
+
+                    if (BSFadeNode *fadeNode = (BSFadeNode *)Heap_Allocate(sizeof(BSFadeNode))) {
+                        BSFadeNode_CtorFromNiNode(fadeNode, node);
+                        BSFadeNode_SetStippleFade(fadeNode, false);
+
+                        get_vfunc<_NiNode_SetAt2>(parent, 0x3D)(parent, parentIndex, fadeNode);
+                        anyChanges = true;
+
+                        // Bone tree needs to be updated since we swapped the node.
+                        if (BSFlattenedBoneTree *boneTree = GetParentBoneTree(fadeNode)) {
+                            int boneIndex = BSFlattenedBoneTree_GetBoneIndex(boneTree, &nodeName);
+                            if (boneIndex >= 0) {
+                                boneTree->boneEntries[boneIndex].node = fadeNode;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (anyChanges) {
+            // Bone map is used to speed up node lookups at the root, and since we swapped some nodes we need to refresh it.
+            static BSFixedString boneMapName("BOM");
+            if (NiExtraData *boneMap = NiAVObject_GetExtraDataByName(root, &boneMapName)) {
+                BSBoneMap_RefreshMap(boneMap, root);
+            }
+        }
+    }
+
+    return result;
+}
+
+void ProcessGroundPlayerProxyCastCollector(hkpAllCdPointCollector *collector)
+{
+    for (int i = 0; i < collector->getNumHits(); i++) {
+        hkpRootCdPoint &hit = collector->getHits()[i];
+        hkpRigidBody *rigidBody = hkpGetRigidBody(hit.m_rootCollidableB);
+
+        if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
+            std::scoped_lock lock(g_dontCollideActorsLock);
+            if (g_dontCollideActors.contains(refr)) {
+                // remove the hit by moving the last hit into its place
+                collector->getHits()[i] = collector->getHits()[collector->getNumHits() - 1];
+                collector->getHits().m_size -= 1;
+                i -= 1;
+            }
+        }
+    }
+}
+
+auto bhkLinearCaster_linearCast_hkpWorld_linearCast_HookLoc = RelocPtr<uintptr_t>(0x3AFD84);
+_hkpWorld_LinearCast bhkLinearCaster_linearCast_hkpWorld_linearCast_Original = nullptr;
+void bhkLinearCaster_linearCast_hkpWorld_linearCast_Hook(hkpWorld *world, const hkpCollidable *collA, const hkpLinearCastInput *input, hkpCdPointCollector *castCollector, hkpCdPointCollector *startCollector)
+{
+    bhkLinearCaster_linearCast_hkpWorld_linearCast_Original(world, collA, input, castCollector, startCollector);
+
+    UInt32 filterInfo = collA->getCollisionFilterInfo();
+    UInt16 collisionGroup = GetCollisionGroup(filterInfo);
+
+    if (collisionGroup != g_playerCollisionGroup) {
+        // If it's not the player, we don't care
+        return;
+    }
+
+    UInt32 collisionLayer = GetCollisionLayer(filterInfo);
+    if (collisionLayer != BGSCollisionLayer::kCollisionLayer_Ground) {
+        // We only care about ignoring the linearCasts for roomscale movement here, which use the L_GROUND layer.
+        // The whole point of this hook here is to make the collision decision made in updateManifold affect the roomscale movement queries, while using updateManifold still to track collisions.
+        // The rest of the player collision stuff is handled in the updateManifold hook or the collision filter comparison hook.
+        return;
+    }
+
+    if (castCollector) {
+        if (hkpAllCdPointCollector *castCollectorAll = DYNAMIC_CAST(castCollector, hkpCdPointCollector, hkpAllCdPointCollector)) {
+            ProcessGroundPlayerProxyCastCollector(castCollectorAll);
+        }
+    }
+
+    if (startCollector) {
+        if (hkpAllCdPointCollector *startCollectorAll = DYNAMIC_CAST(startCollector, hkpCdPointCollector, hkpAllCdPointCollector)) {
+            ProcessGroundPlayerProxyCastCollector(startCollectorAll);
+        }
+    }
 }
 
 
@@ -6888,6 +7390,7 @@ auto Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc = Rel
 auto Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc = RelocAddr<uintptr_t>(0x687164);
 
 auto GetUpStart_ZeroOutPitchRoll_Loc = RelocAddr<uintptr_t>(0x74D65B);
+auto BSGeometry_SetVRMeleeAlphaAndEmissive_SetFadeNodeAlpha_Loc = RelocAddr<uintptr_t>(0x6E5161);
 
 auto GetUpEnd_RemoveRagdollFromWorld_HookLoc = RelocAddr<uintptr_t>(0x68727D);
 auto GetUpEnd_SetMotionTypeKeyframed_HookLoc = RelocAddr<uintptr_t>(0x6872D0);
@@ -6920,65 +7423,59 @@ void PerformHooks(void)
     {
         std::uintptr_t originalFunc = Write5Call(processHavokHitJobsHookLoc.GetUIntPtr(), uintptr_t(ProcessHavokHitJobsHook));
         ProcessHavokHitJobs_Original = (_ProcessHavokHitJobs)originalFunc;
-        _MESSAGE("ProcessHavokHitJobs hook complete");
     }
 
     {
         g_branchTrampoline.Write5Call(PlayerCharacter_UpdateWeaponSwing_HookLoc.GetUIntPtr(), uintptr_t(PlayerCharacter_UpdateWeaponSwing_Hook));
-        _MESSAGE("PlayerCharacter::UpdateWeaponSwing hook complete");
     }
 
     if (Config::options.forceGenerateForActiveRagdolls) {
         std::uintptr_t originalFunc = Write5Call(BShkbAnimationGraph_PreGenerate_HookLoc.GetUIntPtr(), uintptr_t(BShkbAnimationGraph_PreGenerate_Hook));
         BShkbAnimationGraph_PreGenerate_Original = (_BShkbAnimationGraph_PreGenerate)originalFunc;
-        _MESSAGE("BShkbAnimationGraph::PreGenerate hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(driveToPoseHookLoc.GetUIntPtr(), uintptr_t(DriveToPoseHook));
         hkbRagdollDriver_driveToPose_Original = (_hkbRagdollDriver_driveToPose)originalFunc;
-        _MESSAGE("hkbRagdollDriver::driveToPose hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(postPhysicsHookLoc.GetUIntPtr(), uintptr_t(PostPhysicsHook));
         hkbRagdollDriver_postPhysics_Original = (_hkbRagdollDriver_postPhysics)originalFunc;
-        _MESSAGE("hkbRagdollDriver::postPhysics hook complete");
     }
 
     if (Config::options.doClutterVsBipedCollisionDamage) {
         std::uintptr_t originalFunc = Write5Call(Actor_TakePhysicsDamage_HookLoc.GetUIntPtr(), uintptr_t(Actor_TakePhysicsDamage_Hook));
         Actor_TakePhysicsDamage_Original = (_Actor_GetHit)originalFunc;
-        _MESSAGE("Actor take physics damage hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(Actor_KillEndHavokHit_HookLoc.GetUIntPtr(), uintptr_t(Actor_KillEndHavokHit_Hook));
         Actor_KillEndHavokHit_Original = (_Actor_EndHavokHit)originalFunc;
-        _MESSAGE("Actor kill end havok hit hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(Character_HitTarget_HitData_Populate_HookLoc.GetUIntPtr(), uintptr_t(Character_HitTarget_HitData_Populate_Hook));
         Character_HitTarget_HitData_populate_Original = (_HitData_populate)originalFunc;
-        _MESSAGE("Character_HitTarget_HitData_Populate hook complete");
     }
 
     {
         g_branchTrampoline.Write6Call(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_HookLoc.GetUIntPtr(), uintptr_t(Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool_Hook));
-        _MESSAGE("Papyrus_IAnimationGraphManagerHolder_GetAnimationVariableBool hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(Actor_IsRagdollMovingSlowEnoughToGetUp_HookLoc.GetUIntPtr(), uintptr_t(Actor_IsRagdollMovingSlowEnoughToGetUp_Hook));
         Actor_IsRagdollMovingSlowEnoughToGetUp_Original = (_Actor_IsRagdollMovingSlowEnoughToGetUp)originalFunc;
-        _MESSAGE("Actor_IsRagdollMovingSlowEnoughToGetUp hook complete");
     }
 
     if (Config::options.dontResetPitchRollWhenGettingUp) {
         char *nops = "\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"; // "\x90" * 11
         SafeWriteBuf(GetUpStart_ZeroOutPitchRoll_Loc.GetUIntPtr(), nops, 11);
-        _MESSAGE("NOP'd out zeroing out of pitch/roll when starting to get up");
+    }
+
+    { // Base game melee alpha fading doesn't matter since we reimplements all that jazz
+        char *nops = "\x90\x90\x90\x90\x90\x90"; // "\x90" * 6
+        SafeWriteBuf(BSGeometry_SetVRMeleeAlphaAndEmissive_SetFadeNodeAlpha_Loc.GetUIntPtr(), nops, 6);
     }
 
     if (Config::options.dontRemoveRagdollWhenDoneGettingUp) {
@@ -6990,20 +7487,16 @@ void PerformHooks(void)
 
         originalFunc = Write5Call(GetUpEndHandler_Handle_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(GetUpEndHandler_Handle_RemoveCollision_Hook));
         GetUpEndHandler_Handle_RemoveCollision_BSTaskPool_QueueRemoveCollisionFromWorld_Original = (_BSTaskPool_QueueRemoveCollisionFromWorld)originalFunc;
-
-        _MESSAGE("Stopped the game from removing/resetting the ragdoll when a character has finished getting up");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Hook));
         hkbRagdollDriver_extractRagdollPoseInternal_hkaPoseMatchingUtility_computeReferenceFrame_Original = (_hkaPoseMatchingUtility_computeReferenceFrame)originalFunc;
-        _MESSAGE("hkbRagdollDriver::extractRagdollPoseInternal hkaPoseMatchingUtility::computeReferenceFrame hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_HookLoc.GetUIntPtr(), uintptr_t(hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Hook));
         hkaRagdollInstance_getApproxWorldFromBoneTransformAt_hkpMotion_approxTransformAt_Original = (_hkpMotion_approxTransformAt)originalFunc;
-        _MESSAGE("hkaRagdollInstance::getApproxWorldFromBoneTransformAt hkpMotion::approxTransformAt hook complete");
     }
 
     {
@@ -7012,20 +7505,16 @@ void PerformHooks(void)
 
         originalFunc = Write5Call(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_HookLoc_2.GetUIntPtr(), uintptr_t(MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_Hook_2));
         MapRagdollPoseToAnimPoseModelSpace_hkaSkeletonMapper_mapPose_2_Original = (_hkaSkeletonMapper_mapPose)originalFunc;
-
-        _MESSAGE("MapRagdollPoseToAnimPoseModelSpace hkaSkeletonMapper::mapPose hooks complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Hook));
         hkbRagdollDriver_mapHighResPoseLocalToLowResPoseLocal_hkaSkeletonMapper_mapPose_Original = (_hkaSkeletonMapper_mapPose)originalFunc;
-        _MESSAGE("hkbRagdollDriver::mapHighResPoseLocalToLowResPoseLocal hkaSkeletonMapper::mapPose hook complete");
     }
 
     {
         std::uintptr_t originalFunc = Write5Call(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_HookLoc.GetUIntPtr(), uintptr_t(hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook));
         hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original = (_hkaRagdollRigidBodyController_driveToPose)originalFunc;
-        _MESSAGE("hkbRagdollDriver::driveToPose hkaRagdollRigidBodyController::driveToPose hook complete");
     }
 
     {
@@ -7089,6 +7578,21 @@ void PerformHooks(void)
     }
 
     {
+        PlayerCharacter_Load3D_Original = *PlayerCharacter_Load3D_vtbl;
+        SafeWrite64(PlayerCharacter_Load3D_vtbl.GetUIntPtr(), uintptr_t(PlayerCharacter_Load3D_Hook));
+    }
+
+    {
+        std::uintptr_t originalFunc = Write5Call(bhkLinearCaster_linearCast_hkpWorld_linearCast_HookLoc.GetUIntPtr(), uintptr_t(bhkLinearCaster_linearCast_hkpWorld_linearCast_Hook));
+        bhkLinearCaster_linearCast_hkpWorld_linearCast_Original = (_hkpWorld_LinearCast)originalFunc;
+    }
+
+    {
+        ahkpCharacterProxy_updateManifold_Original = *ahkpCharacterProxy_updateManifold_vtbl;
+        SafeWrite64(ahkpCharacterProxy_updateManifold_vtbl.GetUIntPtr(), uintptr_t(ahkpCharacterProxy_updateManifold_Hook));
+    }
+
+    {
         struct Code : Xbyak::CodeGenerator {
             Code(void *buf) : Xbyak::CodeGenerator(256, buf)
             {
@@ -7113,8 +7617,6 @@ void PerformHooks(void)
         g_localTrampoline.EndAlloc(code.getCurr());
 
         g_branchTrampoline.Write5Branch(ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-        _MESSAGE("ScriptEventSourceHolder_DispatchHitEventFromHitData_DispatchHitEvent hook complete");
     }
 
     { // SKSE hooks the swing handlers and calls the native function directly instead of nicely through vtable chaining, so I need to do these manual hooks.
@@ -7160,8 +7662,6 @@ void PerformHooks(void)
         g_localTrampoline.EndAlloc(code.getCurr());
 
         g_branchTrampoline.Write6Branch(WeaponRightSwingHandler_Handle.GetUIntPtr(), uintptr_t(code.getCode()));
-
-        _MESSAGE("WeaponRightSwingHandler::Handle hook complete");
     }
 
     {
@@ -7207,14 +7707,11 @@ void PerformHooks(void)
         g_localTrampoline.EndAlloc(code.getCurr());
 
         g_branchTrampoline.Write6Branch(WeaponLeftSwingHandler_Handle.GetUIntPtr(), uintptr_t(code.getCode()));
-
-        _MESSAGE("WeaponLeftSwingHandler::Handle hook complete");
     }
 
     if (Config::options.seamlessFurnitureTransition) {
         {
             g_branchTrampoline.Write5Call(ActorProcess_ExitFurniture_RemoveCollision_HookLoc.GetUIntPtr(), uintptr_t(ActorProcess_ExitFurniture_RemoveCollision_Hook));
-            _MESSAGE("ActorProcess TransitionFurnitureState QueueRemoveCollision hook complete");
         }
 
         {
@@ -7242,8 +7739,6 @@ void PerformHooks(void)
             g_localTrampoline.EndAlloc(code.getCurr());
 
             g_branchTrampoline.Write5Branch(ActorProcess_ExitFurniture_ResetRagdoll_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-            _MESSAGE("ActorProcess ExitFurniture ResetRagdoll hook complete");
         }
 
         {
@@ -7271,8 +7766,6 @@ void PerformHooks(void)
             g_localTrampoline.EndAlloc(code.getCurr());
 
             g_branchTrampoline.Write5Branch(ActorProcess_EnterFurniture_SetWorld_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-            _MESSAGE("ActorProcess EnterFurniture BSAnimationGraphManager::SetWorld hook complete");
         }
     }
 
@@ -7301,8 +7794,6 @@ void PerformHooks(void)
         g_localTrampoline.EndAlloc(code.getCurr());
 
         g_branchTrampoline.Write5Branch(Character_MovementControllerUpdate_HookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-        _MESSAGE("MovementControllerNPC::Update hook complete");
     }
 
     if (Config::options.disableCullingForActiveRagdolls) {
@@ -7337,14 +7828,11 @@ void PerformHooks(void)
         g_localTrampoline.EndAlloc(code.getCurr());
 
         g_branchTrampoline.Write5Branch(preCullActorsHookLoc.GetUIntPtr(), uintptr_t(code.getCode()));
-
-        _MESSAGE("PreCullActors hook complete");
     }
 
     {
         UInt64 bytes = 0x000000A6E9; // turn the conditional jump in the exe into an unconditional jump
         SafeWriteBuf(potentiallyEnableMeleeCollisionLoc.GetUIntPtr(), &bytes, 5);
-        _MESSAGE("Patched the game to no longer enable its melee collision");
     }
 }
 
@@ -7625,6 +8113,8 @@ extern "C" {
             return;
         }
 
+        g_isVrikPresent = GetModuleHandle("vrik") != NULL;
+
         _MESSAGE("Successfully loaded all forms");
     }
 
@@ -7791,7 +8281,6 @@ extern "C" {
         {
             std::uintptr_t originalFunc = Write5Call(DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_HookLoc.GetUIntPtr(), uintptr_t(DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Hook));
             DoColorPass_NiCamera_FinishAccumulatingPostResolveDepth_Original = (_NiCamera_FinishAccumulatingPostResolveDepth)originalFunc;
-            _MESSAGE("DoColorPass NiCamera::FinishAccumulatingPostResolveDepth hook complete");
         }
 #endif // _DEBUG
 

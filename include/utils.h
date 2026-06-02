@@ -53,6 +53,7 @@ void updateTransformTree(NiAVObject *root, NiAVObject::ControllerUpdateContext *
 void UpdateKeyframedNodeTransform(NiAVObject *node, const NiTransform &transform);
 
 NiAVObject *GetTorsoNode(Actor *actor);
+NiAVObject *GetHeadNode(Actor *actor);
 
 UInt32 GetFullFormID(const ModInfo *modInfo, UInt32 formLower);
 
@@ -163,6 +164,7 @@ inline void SetAttackState(Actor *actor, UInt32 attackState) {
     actor->actorState.flags04 &= 0xFFFFFFFu; // zero out attackState
     actor->actorState.flags04 |= attackState << 28;
 }
+inline bool IsAttacking(Actor *actor) { return GetAttackState(actor) != 0; }
 
 inline UInt8 GetPartNumber(UInt32 collisionFilterInfo) { return (collisionFilterInfo >> 8) & 0x1f; }
 inline void SetPartNumber(hkUint32 &collisionFilterInfo, UInt8 partNumber) {
@@ -189,8 +191,7 @@ inline UInt64 GetPowerAttackActionId(bool isOffhand) { return isOffhand ? 69 : 7
 
 inline int GetAttackDialogueSubtype(bool isPowerAttack, bool isBash) { return isBash ? 28 : (isPowerAttack ? 27 : 26); } // 26 is attack, 27 powerattack, 28 bash
 
-constexpr int GetDialogueTypeFromSubtype(int subtype)
-{
+constexpr int GetDialogueTypeFromSubtype(int subtype) {
     if (subtype < 3) return 0; // kPlayerDialogue
     if (subtype < 14) return 1; // kCommandDialogue
     if (subtype < 15) return 2; // kSceneDialogue
@@ -201,4 +202,14 @@ constexpr int GetDialogueTypeFromSubtype(int subtype)
     else return 7; // kMiscellaneous
 }
 
+inline void BSFadeNode_SetLODMultType(BSFadeNode *fadeNode, UInt8 lodMultType) {
+    *(UInt8 *)((UInt64)fadeNode + 0x17B) &= 0xF0;
+    *(UInt8 *)((UInt64)fadeNode + 0x17B) |= lodMultType & 0xF;
+}
+inline void BSFadeNode_SetStippleFade(BSFadeNode *fadeNode, bool enable) { *((bool *)((UInt64)fadeNode + 0x17C)) = enable; }
+inline void BSFadeNode_SetCurrentFade(BSFadeNode *fadeNode, float currentFade) { *(float *)((UInt64)fadeNode + 0x158) = currentFade; }
+
 int GetNumSmoothingFrames(float smoothingTime);
+
+NiPointer<NiAVObject> GetWeaponNode(bool isLeft, bool thirdPerson);
+BSFlattenedBoneTree * GetParentBoneTree(NiAVObject *node);

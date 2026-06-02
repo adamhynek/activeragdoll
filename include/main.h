@@ -16,6 +16,12 @@ enum class RagdollState : UInt8
     BlendOut,
 };
 
+struct CoreNodes
+{
+    std::vector<hkpRigidBody *> toTorso{};
+    std::vector<hkpRigidBody *> toHead{};
+};
+
 struct ActiveRagdoll
 {
     Blender blender{};
@@ -30,7 +36,7 @@ struct ActiveRagdoll
     std::vector<float> stress{};
     std::optional<hkQsTransform> rootBoneTransform{};
     std::vector<std::optional<NiQuaternion>> prevKeyframeBoneRots{};
-    std::vector<hkpRigidBody *> coreNodes{};
+    CoreNodes coreNodes{};
     hkQsTransform worldFromModel{};
     hkQsTransform worldFromModelPostPhysics{};
     hkQsTransform stickyWorldFromModel{};
@@ -65,3 +71,4 @@ void RegisterDebugTransform(const std::string_view &name, const DebugTransform &
 void UnregisterDebugTransform(const std::string_view &name);
 void DebugDraw();
 
+extern bool g_isVrikPresent;

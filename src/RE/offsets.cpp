@@ -91,6 +91,8 @@ RelocPtr<hkMemoryAllocator> g_hkContainerHeapAllocator(0x1EB59C8);
 
 RelocPtr<bhkCollisionFilter *> g_collisionFilter(0x1F89190);
 
+RelocPtr<BSFadeNode *> g_globalFadeNode(0x3422F50);
+
 // Used by NiCloningProcess...
 RelocPtr<UInt64> unk_141E703BC(0x1E703BC);
 RelocPtr<UInt64> unk_141E703B8(0x1E703B8);
@@ -103,6 +105,7 @@ RelocAddr<_hkpWorld_CastRay> hkpWorld_CastRay(0x00AB5B20);
 RelocAddr<_hkpWorld_LinearCast> hkpWorld_LinearCast(0x00AB5EC0);
 RelocAddr<_hkpWorld_GetPenetrations> hkpWorld_GetPenetrations(0x00AB6AA0);
 RelocAddr<_hkpWorld_GetClosestPoints> hkpWorld_GetClosestPoints(0xAB62D0);
+RelocAddr<_hkpAllCdPointCollector_sortHits> hkpAllCdPointCollector_sortHits(0xA96730);
 RelocAddr<_hkpWorld_AddEntity> hkpWorld_AddEntity(0xAB0CB0);
 RelocAddr<_hkpWorld_RemoveEntity> hkpWorld_RemoveEntity(0xAB0E50);
 RelocAddr<_bhkWorld_AddEntity> bhkWorld_AddEntity(0xDFA520);
@@ -154,6 +157,7 @@ RelocAddr<_bhkListShapeCinfo_dtor> bhkListShapeCinfo_dtor(0xE18CF0);
 RelocAddr<_bhkListShape_ctor> bhkListShape_ctor(0xE18840);
 RelocAddr<_hkbStateMachine_getStateIndex> hkbStateMachine_getStateIndex(0xA535E0);
 RelocAddr<_hkPointerMap_getWithDefault> hkPointerMap_getWithDefault(0xA05520);
+RelocAddr<_bhkCharacterController_ApplyVelocityForDuration> bhkCharacterController_ApplyVelocityForDuration(0xE158B0);
 
 // More havok-related
 RelocAddr<_GetHavokWorldFromCell> GetHavokWorldFromCell(0x276A90);
@@ -293,7 +297,8 @@ RelocAddr<_hkpCharacterProxy_removeCharacterProxyListener> hkpCharacterProxy_rem
 RelocAddr<_hkpEntity_updateMovedBodyInfo> hkpEntity_updateMovedBodyInfo(0xAA9E10);
 RelocAddr<_Actor_GetCollisionFilterInfo> Actor_GetCollisionFilterInfo(0x5F44A0);
 RelocAddr<_Actor_GetBumped> Actor_GetBumped(0x5E4B70);
-RelocAddr<_Actor_HasLargeMovementDelta> Actor_HasLargeMovementDelta(0x6116C0);
+RelocAddr<_Actor_IsMoving> Actor_IsMoving(0x6116C0);
+RelocAddr<_Actor_IsInCombatWithActor> Actor_IsInCombatWithActor(0x62EB40);
 RelocAddr<_Actor_GetCurrentPackage> Actor_GetCurrentPackage(0x985060);
 RelocAddr<_Actor_DoCombatSpellApply> Actor_DoCombatSpellApply(0x6311B0);
 RelocAddr<_Actor_StopMoving> Actor_StopMoving(0x608C10);
@@ -422,6 +427,11 @@ RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMove
 RelocAddr<_GetAnimationEventForAction> GetAnimationEventForAction(0x75A0F0);
 RelocAddr<_Debug_MessageBox> Debug_MessageBox(0x9A7E40);
 RelocAddr<_PathingRequest_CTOR> PathingRequest_CTOR(0x48F5A0);
+RelocAddr<_NiAVObject_SetFadeNodeRecurse> NiAVObject_SetFadeNodeRecurse(0x12CA5D0);
+RelocAddr<_BSFadeNode_CtorFromNiNode> BSFadeNode_CtorFromNiNode(0x12C8270);
+RelocAddr<_BSBoneMap_RefreshMap> BSBoneMap_RefreshMap(0xD9FD10);
+RelocAddr<_NiAVObject_GetExtraDataByName> NiAVObject_GetExtraDataByName(0xCA6080);
+RelocAddr<_BSFlattenedBoneTree_GetBoneIndex> BSFlattenedBoneTree_GetBoneIndex(0xCAFD60);
 
 RelocPtr<ProcessLists *> g_processLists(0x1F831B0);
 
