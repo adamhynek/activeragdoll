@@ -7227,15 +7227,15 @@ void ProcessGroundPlayerProxyCastCollector(hkpAllCdPointCollector *collector)
 {
     for (int i = 0; i < collector->getNumHits(); i++) {
         hkpRootCdPoint &hit = collector->getHits()[i];
-        hkpRigidBody *rigidBody = hkpGetRigidBody(hit.m_rootCollidableB);
-
-        if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
-            std::scoped_lock lock(g_dontCollideActorsLock);
-            if (g_dontCollideActors.contains(refr)) {
-                // remove the hit by moving the last hit into its place
-                collector->getHits()[i] = collector->getHits()[collector->getNumHits() - 1];
-                collector->getHits().m_size -= 1;
-                i -= 1;
+        if (hkpRigidBody *rigidBody = hkpGetRigidBody(hit.m_rootCollidableB)) {
+            if (NiPointer<TESObjectREFR> refr = GetRefFromCollidable(rigidBody->getCollidable())) {
+                std::scoped_lock lock(g_dontCollideActorsLock);
+                if (g_dontCollideActors.contains(refr)) {
+                    // remove the hit by moving the last hit into its place
+                    collector->getHits()[i] = collector->getHits()[collector->getNumHits() - 1];
+                    collector->getHits().m_size -= 1;
+                    i -= 1;
+                }
             }
         }
     }
