@@ -537,18 +537,18 @@ namespace Config {
         if (!RegisterFloat("playerCharControllerRadius", options.playerCharControllerRadius)) success = false;
         if (!RegisterFloat("playerCapsuleRadius", options.playerCapsuleRadius)) success = false;
 
-        if (!RegisterFloat("playerVsBipedCollisionPushVelocityMin", options.playerVsBipedCollisionPushVelocityMin)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPushVelocityMax", options.playerVsBipedCollisionPushVelocityMax)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPushDuration", options.playerVsBipedCollisionPushDuration)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionMoveRestrictionDuration", options.playerVsBipedCollisionMoveRestrictionDuration)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPushMinIntersectDistance", options.playerVsBipedCollisionPushMinIntersectDistance)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPushMaxIntersectDistance", options.playerVsBipedCollisionPushMaxIntersectDistance)) success = false;
-        if (!RegisterBool("playerVsBipedCollisionAlwaysPush", options.playerVsBipedCollisionAlwaysPush)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughMinIntersectDistance", options.playerVsBipedCollisionPhaseThroughMinIntersectDistance)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat", options.playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat)) success = false;
-        if (!RegisterBool("playerVsBipedDisableLookAt", options.playerVsBipedDisableLookAt)) success = false;
-        if (!RegisterFloat("playerVsBipedDisableLookAtDuration", options.playerVsBipedDisableLookAtDuration)) success = false;
-        if (!RegisterFloat("playerVsBipedCollisionPhaseThroughAlphaMult", options.playerVsBipedCollisionPhaseThroughAlphaMult)) success = false;
+        if (!RegisterFloat("playerActorCollisionPushVelocityMin", options.playerActorCollisionPushVelocityMin)) success = false;
+        if (!RegisterFloat("playerActorCollisionPushVelocityMax", options.playerActorCollisionPushVelocityMax)) success = false;
+        if (!RegisterFloat("playerActorCollisionPushDuration", options.playerActorCollisionPushDuration)) success = false;
+        if (!RegisterFloat("playerActorCollisionMoveRestrictionDuration", options.playerActorCollisionMoveRestrictionDuration)) success = false;
+        if (!RegisterFloat("playerActorCollisionPushMinIntersectDistance", options.playerActorCollisionPushMinIntersectDistance)) success = false;
+        if (!RegisterFloat("playerActorCollisionPushMaxIntersectDistance", options.playerActorCollisionPushMaxIntersectDistance)) success = false;
+        if (!RegisterBool("playerActorCollisionAlwaysPush", options.playerActorCollisionAlwaysPush)) success = false;
+        if (!RegisterFloat("playerActorCollisionPhaseThroughMinIntersectDistance", options.playerActorCollisionPhaseThroughMinIntersectDistance)) success = false;
+        if (!RegisterFloat("playerActorCollisionPhaseThroughMinIntersectDistanceInCombat", options.playerActorCollisionPhaseThroughMinIntersectDistanceInCombat)) success = false;
+        if (!RegisterBool("playerActorCollisionDisableLookAt", options.playerActorCollisionDisableLookAt)) success = false;
+        if (!RegisterFloat("playerActorCollisionDisableLookAtDuration", options.playerActorCollisionDisableLookAtDuration)) success = false;
+        if (!RegisterFloat("playerActorCollisionPhaseThroughAlphaMult", options.playerActorCollisionPhaseThroughAlphaMult)) success = false;
 
         if (!RegisterFloat("playerMeleeCollisionDisabledWeaponAlpha", options.playerMeleeCollisionDisabledWeaponAlpha)) success = false;
 

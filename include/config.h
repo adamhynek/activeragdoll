@@ -392,18 +392,18 @@ namespace Config {
         float playerCharControllerRadius = 0.15f;
         float playerCapsuleRadius = 0.15f;
 
-        float playerVsBipedCollisionPushVelocityMin = 0.f;
-        float playerVsBipedCollisionPushVelocityMax = 0.f;
-        float playerVsBipedCollisionPushDuration = 0.2f;
-        float playerVsBipedCollisionMoveRestrictionDuration = 0.2f;
-        float playerVsBipedCollisionPushMinIntersectDistance = 5.f;
-        float playerVsBipedCollisionPushMaxIntersectDistance = 5.f;
-        bool playerVsBipedDisableLookAt = false;
-        float playerVsBipedDisableLookAtDuration = 0.1f;
-        bool playerVsBipedCollisionAlwaysPush = false;
-        float playerVsBipedCollisionPhaseThroughMinIntersectDistance = 5.f;
-        float playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat = 5.f;
-        float playerVsBipedCollisionPhaseThroughAlphaMult = 0.5f;
+        float playerActorCollisionPushVelocityMin = 0.f;
+        float playerActorCollisionPushVelocityMax = 0.f;
+        float playerActorCollisionPushDuration = 0.2f;
+        float playerActorCollisionMoveRestrictionDuration = 0.2f;
+        float playerActorCollisionPushMinIntersectDistance = 5.f;
+        float playerActorCollisionPushMaxIntersectDistance = 5.f;
+        bool playerActorCollisionDisableLookAt = false;
+        float playerActorCollisionDisableLookAtDuration = 0.1f;
+        bool playerActorCollisionAlwaysPush = false;
+        float playerActorCollisionPhaseThroughMinIntersectDistance = 5.f;
+        float playerActorCollisionPhaseThroughMinIntersectDistanceInCombat = 5.f;
+        float playerActorCollisionPhaseThroughAlphaMult = 0.5f;
 
         float playerMeleeCollisionDisabledWeaponAlpha = 0.3f;
 

@@ -6944,14 +6944,14 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 
                             collidingActors.insert(actor);
 
-                            if (Config::options.playerVsBipedDisableLookAt) {
+                            if (Config::options.playerActorCollisionDisableLookAt) {
                                 // Without checking distance here, this will kick in as soon as they are within the keepDistance (so technically not yet colliding).
                                 disableLookAtActors.insert(actor);
                             }
 
                             bool isBipedNoCC = layer == BGSCollisionLayer::kCollisionLayer_BipedNoCC;
 
-                            bool isPushable = Config::options.playerVsBipedCollisionAlwaysPush || IsAttacking(actor);
+                            bool isPushable = Config::options.playerActorCollisionAlwaysPush || IsAttacking(actor);
 
                             bool removeBecauseSmallRace = Config::options.dontCollidePlayerWithSmallRaces && IsSmallActor(actor);
 
@@ -6986,7 +6986,7 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
                                             float penetrationDistance = hit.m_contact.getDistance() * -1.f;
                                             // PrintToFile(std::to_string(penetrationDistance), "torsoNodeDistance.txt");
                                             bool isInCombatWithPlayer = Actor_IsInCombatWithActor(actor, *g_thePlayer);
-                                            float minIntersectDistance = isInCombatWithPlayer ? Config::options.playerVsBipedCollisionPhaseThroughMinIntersectDistanceInCombat : Config::options.playerVsBipedCollisionPhaseThroughMinIntersectDistance;
+                                            float minIntersectDistance = isInCombatWithPlayer ? Config::options.playerActorCollisionPhaseThroughMinIntersectDistanceInCombat : Config::options.playerActorCollisionPhaseThroughMinIntersectDistance;
                                             if (penetrationDistance > minIntersectDistance) {
                                                 g_dontCollideUntilStoppedCollidingActors.insert(actor);
                                             }
@@ -6999,9 +6999,9 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 
                             if (removeBecauseDontCollide) {
                                 float currentAlpha = get_vfunc<_Actor_GetAlpha>(actor, 0xE4)(actor);
-                                float newAlpha = currentAlpha * Config::options.playerVsBipedCollisionPhaseThroughAlphaMult;
+                                float newAlpha = currentAlpha * Config::options.playerActorCollisionPhaseThroughAlphaMult;
                                 if (currentAlpha >= 2.f) { // game uses +2 alpha to signify no fade in/out
-                                    newAlpha = 2.f + ((currentAlpha - 2.f) * Config::options.playerVsBipedCollisionPhaseThroughAlphaMult);
+                                    newAlpha = 2.f + ((currentAlpha - 2.f) * Config::options.playerActorCollisionPhaseThroughAlphaMult);
                                 }
                                 auto it = g_dontCollideUntilStoppedCollidingActorAlphas.find(actor);
                                 if (it == g_dontCollideUntilStoppedCollidingActorAlphas.end()) {
@@ -7037,7 +7037,7 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 
     // TODO: Locking
     for (Actor *actor : disableLookAtActors) {
-        g_disableLookAtActors[actor] = { g_currentFrameTime + Config::options.playerVsBipedDisableLookAtDuration };  // TODO: Need to remove the entry when it expires
+        g_disableLookAtActors[actor] = { g_currentFrameTime + Config::options.playerActorCollisionDisableLookAtDuration };  // TODO: Need to remove the entry when it expires
     }
 
     for (Actor *actor : g_prevCollidingActors) {
@@ -7087,14 +7087,14 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 #ifdef _DEBUG
             // PrintToFile(std::to_string(intersectDistance), "distanceDifference.txt");
 #endif
-            if (intersectDistance < Config::options.playerVsBipedCollisionPushMinIntersectDistance) {
+            if (intersectDistance < Config::options.playerActorCollisionPushMinIntersectDistance) {
                 continue;
             }
 
             float intersectAmount = 1.f;
             if (intersectDistance >= 0.001f) {
                 intersectAmount = std::clamp(
-                    (intersectDistance - Config::options.playerVsBipedCollisionPushMinIntersectDistance) / (Config::options.playerVsBipedCollisionPushMaxIntersectDistance - Config::options.playerVsBipedCollisionPushMinIntersectDistance),
+                    (intersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance) / (Config::options.playerActorCollisionPushMaxIntersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance),
                     0.f,
                     1.f
                 );
@@ -7104,14 +7104,14 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
             // PrintToFile(std::to_string(intersectAmount), "ratioVsInitial.txt");
 #endif
 
-            float moveAmt = lerp(Config::options.playerVsBipedCollisionPushVelocityMin, Config::options.playerVsBipedCollisionPushVelocityMax, intersectAmount);
+            float moveAmt = lerp(Config::options.playerActorCollisionPushVelocityMin, Config::options.playerActorCollisionPushVelocityMax, intersectAmount);
             NiPoint3 dir = VectorNormalized(playerFromActor) * -1.f;
             NiPoint3 moveVec = dir * moveAmt;
-            bhkCharacterController_ApplyVelocityForDuration(controller, moveVec, Config::options.playerVsBipedCollisionPushDuration);
+            bhkCharacterController_ApplyVelocityForDuration(controller, moveVec, Config::options.playerActorCollisionPushDuration);
 
             // PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(controller->initialVelocity))), "initialVelocity.txt");
 
-            g_actorMoveRestrictions[actor] = { g_currentFrameTime + Config::options.playerVsBipedCollisionMoveRestrictionDuration}; // TODO: Need to remove the entry when it expires
+            g_actorMoveRestrictions[actor] = { g_currentFrameTime + Config::options.playerActorCollisionMoveRestrictionDuration}; // TODO: Need to remove the entry when it expires
         }
     }
 
