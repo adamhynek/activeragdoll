@@ -1298,7 +1298,7 @@ SwingHandler g_leftSwingHandler{ true };
 bool g_isInPlanckHit = false;
 bool g_isCurrentHitFatal = false;
 
-bool HitActor(Character *source, Character *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
+bool HitActor(Actor *source, Actor *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
 {
     // Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
     TESForm *offhandObj = source->GetEquippedObject(true);
@@ -1346,7 +1346,7 @@ bool HitActor(Character *source, Character *target, NiAVObject *hitNode, const N
     g_isCurrentHitFatal = false;
 
     g_isInPlanckHit = true;
-    Character_HitTarget(source, target, nullptr, isOffhand); // Populates HitData and so relies on attackState/attackData
+    Actor_HitTarget(source, target, nullptr, isOffhand); // Populates HitData and so relies on attackState/attackData
     g_isInPlanckHit = false;
 
     bool isFatal = g_isCurrentHitFatal;
@@ -1361,7 +1361,7 @@ bool HitActor(Character *source, Character *target, NiAVObject *hitNode, const N
     return isFatal;
 }
 
-void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffhand)
+void DoDestructibleDamage(Actor *source, TESObjectREFR *target, bool isOffhand)
 {
     float damage;
     { // All this just to get the fricken damage
@@ -1379,7 +1379,7 @@ void DoDestructibleDamage(Character *source, TESObjectREFR *target, bool isOffha
     BSTaskPool_QueueDamageObjectTask(BSTaskPool::GetSingleton(), target, damage, false, source);
 }
 
-void HitRefr(Character *source, TESObjectREFR *target, bool setCause, bool isLeft, bool isOffhand)
+void HitRefr(Actor *source, TESObjectREFR *target, bool setCause, bool isLeft, bool isOffhand)
 {
     SetAttackState(source, 2); // kSwing
 
@@ -1558,7 +1558,7 @@ void PlayImpactEffects(TESObjectCELL *cell, BGSImpactData *impact, NiPoint3 hitP
 
 struct DoActorHitTask : TaskDelegate
 {
-    void DoActorHit(Character *hitChar)
+    void DoActorHit(Actor *hitActor)
     {
         PlayerCharacter *player = *g_thePlayer;
 
@@ -1588,7 +1588,7 @@ struct DoActorHitTask : TaskDelegate
         NiPoint3 *playerLastHitVelocity = (NiPoint3 *)((UInt64)player + 0x6C8);
         *playerLastHitVelocity = hitVelocity;
 
-        bool isFatal = HitActor(player, hitChar, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
+        bool isFatal = HitActor(player, hitActor, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
 
         PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
 
@@ -1597,18 +1597,18 @@ struct DoActorHitTask : TaskDelegate
                 impulseMult *= Config::options.powerAttackImpulseMultiplier;
             }
 
-            if (NiPointer<NiAVObject> root = hitChar->GetNiNode()) {
+            if (NiPointer<NiAVObject> root = hitActor->GetNiNode()) {
                 if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(player->parentCell)) {
-                    if (DoesRefrHaveNode(hitChar, hitNode)) {
+                    if (DoesRefrHaveNode(hitActor, hitNode)) {
                         if (NiPointer<bhkRigidBody> rigidBody = GetRigidBody(hitNode)) {
                             if (isFatal) {
                                 // If the hit was fatal, apply a smaller impulse so they don't go flying
                                 impulseMult *= Config::options.fatalHitImpulseMultiplier;
                             }
-                            else if (Actor_IsInRagdollState(hitChar)) {
+                            else if (Actor_IsInRagdollState(hitActor)) {
                                 impulseMult *= Config::options.ragdolledHitImpulseMultiplier;
                             }
-                            ApplyHitImpulse(world, hitChar, rigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
+                            ApplyHitImpulse(world, hitActor, rigidBody, hitVelocity, hitPosition * *g_havokWorldScale, impulseMult);
                         }
                     }
                 }
@@ -1626,7 +1626,7 @@ struct DoActorHitTask : TaskDelegate
     virtual void Run() {
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(hitActorHandle, refr)) {
-            if (Character *actor = DYNAMIC_CAST(refr, TESObjectREFR, Character)) {
+            if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
                 DoActorHit(actor);
             }
         }
@@ -1823,6 +1823,7 @@ struct PhysicsListener :
     {
         double startTime = 0.0;
         double stoppedCollidingTime = 0.0;
+        bool isActor = false;
     };
     std::unordered_map<TESObjectREFR *, CooldownData> hitCooldownTargets[2]{}; // each hand has its own cooldown
     std::unordered_map<TESObjectREFR *, double> collisionCooldownTargets[2]{};
@@ -1860,14 +1861,15 @@ struct PhysicsListener :
         PlayerCharacter *player = *g_thePlayer;
         if (hitRefr == player) return;
 
-        hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime };
+        Actor *hitActor = DYNAMIC_CAST(hitRefr, TESObjectREFR, Actor);
 
-        Character *hitChar = DYNAMIC_CAST(hitRefr, TESObjectREFR, Character);
-        if (hitChar && !Actor_IsGhost(hitChar) && Character_CanHit(player, hitChar)) {
+        hitCooldownTargets[isLeft][hitRefr] = { g_currentFrameTime, g_currentFrameTime, hitActor != nullptr };
+
+        if (hitActor && !Actor_IsGhost(hitActor) && Actor_CanHit(player, hitActor)) {
             evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
             NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
-            g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitChar), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
+            g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitActor), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
         }
         else {
             if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -2442,8 +2444,9 @@ struct PhysicsListener :
             bool fade = false;
             if (!hitCooldownTargets[isLeft].empty()) {
                 for (auto &[target, cooldownData] : hitCooldownTargets[isLeft]) {
-                    if (cooldownData.stoppedCollidingTime == g_currentFrameTime && g_currentFrameTime - cooldownData.startTime > Config::options.hitCooldownTimeUntilWeaponFade) {
+                    if (cooldownData.isActor && cooldownData.stoppedCollidingTime == g_currentFrameTime && g_currentFrameTime - cooldownData.startTime > Config::options.hitCooldownTimeUntilWeaponFade) {
                         // Still colliding with the enemy, and past a certain amount of time that it's unlikely to be still colliding as part of a swing that leaves the target.
+                        // Also ensure it's only actors, since we do have hit cooldowns for refrs like walls/etc too and don't want to fade in that case.
                         fade = true;
                         break;
                     }
@@ -2822,7 +2825,7 @@ struct NPCData
     float lastVoiceTimer = -1.f;
     bool isSpeaking = false;
 
-    void TriggerDialogue(Character *character, TESTopic *topic, TESTopicInfo *topicInfo)
+    void TriggerDialogue(Actor *character, TESTopic *topic, TESTopicInfo *topicInfo)
     {
         Actor_SayToEx(character, *g_thePlayer, topic, topicInfo);
 
@@ -2834,7 +2837,7 @@ struct NPCData
         lastSaidTopic = topic;
     }
 
-    void TryTriggerDialogue(Character *character, bool high, bool isShoved)
+    void TryTriggerDialogue(Actor *character, bool high, bool isShoved)
     {
         if (Actor_IsInRagdollState(character) || IsSleeping(character)) return;
 
@@ -2876,7 +2879,7 @@ struct NPCData
         dialogueTime = g_currentFrameTime;
     }
 
-    void TryBump(Character *character, bool exitFurniture, bool force = false)
+    void TryBump(Actor *character, bool exitFurniture, bool force = false)
     {
         if (Actor_IsInRagdollState(character)) return;
 
@@ -2886,7 +2889,7 @@ struct NPCData
         }
     }
 
-    void StateUpdate(Character *character, bool isShoved, bool wasJustRagdolled)
+    void StateUpdate(Actor *character, bool isShoved, bool wasJustRagdolled)
     {
         if (character->IsDead(1)) return;
         if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
@@ -3053,9 +3056,9 @@ void TryUpdateNPCState(Actor *actor, bool isShoved, bool wasJustRagdolled)
 
         g_npcs[actor] = NPCData{};
     }
-    else if (Character *character = DYNAMIC_CAST(actor, Actor, Character)) {
+    else {
         NPCData &data = it->second;
-        data.StateUpdate(character, isShoved, wasJustRagdolled);
+        data.StateUpdate(actor, isShoved, wasJustRagdolled);
     }
 }
 

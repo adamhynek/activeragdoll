@@ -782,8 +782,8 @@ extern RelocAddr<_Actor_IsGhost> Actor_IsGhost;
 typedef bool(*_Actor_IsRunning)(Actor *_this);
 extern RelocAddr<_Actor_IsRunning> Actor_IsRunning;
 
-typedef bool(*_Character_CanHit)(Character *_this, Actor *target);
-extern RelocAddr<_Character_CanHit> Character_CanHit;
+typedef bool(*_Actor_CanHit)(Actor *_this, Actor *target);
+extern RelocAddr<_Actor_CanHit> Actor_CanHit;
 
 typedef void(*_PlayerCharacter_UpdateAndGetAttackData)(PlayerCharacter *_this, bool isLeft, bool isOffhand, bool isPowerAttack, BGSAttackData **attackDataOut);
 extern RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData;
@@ -830,10 +830,10 @@ extern RelocAddr<_PlayerControls_IsTriggerHeldOffHand> PlayerControls_IsTriggerH
 typedef float(*_PlayerControls_SendAction)(PlayerControls *_this, UInt32 defaultActionObject, UInt32 priority);
 extern RelocAddr<_PlayerControls_SendAction> PlayerControls_SendAction;
 
-typedef void(*_Character_HitTarget)(Character *_this, Actor *target, Projectile *projectile, bool isOffhand);
-extern RelocAddr<_Character_HitTarget> Character_HitTarget;
+typedef void(*_Actor_HitTarget)(Actor *_this, Actor *target, Projectile *projectile, bool isOffhand);
+extern RelocAddr<_Actor_HitTarget> Actor_HitTarget;
 
-typedef void(*_UpdateDialogue)(void *dialogueManager, Character *source, Character *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
+typedef void(*_UpdateDialogue)(void *dialogueManager, Actor *source, Actor *target, int dialogueType, int dialogueSubtype, bool interruptDialogue, void *combatController); // a1 is unused
 extern RelocAddr<_UpdateDialogue> UpdateDialogue;
 
 typedef void(*_Actor_TriggerMiscDialogue)(Actor *_this, int dialogueSubtype, bool interruptDialogue);

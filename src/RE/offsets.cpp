@@ -331,7 +331,7 @@ RelocAddr<_Actor_ClearKeepOffsetFromActor> Actor_ClearKeepOffsetFromActor(0x60C2
 RelocAddr<_MovementControllerNPC_SetKeepOffsetFromActor> MovementControllerNPC_SetKeepOffsetFromActor(0x716F40);
 RelocAddr<_Actor_IsGhost> Actor_IsGhost(0x5DAAE0);
 RelocAddr<_Actor_IsRunning> Actor_IsRunning(0x5D9770);
-RelocAddr<_Character_CanHit> Character_CanHit(0x5EFC20);
+RelocAddr<_Actor_CanHit> Actor_CanHit(0x5EFC20);
 RelocAddr<_PlayerCharacter_UpdateAndGetAttackData> PlayerCharacter_UpdateAndGetAttackData(0x6B9F30);
 RelocAddr<_ActorProcess_IncrementAttackCounter> ActorProcess_IncrementAttackCounter(0x65A090);
 RelocAddr<_ActorProcess_UnsetAttackData> ActorProcess_UnsetAttackData(0x664710);
@@ -347,7 +347,7 @@ RelocAddr<_FlashHudMenuMeter> FlashHudMenuMeter(0x902F20);
 RelocAddr<_PlayerControls_SendAction> PlayerControls_SendAction(0x72C380);
 RelocAddr<_PlayerControls_IsTriggerHeldMainHand> PlayerControls_IsTriggerHeldMainHand(0x72D740);
 RelocAddr<_PlayerControls_IsTriggerHeldOffHand> PlayerControls_IsTriggerHeldOffHand(0x72D770);
-RelocAddr<_Character_HitTarget> Character_HitTarget(0x631AF0);
+RelocAddr<_Actor_HitTarget> Actor_HitTarget(0x631AF0);
 RelocAddr<_UpdateDialogue> UpdateDialogue(0x7940F0);
 RelocAddr<_Actor_TriggerMiscDialogue> Actor_TriggerMiscDialogue(0x5F2500);
 RelocAddr<_Actor_IsHostileToActor> Actor_IsHostileToActor(0x5F0560);
