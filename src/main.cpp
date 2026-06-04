@@ -2114,7 +2114,7 @@ struct PhysicsListener :
             else if (isAheld && isBheld) {
                 // 4. Held object vs held object
                 // Both are held objects - don't let them hit each other
-                // TODO: We could try to handle this properly
+                // TODO: We could try to handle this properly (let them hit each other)
                 return;
             }
             else if (!isAheld && !isBheld) {
@@ -2460,6 +2460,7 @@ struct PhysicsListener :
             if (NiPointer<NiAVObject> weaponNode = GetWeaponNode(isLeft, g_isVrikPresent)) {
                 // TODO: Blood on the weapon does not react to alpha.
                 // TODO: Bound weapons? Or other weapons with existing alpha
+                //       - Should be fine because those have alpha handled at the geometry level, not fade node
                 // TODO: Probably need to put this in a more safe func
                 if (BSFadeNode *fadeNode = DYNAMIC_CAST(weaponNode, NiAVObject, BSFadeNode)) {
                     NiAVObject_SetFadeNodeRecurse(weaponNode, fadeNode);
@@ -2498,17 +2499,21 @@ PhysicsListener g_physicsListener{};
 std::mutex PhysicsListener::collisionCooldownTargetsLock{};
 
 
+bool g_clearUpdateManifoldObjects = false;
+
 struct MoveRestrictionData
 {
     double endTime;
 };
 std::unordered_map<Actor *, MoveRestrictionData> g_actorMoveRestrictions;
+std::mutex g_actorMoveRestrictionsLock{};
 
 struct LookAtDisableData
 {
     double endTime;
 };
 std::unordered_map<Actor *, LookAtDisableData> g_disableLookAtActors{};
+std::mutex g_disableLookAtActorsLock{};
 
 struct CollidedActorData
 {
@@ -2522,13 +2527,12 @@ struct ActorAlphaData
     float originalAlpha;
     float overriddenAlpha;
 };
-
-// TODO: Clear all this shit when resetting objects
-std::unordered_set<Actor *> g_dontCollideUntilStoppedCollidingActors{};
 std::unordered_map<Actor *, ActorAlphaData> g_dontCollideUntilStoppedCollidingActorAlphas{};
+
+std::unordered_set<Actor *> g_dontCollideUntilStoppedCollidingActors{};
 std::unordered_set<TESObjectREFR *> g_dontCollideActors{};
 std::mutex g_dontCollideActorsLock{};
-std::unordered_set<Actor *> g_prevCollidingActors{};
+std::unordered_set<UInt32> g_prevCollidingActorHandles{};
 
 
 struct PlayerCharacterProxyListener : hkpCharacterProxyListener
@@ -3450,7 +3454,7 @@ bool AddRagdollToWorld(Actor *actor)
                                 }
                             }
 #endif // _DEBUG
-                            // TODO: Add locking
+                            // Note: Don't need a lock on coreNodes because it's never modified and set here before the active ragdoll is added to g_activeRagdolls
                             activeRagdoll->coreNodes = std::move(*coreNodes);
                         }
 
@@ -3978,6 +3982,9 @@ void ResetObjects()
     g_shovedActors.clear();
     g_footYankedActors.clear();
     g_physicsListener = PhysicsListener{};
+
+    // Easier to signal updateManifold() to clear related objects so we don't have to lock here.
+    g_clearUpdateManifoldObjects = true;
 }
 
 double g_worldChangedTime = 0.0;
@@ -6191,11 +6198,13 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
     g_Character_ModifyMovementData_Original(actor, a_deltaTime, a_moveAmt, a_rotAmt);
 
     if (!IsDoingGrabbedActorMovement(actor)) {
-        // TODO: Locking
-        auto it = g_actorMoveRestrictions.find(actor);
-        if (it != g_actorMoveRestrictions.end()) {
-            MoveRestrictionData &data = it->second;
-            if (g_currentFrameTime < data.endTime) {
+        if (!g_actorMoveRestrictions.empty()) {
+            bool isRestricted = false;
+            {
+                std::scoped_lock lock(g_actorMoveRestrictionsLock);
+                isRestricted = g_actorMoveRestrictions.contains(actor);
+            }
+            if (isRestricted) {
                 NiPoint3 direction = VectorNormalized((*g_thePlayer)->pos - actor->pos);
 
                 NiTransform refrTransform; TESObjectREFR_GetTransformIncorporatingScale(actor, refrTransform);
@@ -6398,8 +6407,6 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         Actor_CheckAndHandleMotionOrAnimationDrivenChange_Original(actor);
         return;
     }
-
-    // TODO: We could push away (either through directcontrol or applyvelocityforduration) actors that are intersecting the player.
 
     GrabbedActorState &state = it->second;
 
@@ -6915,13 +6922,26 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 {
     // This is called after trigger volumes have been updated, and collector hits from the castCollector are sorted and have distance converted from fraction to actual distance.
 
-
     static std::unordered_set<Actor *> disableLookAtActors{};
     disableLookAtActors.clear();
 
-    static std::unordered_set<Actor *> collidingActors{};
-    collidingActors.clear();
+    static std::unordered_set<UInt32> collidingActorHandles{};
+    collidingActorHandles.clear();
 
+    if (g_clearUpdateManifoldObjects) {
+        g_clearUpdateManifoldObjects = false;
+
+        g_dontCollideUntilStoppedCollidingActors.clear();
+        g_dontCollideUntilStoppedCollidingActorAlphas.clear();
+
+        {
+            std::scoped_lock lock(g_dontCollideActorsLock);
+            g_dontCollideActors.clear();
+        }
+
+        g_prevCollidingActorHandles.clear();
+        g_collidedActorsPushAway.clear();
+    }
 
     auto ProcessCollector = [](hkpAllCdPointCollector& collector) {
         for (int i = 0; i < collector.getNumHits(); i++) {
@@ -6942,7 +6962,8 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
                                 }
                             }
 
-                            collidingActors.insert(actor);
+                            UInt32 refrHandle = GetOrCreateRefrHandle(actor);
+                            collidingActorHandles.insert(refrHandle);
 
                             if (Config::options.playerActorCollisionDisableLookAt) {
                                 // Without checking distance here, this will kick in as soon as they are within the keepDistance (so technically not yet colliding).
@@ -6959,7 +6980,6 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
                                 if (std::shared_ptr<ActiveRagdoll> activeRagdoll = GetActiveRagdollFromDriver(driver)) {
                                     // If they are using furniture (bipedNoCC), and we push them, they will instead get pushed when they stop using it which we don't want.
                                     if (!isBipedNoCC && isPushable) {
-                                        // TODO: Locking
                                         if (std::ranges::find(activeRagdoll->coreNodes.toHead, rigidBody) != activeRagdoll->coreNodes.toHead.end()) {
                                             float penetrationDistance = hit.m_contact.getDistance() * -1.f; // negative means penetrating
                                             // PrintToFile(std::to_string(penetrationDistance), "coreNodeDistance.txt");
@@ -6980,7 +7000,6 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
                                     }
 
                                     // TODO: Maybe if it's not a core node we just don't collide at all??
-                                    // TODO: Locking
                                     if (!removeBecauseSmallRace) {
                                         if (std::ranges::find(activeRagdoll->coreNodes.toTorso, rigidBody) != activeRagdoll->coreNodes.toTorso.end()) {
                                             float penetrationDistance = hit.m_contact.getDistance() * -1.f;
@@ -7031,35 +7050,51 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
         }
     };
 
-
     ProcessCollector(castCollector);
     ProcessCollector(startPointCollector);
 
-    // TODO: Locking
-    for (Actor *actor : disableLookAtActors) {
-        g_disableLookAtActors[actor] = { g_currentFrameTime + Config::options.playerActorCollisionDisableLookAtDuration };  // TODO: Need to remove the entry when it expires
+    {
+        for (Actor *actor : disableLookAtActors) {
+            std::scoped_lock lock(g_disableLookAtActorsLock);
+            g_disableLookAtActors[actor] = { g_currentFrameTime + Config::options.playerActorCollisionDisableLookAtDuration };
+        }
+
+        { // Clear out expired look at disable entries
+            std::scoped_lock lock(g_disableLookAtActorsLock);
+            for (auto it = g_disableLookAtActors.begin(); it != g_disableLookAtActors.end();) {
+                auto [target, lookAtDisableData] = *it;
+                if (g_currentFrameTime >= lookAtDisableData.endTime)
+                    it = g_disableLookAtActors.erase(it);
+                else
+                    ++it;
+            }
+        }
     }
 
-    for (Actor *actor : g_prevCollidingActors) {
-        if (collidingActors.find(actor) == collidingActors.end()) {
+    for (UInt32 actorHandle : g_prevCollidingActorHandles) {
+        if (collidingActorHandles.find(actorHandle) == collidingActorHandles.end()) {
             // Actor was colliding in the previous frame but not in the current frame
-            if (g_dontCollideUntilStoppedCollidingActors.find(actor) != g_dontCollideUntilStoppedCollidingActors.end()) {
-                g_dontCollideUntilStoppedCollidingActors.erase(actor);
+            if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(actorHandle, refr)) {
+                if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
+                    if (g_dontCollideUntilStoppedCollidingActors.find(actor) != g_dontCollideUntilStoppedCollidingActors.end()) {
+                        g_dontCollideUntilStoppedCollidingActors.erase(actor);
 
-                auto it = g_dontCollideUntilStoppedCollidingActorAlphas.find(actor);
-                if (it != g_dontCollideUntilStoppedCollidingActorAlphas.end()) {
-                    float currentAlpha = get_vfunc<_Actor_GetAlpha>(actor, 0xE4)(actor);
-                    if (currentAlpha == it->second.overriddenAlpha) {
-                        get_vfunc<_Actor_SetAlpha>(actor, 0xE3)(actor, it->second.originalAlpha);
+                        auto it = g_dontCollideUntilStoppedCollidingActorAlphas.find(actor);
+                        if (it != g_dontCollideUntilStoppedCollidingActorAlphas.end()) {
+                            float currentAlpha = get_vfunc<_Actor_GetAlpha>(actor, 0xE4)(actor);
+                            if (currentAlpha == it->second.overriddenAlpha) {
+                                get_vfunc<_Actor_SetAlpha>(actor, 0xE3)(actor, it->second.originalAlpha);
+                            }
+                            g_dontCollideUntilStoppedCollidingActorAlphas.erase(it);
+                        }
                     }
-                    g_dontCollideUntilStoppedCollidingActorAlphas.erase(it);
-                }
-            }
 
-            {
-                std::scoped_lock lock(g_dontCollideActorsLock);
-                if (g_dontCollideActors.find(actor) != g_dontCollideActors.end()) {
-                    g_dontCollideActors.erase(actor);
+                    {
+                        std::scoped_lock lock(g_dontCollideActorsLock);
+                        if (g_dontCollideActors.find(actor) != g_dontCollideActors.end()) {
+                            g_dontCollideActors.erase(actor);
+                        }
+                    }
                 }
             }
         }
@@ -7111,11 +7146,25 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
 
             // PrintToFile(std::to_string(VectorLength(HkVectorToNiPoint(controller->initialVelocity))), "initialVelocity.txt");
 
-            g_actorMoveRestrictions[actor] = { g_currentFrameTime + Config::options.playerActorCollisionMoveRestrictionDuration}; // TODO: Need to remove the entry when it expires
+            {
+                std::scoped_lock lock(g_actorMoveRestrictionsLock);
+                g_actorMoveRestrictions[actor] = { g_currentFrameTime + Config::options.playerActorCollisionMoveRestrictionDuration};
+            }
         }
     }
 
-    g_prevCollidingActors = collidingActors;
+    { // Clear out expired move restrictions
+        std::scoped_lock lock(g_actorMoveRestrictionsLock);
+        for (auto it = g_actorMoveRestrictions.begin(); it != g_actorMoveRestrictions.end();) {
+            auto [target, moveRestrictionData] = *it;
+            if (g_currentFrameTime >= moveRestrictionData.endTime)
+                it = g_actorMoveRestrictions.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    g_prevCollidingActorHandles = collidingActorHandles;
 
     ahkpCharacterProxy_updateManifold_Original(proxy, startPointCollector, castCollector, manifold, bodies, phantoms, isMultithreaded);
 }
@@ -7148,13 +7197,14 @@ void BSLookAtModifier_modify_Hook(BSLookAtModifier *_this, const hkbContext &con
     bool disabledLookAt = false;
     if (_this->lookAtTarget) {
         if (!g_disableLookAtActors.empty()) {
-            auto it = g_disableLookAtActors.find(actor);
-            if (it != g_disableLookAtActors.end()) {
-                LookAtDisableData &data = it->second;
-                if (g_currentFrameTime < data.endTime) {
-                    _this->lookAtTarget = false;
-                    disabledLookAt = true;
-                }
+            bool shouldDisable = false;
+            {
+                std::scoped_lock lock(g_disableLookAtActorsLock);
+                shouldDisable = g_disableLookAtActors.contains(actor);
+            }
+            if (shouldDisable) {
+                _this->lookAtTarget = false;
+                disabledLookAt = true;
             }
         }
     }
