@@ -6626,7 +6626,7 @@ void Actor_CheckAndHandleMotionOrAnimationDrivenChange_Hook(Actor *actor)
         bool isRagdollMovementStart = VectorLength(state.ragdollOffset) >= startThreshold;
         bool isRagdollMovementStop = VectorLength(state.ragdollOffset) < stopThreshold;
 
-        NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.grabbedActorMovementDirectionMultiplier; // TODO: Should we be using deltaTime here?
+        NiPoint3 moveAmtFromRagdollInfluence = state.ragdollOffset * Config::options.grabbedActorMovementRagdollOffsetInfluence * *g_deltaTime;
 
         NiPoint3 proposedMoveAmt = moveAmtFromPlayerMovement + moveAmtFromRagdollInfluence;
 

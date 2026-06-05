@@ -188,7 +188,7 @@ namespace Config {
         float grabbedActorMovementNoStrafeMoveSpeed = 50.f;
         float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 2.5f;
         float grabbedActorMovementPlayerDirectionHeadingSpeed = 2.f;
-        float grabbedActorMovementDirectionMultiplier = 0.1f;
+        float grabbedActorMovementRagdollOffsetInfluence = 8.0f;
         float grabbedActorMovementPlayerMovementInfluence = 0.85f;
         float grabbedActorMovementPlayerSmoothingTime = 0.15f;
         float grabbedActorMovementActorSmoothingTime = 0.3f;
