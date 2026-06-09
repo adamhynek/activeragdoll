@@ -551,6 +551,7 @@ namespace Config {
         if (!RegisterFloat("playerActorCollisionDisableLookAtDuration", options.playerActorCollisionDisableLookAtDuration)) success = false;
         if (!RegisterFloat("playerActorCollisionPhaseThroughAlphaMult", options.playerActorCollisionPhaseThroughAlphaMult)) success = false;
 
+        if (!RegisterBool("convertThirdPersonWeaponToFadeNodes", options.convertThirdPersonWeaponToFadeNodes)) success = false;
         if (!RegisterFloat("playerMeleeCollisionDisabledWeaponAlpha", options.playerMeleeCollisionDisabledWeaponAlpha)) success = false;
 
         if (!RegisterBool("convertNonRagdollBipedObjectsToDeadBip", options.convertNonRagdollBipedObjectsToDeadBip)) success = false;

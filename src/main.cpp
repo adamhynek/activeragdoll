@@ -7224,51 +7224,53 @@ NiAVObject * PlayerCharacter_Load3D_Hook(PlayerCharacter *player, bool a2)
 {
     NiAVObject *result = PlayerCharacter_Load3D_Original(player, a2);
 
-    NiPointer<NiAVObject> root = player->GetNiRootNode(0);
-    if (g_isVrikPresent && root) {
-        // Essentially duplicate what the base game does with the 1st person skeleton to the 3rd person one, since vrik makes the 3rd person skeleton the main one.
-        static BSFixedString nodeNames[] = {
-            BSFixedString("WEAPON"),
-            BSFixedString("WeaponSword"),
-            BSFixedString("WeaponDagger"),
-            BSFixedString("WeaponAxe"),
-            BSFixedString("WeaponMace"),
-            BSFixedString("SHIELD"),
-            BSFixedString("WeaponBack"),
-        };
+    if (Config::options.convertThirdPersonWeaponToFadeNodes) {
+        NiPointer<NiAVObject> root = player->GetNiRootNode(0);
+        if (g_isVrikPresent && root) {
+            // Essentially duplicate what the base game does with the 1st person skeleton to the 3rd person one, since vrik makes the 3rd person skeleton the main one.
+            static BSFixedString nodeNames[] = {
+                BSFixedString("WEAPON"),
+                BSFixedString("WeaponSword"),
+                BSFixedString("WeaponDagger"),
+                BSFixedString("WeaponAxe"),
+                BSFixedString("WeaponMace"),
+                BSFixedString("SHIELD"),
+                BSFixedString("WeaponBack"),
+            };
 
-        bool anyChanges = false;
+            bool anyChanges = false;
 
-        for (BSFixedString &nodeName : nodeNames) {
-            if (NiPointer<NiAVObject> node = root->GetObjectByName(&nodeName.data)) {
-                if (!DYNAMIC_CAST(node, NiAVObject, BSFadeNode)) { // only convert to a BSFadeNode if it isn't already
-                    NiNode *parent = node->m_parent;
-                    UInt32 parentIndex = node->unk038;
+            for (BSFixedString &nodeName : nodeNames) {
+                if (NiPointer<NiAVObject> node = root->GetObjectByName(&nodeName.data)) {
+                    if (!DYNAMIC_CAST(node, NiAVObject, BSFadeNode)) { // only convert to a BSFadeNode if it isn't already
+                        NiNode *parent = node->m_parent;
+                        UInt32 parentIndex = node->unk038;
 
-                    if (BSFadeNode *fadeNode = (BSFadeNode *)Heap_Allocate(sizeof(BSFadeNode))) {
-                        BSFadeNode_CtorFromNiNode(fadeNode, node);
-                        BSFadeNode_SetStippleFade(fadeNode, false);
+                        if (BSFadeNode *fadeNode = (BSFadeNode *)Heap_Allocate(sizeof(BSFadeNode))) {
+                            BSFadeNode_CtorFromNiNode(fadeNode, node);
+                            BSFadeNode_SetStippleFade(fadeNode, false);
 
-                        get_vfunc<_NiNode_SetAt2>(parent, 0x3D)(parent, parentIndex, fadeNode);
-                        anyChanges = true;
+                            get_vfunc<_NiNode_SetAt2>(parent, 0x3D)(parent, parentIndex, fadeNode);
+                            anyChanges = true;
 
-                        // Bone tree needs to be updated since we swapped the node.
-                        if (BSFlattenedBoneTree *boneTree = GetParentBoneTree(fadeNode)) {
-                            int boneIndex = BSFlattenedBoneTree_GetBoneIndex(boneTree, &nodeName);
-                            if (boneIndex >= 0) {
-                                boneTree->boneEntries[boneIndex].node = fadeNode;
+                            // Bone tree needs to be updated since we swapped the node.
+                            if (BSFlattenedBoneTree *boneTree = GetParentBoneTree(fadeNode)) {
+                                int boneIndex = BSFlattenedBoneTree_GetBoneIndex(boneTree, &nodeName);
+                                if (boneIndex >= 0) {
+                                    boneTree->boneEntries[boneIndex].node = fadeNode;
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if (anyChanges) {
-            // Bone map is used to speed up node lookups at the root, and since we swapped some nodes we need to refresh it.
-            static BSFixedString boneMapName("BOM");
-            if (NiExtraData *boneMap = NiAVObject_GetExtraDataByName(root, &boneMapName)) {
-                BSBoneMap_RefreshMap(boneMap, root);
+            if (anyChanges) {
+                // Bone map is used to speed up node lookups at the root, and since we swapped some nodes we need to refresh it.
+                static BSFixedString boneMapName("BOM");
+                if (NiExtraData *boneMap = NiAVObject_GetExtraDataByName(root, &boneMapName)) {
+                    BSBoneMap_RefreshMap(boneMap, root);
+                }
             }
         }
     }
@@ -7526,7 +7528,7 @@ void PerformHooks(void)
         SafeWriteBuf(GetUpStart_ZeroOutPitchRoll_Loc.GetUIntPtr(), nops, 11);
     }
 
-    { // Base game melee alpha fading doesn't matter since we reimplements all that jazz
+    { // Base game melee alpha fading doesn't matter since we reimplement all that jazz
         char *nops = "\x90\x90\x90\x90\x90\x90"; // "\x90" * 6
         SafeWriteBuf(BSGeometry_SetVRMeleeAlphaAndEmissive_SetFadeNodeAlpha_Loc.GetUIntPtr(), nops, 6);
     }

@@ -406,6 +406,7 @@ namespace Config {
         float playerActorCollisionPhaseThroughMinIntersectDistanceInCombat = 0.2f;
         float playerActorCollisionPhaseThroughAlphaMult = 0.5f;
 
+        bool convertThirdPersonWeaponToFadeNodes = true;
         float playerMeleeCollisionDisabledWeaponAlpha = 0.25f;
 
         bool convertNonRagdollBipedObjectsToDeadBip = true;
