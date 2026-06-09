@@ -343,6 +343,7 @@ namespace Config {
         if (!RegisterFloat("grabbedActorMovementMinPlayerMoveAmtForHeading", options.grabbedActorMovementMinPlayerMoveAmtForHeading)) success = false;
         if (!RegisterFloat("grabbedActorMovementPlayerDirectionHeadingForwardThreshold", options.grabbedActorMovementPlayerDirectionHeadingForwardThreshold)) success = false;
 
+        if (!RegisterBool("grabbedActorMovementOverwriteParams", options.grabbedActorMovementOverwriteParams)) success = false;
         if (!RegisterFloat("grabbedActorMovementOverwriteParamAcceleration", options.grabbedActorMovementOverwriteParamAcceleration)) success = false;
         if (!RegisterFloat("grabbedActorMovementOverwriteParamDeceleration", options.grabbedActorMovementOverwriteParamDeceleration)) success = false;
         if (!RegisterFloat("grabbedActorMovementOverwriteParamRotationPercent", options.grabbedActorMovementOverwriteParamRotationPercent)) success = false;

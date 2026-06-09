@@ -6772,7 +6772,7 @@ void MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Hook(Acto
 {
     Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
 
-    if (IsDoingGrabbedActorMovement(actor)) {
+    if (Config::options.grabbedActorMovementOverwriteParams && IsDoingGrabbedActorMovement(actor)) {
         OverwriteMovementParameters overwriteParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateSpeedsWithAcceleration_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, acceleratedRunSpeedOut, deceleratedRunSpeedOut, acceleratedRotSpeedOut);
     }
@@ -6788,7 +6788,7 @@ void MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Hook(ActorState *actor
 {
     Actor *actor = (Actor *)((UInt64)actorState - 0xB8);
 
-    if (IsDoingGrabbedActorMovement(actor)) {
+    if (Config::options.grabbedActorMovementOverwriteParams && IsDoingGrabbedActorMovement(actor)) {
         OverwriteMovementParameters overwriteParams(movementParams);
         MovementPlannerArbiter_ActorState_CalculateRotSpeeds_Original(actorState, (IMovementParameters *)&overwriteParams, queryState, movementVector, clampedRotateSpeedOut, desiredRotateSpeedOut);
     }

@@ -200,6 +200,7 @@ namespace Config {
         float grabbedActorMovementSpeedDirectionCutoff = 0.01f;
         float grabbedActorMovementMinPlayerMoveAmtForHeading = 0.1;
         float grabbedActorMovementPlayerDirectionHeadingForwardThreshold = 2.f;
+        bool grabbedActorMovementOverwriteParams = true;
         float grabbedActorMovementOverwriteParamAcceleration = 200.f;
         float grabbedActorMovementOverwriteParamDeceleration = 200.f;
         float grabbedActorMovementOverwriteParamRotationPercent = 2000.f;
