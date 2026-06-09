@@ -34,8 +34,8 @@ namespace Config {
         double computeWorldFromModelFadeOutTime = 0.3;
 
         double hitCooldownTimeStoppedColliding = 0.25;
-        double hitCooldownTimeFallback = 1.2;
-        double hitCooldownTimeUntilWeaponFade = 0.15;
+        double hitCooldownTimeFallback = 1.5;
+        double hitCooldownTimeUntilWeaponFade = 0.35;
         double physicsHitRecoveryTime = 0.01;
 
         double thrownObjectLingerTime = 5.0;
@@ -182,14 +182,14 @@ namespace Config {
         float grabbedActorMovementNoStrafeLateralStopAngle= 0.005f;
         float grabbedActorMovementNoStrafeStartOffset= 15.f;
         float grabbedActorMovementNoStrafeStopOffset = 1.f;
-        float grabbedActorMovementNoStrafeMinAngleForAnim = 0.18f;
-        float grabbedActorMovementNoStrafeHeadingSpeedNoAnim = 0.035f;
-        float grabbedActorMovementNoStrafeHeadingSpeed = 0.5f;
+        float grabbedActorMovementNoStrafeMinAngleForAnim = 0.14f;
+        float grabbedActorMovementNoStrafeHeadingSpeedNoAnim = 0.075f;
+        float grabbedActorMovementNoStrafeHeadingSpeed = 0.9f;
         float grabbedActorMovementNoStrafeMoveSpeed = 50.f;
-        float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 2.5f;
+        float grabbedActorMovementNoStrafeTargetHandPosUpdateSpeed = 3.f;
         float grabbedActorMovementPlayerDirectionHeadingSpeed = 2.f;
         float grabbedActorMovementRagdollOffsetInfluence = 8.0f;
-        float grabbedActorMovementPlayerMovementInfluence = 0.85f;
+        float grabbedActorMovementPlayerMovementInfluence = 0.8f;
         float grabbedActorMovementPlayerSmoothingTime = 0.15f;
         float grabbedActorMovementActorSmoothingTime = 0.3f;
         float grabbedActorMovementStartThreshold = 3.f;
@@ -201,10 +201,10 @@ namespace Config {
         float grabbedActorMovementMinPlayerMoveAmtForHeading = 0.1;
         float grabbedActorMovementPlayerDirectionHeadingForwardThreshold = 2.f;
         bool grabbedActorMovementOverwriteParams = true;
-        float grabbedActorMovementOverwriteParamAcceleration = 200.f;
-        float grabbedActorMovementOverwriteParamDeceleration = 200.f;
-        float grabbedActorMovementOverwriteParamRotationPercent = 2000.f;
-        float grabbedActorMovementOverwriteParamAngleAcceleration = 2000.f;
+        float grabbedActorMovementOverwriteParamAcceleration = 10.f;
+        float grabbedActorMovementOverwriteParamDeceleration = 10.f;
+        float grabbedActorMovementOverwriteParamRotationPercent = 2.5f;
+        float grabbedActorMovementOverwriteParamAngleAcceleration = 10.f;
         float grabbedActorMovementZeroSpeedThreshold = 45.f;
         double grabbedActorMovementHoldZeroSpeedTime = 0.35;
 
@@ -393,20 +393,20 @@ namespace Config {
         float playerCharControllerRadius = 0.15f;
         float playerCapsuleRadius = 0.15f;
 
-        float playerActorCollisionPushVelocityMin = 0.f;
-        float playerActorCollisionPushVelocityMax = 0.f;
-        float playerActorCollisionPushDuration = 0.2f;
-        float playerActorCollisionMoveRestrictionDuration = 0.2f;
-        float playerActorCollisionPushMinIntersectDistance = 5.f;
-        float playerActorCollisionPushMaxIntersectDistance = 5.f;
+        float playerActorCollisionPushVelocityMin = 10.f;
+        float playerActorCollisionPushVelocityMax = 400.f;
+        float playerActorCollisionPushDuration = 0.3f;
+        float playerActorCollisionMoveRestrictionDuration = 1.5f;
+        float playerActorCollisionPushMinIntersectDistance = 0.03f;
+        float playerActorCollisionPushMaxIntersectDistance = 0.3f;
         bool playerActorCollisionDisableLookAt = false;
-        float playerActorCollisionDisableLookAtDuration = 0.1f;
+        float playerActorCollisionDisableLookAtDuration = 1.0f;
         bool playerActorCollisionAlwaysPush = false;
-        float playerActorCollisionPhaseThroughMinIntersectDistance = 5.f;
-        float playerActorCollisionPhaseThroughMinIntersectDistanceInCombat = 5.f;
+        float playerActorCollisionPhaseThroughMinIntersectDistance = 0.1f;
+        float playerActorCollisionPhaseThroughMinIntersectDistanceInCombat = 0.2f;
         float playerActorCollisionPhaseThroughAlphaMult = 0.5f;
 
-        float playerMeleeCollisionDisabledWeaponAlpha = 0.3f;
+        float playerMeleeCollisionDisabledWeaponAlpha = 0.25f;
 
         bool convertNonRagdollBipedObjectsToDeadBip = true;
 
