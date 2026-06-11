@@ -3330,6 +3330,30 @@ std::optional<CoreNodes> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
             return nullptr;
         }
 
+        // Check self first
+        if (NiPointer<bhkRigidBody> rb = GetRigidBody(node)) {
+            return rb->hkBody;
+        }
+
+        // Walk down while it's a single-child chain
+        NiAVObject *current = node;
+        while (NiNode *niNode = current->GetAsNiNode()) {
+            NiAVObject *singleChild = nullptr;
+            bool multipleChildren = false;
+            for (int i = 0; i < niNode->m_children.m_emptyRunStart; i++) {
+                if (NiAVObject *child = niNode->m_children.m_data[i]) {
+                    if (singleChild) { multipleChildren = true; break; }
+                    singleChild = child;
+                }
+            }
+            if (multipleChildren || !singleChild) break; // fork or dead end - fall back to parent
+            if (NiPointer<bhkRigidBody> rb = GetRigidBody(singleChild)) {
+                return rb->hkBody;
+            }
+            current = singleChild;
+        }
+
+        // Fall back to closest parent
         NiPointer<NiAVObject> collisionNode = GetClosestParentWithCollision(node, true);
         if (!collisionNode) {
             return nullptr;
@@ -6893,6 +6917,7 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
     if (Config::options.forceContinueSelfTransitionForCyclicBlends) {
         for (hkbStateMachine::ActiveTransitionInfo &transitionInfo : _this->activeTransitions) {
             if (hkbTransitionEffect *transition = transitionInfo.m_transitionEffect) {
+#ifdef _DEBUG
                 if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
 
                     Actor *actor = GetActorFromCharacter(context.character);
@@ -6901,6 +6926,7 @@ void hkbStateMachine_requestTransitions_hkbStateMachine_beginTransition_Hook(hkb
                     }
 
                 }
+#endif // _DEBUG
                 if (transition->selfTransitionMode != 0) {
                     if (hkbBlendingTransitionEffect *blendingTransitionEffect = DYNAMIC_CAST(transition, hkbTransitionEffect, hkbBlendingTransitionEffect)) {
                         if (blendingTransitionEffect->toGenerator && DYNAMIC_CAST(blendingTransitionEffect->toGenerator, hkbNode, BSCyclicBlendTransitionGenerator)) {
