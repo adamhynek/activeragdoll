@@ -114,6 +114,7 @@ bool DoesNodeHaveNode(NiAVObject *haystack, NiAVObject *target);
 bool DoesRefrHaveNode(TESObjectREFR *ref, NiAVObject *node);
 bool IsSkinnedToNode(NiAVObject *skinnedRoot, NiAVObject *target);
 void GetAllSkinnedNodes(NiAVObject *root, std::unordered_set<NiAVObject *> &skinnedNodes);
+DialogueResponse *DialogueItem_GetCurrentResponse(DialogueItem *a1);
 void PlayTopicInfoWithoutActorChecks(TESTopicInfo *topicInfo, Actor *source, TESObjectREFR *target);
 bool TESTopicInfo_EvaluateConditionsEx(TESTopicInfo *topicInfo, Actor *source, TESObjectREFR *target, const std::vector<UInt16> &skipConditions);
 void PlayDialogueWithoutActorChecks(int subType, Actor *source, TESObjectREFR *target);

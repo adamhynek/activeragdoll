@@ -2829,9 +2829,9 @@ struct NPCData
     float lastVoiceTimer = -1.f;
     bool isSpeaking = false;
 
-    void TriggerDialogue(Actor *character, TESTopic *topic, TESTopicInfo *topicInfo)
+    void TriggerDialogue(Actor *actor, TESTopic *topic, TESTopicInfo *topicInfo)
     {
-        Actor_SayToEx(character, *g_thePlayer, topic, topicInfo);
+        Actor_SayToEx(actor, *g_thePlayer, topic, topicInfo);
 
         if (topicInfo) {
             secondLastSaidTopicInfo = lastSaidTopicInfo;
@@ -2841,14 +2841,14 @@ struct NPCData
         lastSaidTopic = topic;
     }
 
-    void TryTriggerDialogue(Actor *character, bool high, bool isShoved)
+    void TryTriggerDialogue(Actor *actor, bool high, bool isShoved)
     {
-        if (Actor_IsInRagdollState(character) || IsSleeping(character)) return;
+        if (Actor_IsInRagdollState(actor) || IsSleeping(actor)) return;
 
         if (isShoved) {
-            std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, character, *g_thePlayer, g_dialogueSkipConditions);
+            std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, actor, *g_thePlayer, g_dialogueSkipConditions);
             if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
-                TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
+                TriggerDialogue(actor, (TESTopic *)topicInfo->unk14, topicInfo);
             }
             dialogueTime = g_currentFrameTime;
             return;
@@ -2859,15 +2859,15 @@ struct NPCData
         {
             std::scoped_lock lock(g_interface001.aggressionTopicsLock);
             std::unordered_map<Actor *, TESTopic *> &topics = high ? g_interface001.highAggressionTopics : g_interface001.lowAggressionTopics;
-            if (auto it = topics.find(character); it != topics.end()) {
+            if (auto it = topics.find(actor); it != topics.end()) {
                 // First, check if this specific actor has an assigned topic
-                TriggerDialogue(character, it->second, nullptr);
+                TriggerDialogue(actor, it->second, nullptr);
                 dialogueTime = g_currentFrameTime;
                 return;
             }
             else if (it = topics.find(nullptr); it != topics.end()) {
                 // If the specific actor does not have an assigned topic, see if there is a general topic set for all actors
-                TriggerDialogue(character, it->second, nullptr);
+                TriggerDialogue(actor, it->second, nullptr);
                 dialogueTime = g_currentFrameTime;
                 return;
             }
@@ -2875,49 +2875,49 @@ struct NPCData
 
         // There are no assigned topics, so use our topic info sets
         std::vector<UInt32> &topicInfoIDs = high ? Config::options.aggressionHighTopicInfos : Config::options.aggressionLowTopicInfos;
-        std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(topicInfoIDs, character, *g_thePlayer, g_dialogueSkipConditions);
+        std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(topicInfoIDs, actor, *g_thePlayer, g_dialogueSkipConditions);
         if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
-            TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
+            TriggerDialogue(actor, (TESTopic *)topicInfo->unk14, topicInfo);
         }
 
         dialogueTime = g_currentFrameTime;
     }
 
-    void TryBump(Actor *character, bool exitFurniture, bool force = false)
+    void TryBump(Actor *actor, bool exitFurniture, bool force = false)
     {
-        if (Actor_IsInRagdollState(character)) return;
+        if (Actor_IsInRagdollState(actor)) return;
 
         if (force || g_currentFrameTime - bumpTime > Config::options.aggressionBumpCooldownTime) {
-            QueueBumpActor(character, VectorNormalized(character->pos - (*g_thePlayer)->pos), false, exitFurniture, false, false);
+            QueueBumpActor(actor, VectorNormalized(actor->pos - (*g_thePlayer)->pos), false, exitFurniture, false, false);
             bumpTime = g_currentFrameTime;
         }
     }
 
-    void StateUpdate(Actor *character, bool isShoved, bool wasJustRagdolled)
+    void StateUpdate(Actor *actor, bool isShoved, bool wasJustRagdolled)
     {
-        if (character->IsDead(1)) return;
-        if (Config::options.summonsSkipAggression && GetCommandingActor(character) == *g_playerHandle) return;
+        if (actor->IsDead(1)) return;
+        if (Config::options.summonsSkipAggression && GetCommandingActor(actor) == *g_playerHandle) return;
 
         {
             std::scoped_lock lock(g_interface001.aggressionIgnoredActorsLock);
-            if (g_interface001.aggressionIgnoredActors.count(character)) return;
+            if (g_interface001.aggressionIgnoredActors.count(actor)) return;
         }
 
-        if ((Config::options.followersSkipAggression && IsTeammate(character)) ||
-            (RelationshipRanks::GetRelationshipRank(character->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank))
+        if ((Config::options.followersSkipAggression && IsTeammate(actor)) ||
+            (RelationshipRanks::GetRelationshipRank(actor->baseForm, (*g_thePlayer)->baseForm) > Config::options.aggressionMaxRelationshipRank))
         {
             // Still do some dialogue when shoved even if it won't grow aggression for them
-            if (isShoved && !Actor_IsInRagdollState(character) && !IsSleeping(character)) {
-                std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, character, *g_thePlayer, g_dialogueSkipConditions);
+            if (isShoved && !Actor_IsInRagdollState(actor) && !IsSleeping(actor)) {
+                std::vector<TESTopicInfo *> topicInfos = EvaluateTopicInfoConditions(Config::options.shoveTopicInfos, actor, *g_thePlayer, g_dialogueSkipConditions);
                 if (TESTopicInfo *topicInfo = GetRandomTopicInfo(topicInfos, lastSaidTopicInfo, secondLastSaidTopicInfo)) {
-                    TriggerDialogue(character, (TESTopic *)topicInfo->unk14, topicInfo);
+                    TriggerDialogue(actor, (TESTopic *)topicInfo->unk14, topicInfo);
                 }
             }
             return;
         }
 
-        TESTopic *currentTopic = GetCurrentTopic(character);
-        float voiceTimer = character->unk108;
+        TESTopic *currentTopic = GetCurrentTopic(actor);
+        float voiceTimer = actor->unk108;
         float dialogueCooldown = isSpeaking ? lastSaidDialogueDuration + Config::options.aggressionDialogueCooldown : Config::options.aggressionDialogueCooldownFallback;
 
         if (!isSpeaking && currentTopic == lastSaidTopic && voiceTimer != -1.f) {
@@ -2935,16 +2935,16 @@ struct NPCData
         PlayerCharacter *player = *g_thePlayer;
 
         // These two are to not do aggression if they are in... certain scenes...
-        bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(character->pos - player->pos) < Config::options.closeActorMinDistance;
-        bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(character) != *g_invalidRefHandle;
+        bool sharesPlayerPosition = Config::options.stopAggressionForCloseActors && VectorLength(actor->pos - player->pos) < Config::options.closeActorMinDistance;
+        bool isInVehicle = Config::options.stopAggressionForActorsWithVehicle && GetVehicleHandle(actor) != *g_invalidRefHandle;
         bool isSpecial = sharesPlayerPosition || isInVehicle;
 
         bool canPlayerAggress = !Actor_IsInRagdollState(player) && !IsSwimming(player) && !IsStaggered(player) && (!Config::options.dontDoAggressionWhileMenusAreOpen || !g_isMenuOpen);
-        bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(character);
+        bool isCalmed = Config::options.calmedActorsDontAccumulateAggression && IsCalmed(actor);
 
-        bool isGrabbed = g_leftHeldRefr == character || g_rightHeldRefr == character;
-        bool isTouchedRight = g_physicsListener.collidedRefs[0].count(character) && g_isRightHandAggressivelyPositioned;
-        bool isTouchedLeft = g_physicsListener.collidedRefs[1].count(character) && g_isLeftHandAggressivelyPositioned;
+        bool isGrabbed = g_leftHeldRefr == actor || g_rightHeldRefr == actor;
+        bool isTouchedRight = g_physicsListener.collidedRefs[0].count(actor) && g_isRightHandAggressivelyPositioned;
+        bool isTouchedLeft = g_physicsListener.collidedRefs[1].count(actor) && g_isLeftHandAggressivelyPositioned;
         bool isInteractedWith = isGrabbed || isTouchedLeft || isTouchedRight;
 
         bool isAggressivelyInteractedWith = (isInteractedWith && canPlayerAggress) || isShoved || wasJustRagdolled;
@@ -2967,7 +2967,7 @@ struct NPCData
         }
         accumulatedGrabbedTime = std::clamp(accumulatedGrabbedTime, 0.f, Config::options.aggressionMaxAccumulatedGrabTime);
 
-        bool isHostile = Actor_IsHostileToActor(character, player);
+        bool isHostile = Actor_IsHostileToActor(actor, player);
 
         if (state == State::Normal) {
             if (isHostile) {
@@ -2990,9 +2990,9 @@ struct NPCData
             }
             else if (accumulateAggression) {
                 // Constantly try to say something
-                TryTriggerDialogue(character, false, isShoved);
-                if (ShouldBumpActor(character) && !IsActorUsingFurniture(character)) {
-                    TryBump(character, false);
+                TryTriggerDialogue(actor, false, isShoved);
+                if (ShouldBumpActor(actor) && !IsActorUsingFurniture(actor)) {
+                    TryBump(actor, false);
                 }
             }
         }
@@ -3005,17 +3005,17 @@ struct NPCData
                 state = State::SomewhatMiffed;
             }
             else if (accumulatedGrabbedTime > Config::options.aggressionRequiredGrabTimeAssault) {
-                Actor_SendAssaultAlarm(0, 0, character);
-                isHostile = Actor_IsHostileToActor(character, player); // need to update this after assaulting the actor
+                Actor_SendAssaultAlarm(0, 0, actor);
+                isHostile = Actor_IsHostileToActor(actor, player); // need to update this after assaulting the actor
                 if (isHostile) {
                     state = State::Assaulted;
                 }
             }
             else if (accumulateAggression) {
                 // Constantly try to say something
-                TryTriggerDialogue(character, true, isShoved);
-                if (ShouldBumpActor(character)) {
-                    TryBump(character, Config::options.stopUsingFurnitureOnHighAggression);
+                TryTriggerDialogue(actor, true, isShoved);
+                if (ShouldBumpActor(actor)) {
+                    TryBump(actor, Config::options.stopUsingFurnitureOnHighAggression);
                 }
             }
         }
@@ -3032,7 +3032,7 @@ struct NPCData
                 accumulatedGrabbedTime = 0.f;
                 state = State::Normal;
             }
-            else if (VectorLength(character->pos - player->pos) >= Config::options.aggressionStopCombatAlarmDistance) {
+            else if (VectorLength(actor->pos - player->pos) >= Config::options.aggressionStopCombatAlarmDistance) {
                 // We're far enough away from the assaulted actor so make them forgive us
                 Actor_StopCombatAlarm(0, 0, player);
                 accumulatedGrabbedTime = 0.f;
