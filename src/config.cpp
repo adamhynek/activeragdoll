@@ -391,7 +391,7 @@ namespace Config {
         if (!RegisterFloat("ragdollBoneMaxAngularVelocity", options.ragdollBoneMaxAngularVelocity)) success = false;
 
         if (!RegisterBool("disableCollisionSoundsWhenGettingUp", options.disableCollisionSoundsWhenGettingUp)) success = false;
-        if (!RegisterDouble("getUpDisableCollisionSoundsTime ", options.getUpDisableCollisionSoundsTime)) success = false;
+        if (!RegisterDouble("getUpDisableCollisionSoundsTime", options.getUpDisableCollisionSoundsTime)) success = false;
 
         if (!RegisterBool("overrideSoundVelForRagdollCollisions", options.overrideSoundVelForRagdollCollisions)) success = false;
         if (!RegisterFloat("ragdollSoundVel", options.ragdollSoundVel)) success = false;

@@ -396,8 +396,8 @@ namespace Config {
         float playerActorCollisionPushVelocityMin = 10.f;
         float playerActorCollisionPushVelocityMax = 400.f;
         float playerActorCollisionPushDuration = 0.3f;
-        float playerActorCollisionMoveRestrictionDuration = 1.5f;
-        float playerActorCollisionPushMinIntersectDistance = 0.03f;
+        float playerActorCollisionMoveRestrictionDuration = 1.f;
+        float playerActorCollisionPushMinIntersectDistance = -0.15f;
         float playerActorCollisionPushMaxIntersectDistance = 0.3f;
         bool playerActorCollisionDisableLookAt = false;
         float playerActorCollisionDisableLookAtDuration = 1.0f;

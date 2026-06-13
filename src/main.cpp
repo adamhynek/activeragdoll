@@ -2532,7 +2532,7 @@ std::unordered_map<Actor *, ActorAlphaData> g_dontCollideUntilStoppedCollidingAc
 std::unordered_set<Actor *> g_dontCollideUntilStoppedCollidingActors{};
 std::unordered_set<TESObjectREFR *> g_dontCollideActors{};
 std::mutex g_dontCollideActorsLock{};
-std::unordered_set<UInt32> g_prevCollidingActorHandles{};
+std::unordered_map<UInt32, NiPoint3> g_prevCollidingActorHandles{};
 
 
 struct PlayerCharacterProxyListener : hkpCharacterProxyListener
@@ -3370,10 +3370,10 @@ std::optional<CoreNodes> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
     // BFS from rootBody through the constraint graph, tracking parents so we can reconstruct the path.
     // We scan ragdoll->getConstraintArray() for neighbors rather than bhkRigidBody::constraints,
     // since only the master body has constraints in its own array.
-    std::unordered_map<hkpRigidBody *, hkpRigidBody *> parent;
+    std::unordered_map<hkpRigidBody *, hkpRigidBody *> parentMap;
     std::deque<hkpRigidBody *> bfsQueue;
     bfsQueue.push_back(rootBody);
-    parent[rootBody] = nullptr;
+    parentMap[rootBody] = nullptr;
 
     bool foundTorso = torsoBody == nullptr || torsoBody == rootBody;
     bool foundHead = headBody == nullptr || headBody == rootBody;
@@ -3392,8 +3392,8 @@ std::optional<CoreNodes> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
 
             hkpRigidBody *neighbor = (bodyA == current) ? bodyB : bodyA;
 
-            if (parent.count(neighbor) == 0) {
-                parent[neighbor] = current;
+            if (parentMap.count(neighbor) == 0) {
+                parentMap[neighbor] = current;
                 bfsQueue.push_back(neighbor);
 
                 if (neighbor == torsoBody) {
@@ -3406,15 +3406,15 @@ std::optional<CoreNodes> GetCoreNodes(Actor *actor, hkbRagdollDriver *driver)
         }
     }
 
-    auto buildPath = [&](hkpRigidBody *targetBody) {
+    auto buildPath = [rootBody, &parentMap](hkpRigidBody *targetBody) {
         std::vector<hkpRigidBody *> path;
 
-        if (!targetBody || !parent.count(targetBody)) {
+        if (!targetBody || !parentMap.count(targetBody)) {
             path.push_back(rootBody);
             return path;
         }
 
-        for (hkpRigidBody *current = targetBody; current; current = parent.at(current)) {
+        for (hkpRigidBody *current = targetBody; current; current = parentMap.at(current)) {
             path.push_back(current);
         }
 
@@ -6951,7 +6951,7 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
     static std::unordered_set<Actor *> disableLookAtActors{};
     disableLookAtActors.clear();
 
-    static std::unordered_set<UInt32> collidingActorHandles{};
+    static std::unordered_map<UInt32, NiPoint3> collidingActorHandles{};
     collidingActorHandles.clear();
 
     if (g_clearUpdateManifoldObjects) {
@@ -6989,7 +6989,7 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
                             }
 
                             UInt32 refrHandle = GetOrCreateRefrHandle(actor);
-                            collidingActorHandles.insert(refrHandle);
+                            collidingActorHandles[refrHandle] = actor->pos;
 
                             if (Config::options.playerActorCollisionDisableLookAt) {
                                 // Without checking distance here, this will kick in as soon as they are within the keepDistance (so technically not yet colliding).
@@ -7097,10 +7097,11 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
         }
     }
 
-    for (UInt32 actorHandle : g_prevCollidingActorHandles) {
+    for (auto &[actorHandle, prevPos] : g_prevCollidingActorHandles) {
         if (collidingActorHandles.find(actorHandle) == collidingActorHandles.end()) {
             // Actor was colliding in the previous frame but not in the current frame
-            if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(actorHandle, refr)) {
+            UInt32 handle = actorHandle;
+            if (NiPointer<TESObjectREFR> refr; LookupREFRByHandle(handle, refr)) {
                 if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
                     if (g_dontCollideUntilStoppedCollidingActors.find(actor) != g_dontCollideUntilStoppedCollidingActors.end()) {
                         g_dontCollideUntilStoppedCollidingActors.erase(actor);
@@ -7139,34 +7140,37 @@ void ahkpCharacterProxy_updateManifold_Hook(hkpCharacterProxy *proxy, hkpAllCdPo
     for (auto it : g_collidedActorsPushAway) {
         auto &[actor, data] = it;
         if (NiPointer<bhkCharacterController> controller = GetCharacterController(actor)) {
-            NiPoint3 playerFromActor = (*g_thePlayer)->pos - actor->pos;
-
             // TODO: Maybe for the large races, instead of having their ragdoll push you around, we push the player away similar to how we push medium away from the player?
 
             float intersectDistance = data.mostPenetrationDistance;
 
 #ifdef _DEBUG
-            // PrintToFile(std::to_string(intersectDistance), "distanceDifference.txt");
+            // PrintToFile(std::to_string(intersectDistance), "intersectDistance.txt");
 #endif
             if (intersectDistance < Config::options.playerActorCollisionPushMinIntersectDistance) {
                 continue;
             }
 
-            float intersectAmount = 1.f;
-            if (intersectDistance >= 0.001f) {
-                intersectAmount = std::clamp(
-                    (intersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance) / (Config::options.playerActorCollisionPushMaxIntersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance),
-                    0.f,
-                    1.f
-                );
-            }
+            float intersectAmount = std::clamp(
+                (intersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance) / (Config::options.playerActorCollisionPushMaxIntersectDistance - Config::options.playerActorCollisionPushMinIntersectDistance),
+                0.f,
+                1.f
+            );
 
 #ifdef _DEBUG
-            // PrintToFile(std::to_string(intersectAmount), "ratioVsInitial.txt");
+            // PrintToFile(std::to_string(intersectAmount), "intersectAmount.txt");
 #endif
 
             float moveAmt = lerp(Config::options.playerActorCollisionPushVelocityMin, Config::options.playerActorCollisionPushVelocityMax, intersectAmount);
-            NiPoint3 dir = VectorNormalized(playerFromActor) * -1.f;
+
+            UInt32 actorHandle = GetOrCreateRefrHandle(actor);
+            NiPoint3 actorPos = actor->pos;
+            if (g_prevCollidingActorHandles.find(actorHandle) != g_prevCollidingActorHandles.end()) {
+                // Use the previous actor pos so that if they are actually past the player root, we still push them away in the direction they came from.
+                actorPos = g_prevCollidingActorHandles[actorHandle];
+            }
+            NiPoint3 dir = VectorNormalized((*g_thePlayer)->pos - actorPos) * -1.f;
+
             NiPoint3 moveVec = dir * moveAmt;
             bhkCharacterController_ApplyVelocityForDuration(controller, moveVec, Config::options.playerActorCollisionPushDuration);
 
