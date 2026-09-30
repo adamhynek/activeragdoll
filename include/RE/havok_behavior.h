@@ -26,6 +26,7 @@
 #include "skse64/GameReferences.h"
 
 #include "RE/havok.h"
+#include "RE/bs_intrusive_ref_ptr.h"
 #include "RE/misc.h"
 #include "havok_ref_ptr.h"
 
@@ -773,6 +774,12 @@ public:
 static_assert(offsetof(BSAnimationGraphManager, graphs) == 0x40);
 static_assert(offsetof(BSAnimationGraphManager, updateLock) == 0x98);
 
+using BSAnimationGraphManagerPtr = BSIntrusiveRefPtr<BSAnimationGraphManager, 0x08>;
+static_assert(sizeof(BSAnimationGraphManagerPtr) == sizeof(void *));
+static_assert(alignof(BSAnimationGraphManagerPtr) == alignof(void *));
+static_assert(!std::is_copy_constructible_v<BSAnimationGraphManagerPtr>);
+static_assert(std::is_nothrow_move_constructible_v<BSAnimationGraphManagerPtr>);
+
 struct hkbPoweredRagdollControlData
 {
     HK_ALIGN16(hkReal m_maxForce) = 50.f; // 00
@@ -988,11 +995,23 @@ inline hkbGeneratorOutput::TrackHeader *GetTrackHeader(hkbGeneratorOutput &gener
     return numTracks > trackId ? &(generatorOutput.m_tracks->m_trackHeaders[trackId]) : nullptr;
 }
 
-typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSTSmartPointer<BSAnimationGraphManager> &a_out);
-inline bool GetAnimationGraphManager(Actor *actor, BSTSmartPointer<BSAnimationGraphManager> &out) {
+typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSAnimationGraphManagerPtr &a_out);
+inline bool GetAnimationGraphManager(Actor *actor, BSAnimationGraphManagerPtr &out) {
     IAnimationGraphManagerHolder *animGraphManagerHolder = &actor->animGraphHolder;
     UInt64 *vtbl = *((UInt64 **)animGraphManagerHolder);
-    return ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, out);
+
+    // Query into empty storage so correctness does not depend on how Skyrim
+    // treats a pre-populated output. Preserve the existing owner when Skyrim
+    // returns the same manager, dropping only the newly acquired reference.
+    BSAnimationGraphManagerPtr next;
+    const bool result = ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, next);
+    if (result && out.ptr == next.ptr) {
+        next.Reset();
+    }
+    else {
+        out = std::move(next);
+    }
+    return result;
 }
 
 void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut, bool applyRigidBodyT = true);

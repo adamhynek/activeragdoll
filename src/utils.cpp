@@ -735,7 +735,7 @@ void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<v
 
 void ForEachRagdollDriver(Actor *actor, std::function<void(hkbRagdollDriver *)> f)
 {
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         ForEachRagdollDriver(animGraphManager.ptr, f);
     }
@@ -752,7 +752,7 @@ void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<
 
 void ForEachAnimationGraph(Actor *actor, std::function<void(BShkbAnimationGraph *)> f)
 {
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         ForEachAnimationGraph(animGraphManager.ptr, f);
     }

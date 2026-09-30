@@ -280,7 +280,7 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
     if (Actor_IsInRagdollState(actor)) return;
 
     bool hasRagdollInterface = false;
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
     }
@@ -3082,7 +3082,7 @@ hkArray<hkVector4> g_scratchHkArray{}; // We can't call the destructor of this o
 
 bool IsAddedToWorld(Actor *actor)
 {
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    BSAnimationGraphManagerPtr animGraphManager;
     if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
 
     BSAnimationGraphManager *manager = animGraphManager.ptr;
@@ -3129,7 +3129,7 @@ bool IsAddableToWorld(Actor *actor)
 
     if (IsTemporaryIgnoredActor(actor)) return false;
 
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+    BSAnimationGraphManagerPtr animGraphManager;
     if (!GetAnimationGraphManager(actor, animGraphManager)) return false;
 
     BSAnimationGraphManager *manager = animGraphManager.ptr;
@@ -3440,7 +3440,7 @@ bool AddRagdollToWorld(Actor *actor)
     if (!Config::options.processRagdolledActors && Actor_IsInRagdollState(actor)) return false;
 
     bool hasRagdollInterface = false;
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
     }
@@ -3535,7 +3535,7 @@ bool AddRagdollToWorld(Actor *actor)
 
 void CleanupActiveRagdollTracking(Actor *actor)
 {
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager *manager = animGraphManager.ptr;
         {
@@ -3576,7 +3576,7 @@ bool RemoveRagdollFromWorld(Actor *actor)
     if (!Config::options.processRagdolledActors && isInRagdollState) return false;
 
     bool hasRagdollInterface = false;
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
     }
@@ -3607,7 +3607,7 @@ void DisableOrEnableSyncOnUpdate(Actor *actor, bool disableElseEnable)
     if (Actor_IsInRagdollState(actor)) return;
 
     bool hasRagdollInterface = false;
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
     }
@@ -3646,7 +3646,7 @@ void RemoveActorFromWorldIfActive(Actor *actor)
 void EnableGravity(Actor *actor)
 {
     bool hasRagdollInterface = false;
-    BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 }; // need to init this to 0 or we crash
+    BSAnimationGraphManagerPtr animGraphManager;
     if (GetAnimationGraphManager(actor, animGraphManager)) {
         BSAnimationGraphManager_HasRagdoll(animGraphManager.ptr, &hasRagdollInterface);
     }
@@ -5781,7 +5781,7 @@ struct RemoveNonRagdollRigidBodiesFromWorldTask : TaskDelegate
         NiPointer<TESObjectREFR> refr;
         if (LookupREFRByHandle(handle, refr)) {
             if (Actor *actor = DYNAMIC_CAST(refr, TESObjectREFR, Actor)) {
-                BSTSmartPointer<BSAnimationGraphManager> animGraphManager{ 0 };
+                BSAnimationGraphManagerPtr animGraphManager;
                 if (GetAnimationGraphManager(actor, animGraphManager)) {
                     BSAnimationGraphManager *manager = animGraphManager.ptr;
 
