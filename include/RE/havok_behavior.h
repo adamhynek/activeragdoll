@@ -999,19 +999,7 @@ typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnima
 inline bool GetAnimationGraphManager(Actor *actor, BSAnimationGraphManagerPtr &out) {
     IAnimationGraphManagerHolder *animGraphManagerHolder = &actor->animGraphHolder;
     UInt64 *vtbl = *((UInt64 **)animGraphManagerHolder);
-
-    // Query into empty storage so correctness does not depend on how Skyrim
-    // treats a pre-populated output. Preserve the existing owner when Skyrim
-    // returns the same manager, dropping only the newly acquired reference.
-    BSAnimationGraphManagerPtr next;
-    const bool result = ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, next);
-    if (result && out.ptr == next.ptr) {
-        next.Reset();
-    }
-    else {
-        out = std::move(next);
-    }
-    return result;
+    return ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, out);
 }
 
 void MapHighResPoseLocalToLowResPoseWorld(hkbRagdollDriver *driver, const hkQsTransform &worldFromModel, const hkQsTransform *highResPoseLocal, hkQsTransform *lowResPoseWorldOut, bool applyRigidBodyT = true);
