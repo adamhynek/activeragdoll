@@ -722,7 +722,9 @@ struct BShkbAnimationGraph
         UInt32 unk0C;
     };
 
-    UInt8 unk08[0xC0 - 0x08];
+    volatile UInt32 m_refCount; // 08
+    UInt32 unk0C; // 0C
+    UInt8 unk08[0xC0 - 0x10];
     hkbCharacter character; // C0
     tArray<BoneNodeEntry> boneNodes; // 160 - the number of these is the same as the number of anim bones
     tArray<void *> fadeControllers; // 178
@@ -758,9 +760,11 @@ static_assert(offsetof(BShkbAnimationGraph, holder) == 0x210);
 static_assert(offsetof(BShkbAnimationGraph, world) == 0x238);
 static_assert(offsetof(BShkbAnimationGraph, doFootIK) == 0x249);
 
+using BShkbAnimationGraphPtr = BSIntrusiveRefPtr<BShkbAnimationGraph, offsetof(BShkbAnimationGraph, m_refCount)>;
+
 class BSAnimationGraphManager :
-    BSTEventSink<BSAnimationGraphEvent>, // 00
-    BSIntrusiveRefCounted // 08
+    public BSTEventSink<BSAnimationGraphEvent>, // 00
+    public BSIntrusiveRefCounted // 08
 {
 public:
     UInt8 unk10[0x40 - 0x10];
@@ -769,12 +773,12 @@ public:
     SimpleLock updateLock; // 98
     SimpleLock dependentManagerLock; // A0
     UInt32 activeGraph; // A8
-    UInt32 generateDepth; // A8
+    UInt32 generateDepth; // AC
 };
 static_assert(offsetof(BSAnimationGraphManager, graphs) == 0x40);
 static_assert(offsetof(BSAnimationGraphManager, updateLock) == 0x98);
 
-using BSAnimationGraphManagerPtr = BSIntrusiveRefPtr<BSAnimationGraphManager, 0x08>;
+using BSAnimationGraphManagerPtr = BSIntrusiveRefPtr<BSAnimationGraphManager, offsetof(BSAnimationGraphManager, m_refCount)>;
 static_assert(sizeof(BSAnimationGraphManagerPtr) == sizeof(void *));
 static_assert(alignof(BSAnimationGraphManagerPtr) == alignof(void *));
 static_assert(!std::is_copy_constructible_v<BSAnimationGraphManagerPtr>);
@@ -997,9 +1001,6 @@ inline hkbGeneratorOutput::TrackHeader *GetTrackHeader(hkbGeneratorOutput &gener
 
 typedef bool(*_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(IAnimationGraphManagerHolder *_this, BSAnimationGraphManagerPtr &a_out);
 inline bool GetAnimationGraphManager(Actor *actor, BSAnimationGraphManagerPtr &out) {
-    // Some callers intentionally reuse the same local for a second query.
-    // Release the previous result before Skyrim overwrites it.
-    out.Reset();
     IAnimationGraphManagerHolder *animGraphManagerHolder = &actor->animGraphHolder;
     UInt64 *vtbl = *((UInt64 **)animGraphManagerHolder);
     return ((_IAnimationGraphManagerHolder_GetAnimationGraphManagerImpl)(vtbl[0x02]))(animGraphManagerHolder, out);

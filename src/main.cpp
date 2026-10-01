@@ -6,7 +6,6 @@
 #include <deque>
 #include <optional>
 #include <shared_mutex>
-#include <new>
 
 #include <Physics/Collide/Shape/Convex/ConvexVertices/hkpConvexVerticesShape.h>
 #include <Physics/Collide/Shape/Convex/Capsule/hkpCapsuleShape.h>
@@ -292,8 +291,8 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
@@ -3079,15 +3078,7 @@ void TryUpdateNPCState(Actor *actor, bool isShoved, bool wasJustRagdolled)
 
 hkaKeyFrameHierarchyUtility::Output g_stressOut[200]; // set in a hook during driveToPose(). Just reserve a bunch of space so it can handle any number of bones.
 
-// Construct the scratch array in static storage but intentionally never destroy
-// it: Skyrim/Havok grows it, and DLL shutdown must not free game-owned memory.
-alignas(hkArray<hkVector4>) char g_scratchHkArrayStorage[sizeof(hkArray<hkVector4>)]{};
-
-hkArray<hkVector4> &GetScratchHkArray()
-{
-    static auto *scratch = ::new (g_scratchHkArrayStorage) hkArray<hkVector4>{};
-    return *scratch;
-}
+hkArray<hkVector4> g_scratchHkArray{}; // We can't call the destructor of this ourselves, so this is a global array to be used at will and never deallocated.
 
 bool IsAddedToWorld(Actor *actor)
 {
@@ -3101,10 +3092,10 @@ bool IsAddedToWorld(Actor *actor)
         if (manager->graphs.size <= 0) return false;
 
         for (int i = 0; i < manager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-            if (!graph.ptr->world) return false;
+            BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+            if (!graph->world) return false;
 
-            hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+            hkbRagdollDriver *driver = graph->character.ragdollDriver;
             if (!driver) return false;
             hkaRagdollInstance *ragdoll = driver->ragdoll;
             if (!ragdoll) return false;
@@ -3148,8 +3139,8 @@ bool IsAddableToWorld(Actor *actor)
         if (manager->graphs.size <= 0) return false;
 
         for (int i = 0; i < manager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-            hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+            BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+            hkbRagdollDriver *driver = graph->character.ragdollDriver;
             if (!driver) return false;
             hkaRagdollInstance *ragdoll = driver->ragdoll;
             if (!ragdoll) return false;
@@ -3463,8 +3454,8 @@ bool AddRagdollToWorld(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         std::shared_ptr<ActiveRagdoll> activeRagdoll = std::make_shared<ActiveRagdoll>();
 
                         if (Config::options.blendInWhenAddingToWorld) {
@@ -3479,9 +3470,9 @@ bool AddRagdollToWorld(Actor *actor)
                         activeRagdoll->stateChangedTime = g_currentFrameTime;
                         activeRagdoll->state = RagdollState::BlendIn;
 
-                        if (!graph.ptr->world && parentCell) {
+                        if (!graph->world && parentCell) {
                             // World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
-                            graph.ptr->world = GetHavokWorldFromCell(parentCell);
+                            graph->world = GetHavokWorldFromCell(parentCell);
                             activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
                         }
 
@@ -3550,11 +3541,11 @@ void CleanupActiveRagdollTracking(Actor *actor)
         {
             SimpleLocker lock(&manager->updateLock);
             for (int i = 0; i < manager->graphs.size; i++) {
-                BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                     if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
                         if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
-                            graph.ptr->world = nullptr;
+                            graph->world = nullptr;
                         }
                     }
 
@@ -3666,8 +3657,8 @@ void EnableGravity(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
@@ -4250,6 +4241,23 @@ void UpdateGrabbedActorMovementState(Actor *actor, bool doGrabbedActorMovement)
     }
 }
 
+void SetHiggsBodyReportingQuality(bhkWorld *world, const NiPointer<bhkRigidBody> &body)
+{
+    if (!world || !world->world || !body || !body->hkBody) return;
+
+    hkpRigidBody *hkBody = body->hkBody;
+    auto reportingQuality = hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING;
+    if (hkBody->getWorld() != world->world || hkBody->getQualityType() == reportingQuality) return;
+
+    BSWriteLocker lock(&world->worldLock);
+    hkpWorld *lockedWorld = world->world;
+    if (!lockedWorld || body->hkBody != hkBody || hkBody->getWorld() != lockedWorld ||
+        hkBody->getQualityType() == reportingQuality) return;
+
+    hkBody->setQualityType(reportingQuality);
+    bhkWorld_UpdateCollisionFilterOnWorldObject(world, body);
+}
+
 void UpdateHiggsInfo(bhkWorld *world)
 {
     NiPointer<bhkRigidBody> rightHand = (bhkRigidBody *)g_higgsInterface->GetHandRigidBody(false);
@@ -4262,23 +4270,10 @@ void UpdateHiggsInfo(bhkWorld *world)
     g_rightWeapon = rightWeapon;
     g_leftWeapon = leftWeapon;
 
-    if (rightWeapon && rightWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-        rightWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-        bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightWeapon);
-    }
-    if (leftWeapon && leftWeapon->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-        leftWeapon->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-        bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftWeapon);
-    }
-
-    if (rightHand && rightHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-        rightHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-        bhkWorld_UpdateCollisionFilterOnWorldObject(world, rightHand);
-    }
-    if (leftHand && leftHand->hkBody->getQualityType() != hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING) {
-        leftHand->hkBody->setQualityType(hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING);
-        bhkWorld_UpdateCollisionFilterOnWorldObject(world, leftHand);
-    }
+    SetHiggsBodyReportingQuality(world, rightWeapon);
+    SetHiggsBodyReportingQuality(world, leftWeapon);
+    SetHiggsBodyReportingQuality(world, rightHand);
+    SetHiggsBodyReportingQuality(world, leftHand);
 
     if (rightHand) {
         g_higgsCollisionLayer = GetCollisionLayer(rightHand->hkBody);
@@ -4461,8 +4456,8 @@ void ProcessHavokHitJobsHook(HavokHitJobs *havokHitJobs)
 
                 if (Config::options.resizePlayerCharController && convexVerticesShape) {
                     // Shrink convex charcontroller shape
-                    hkArray<hkVector4> &verts = GetScratchHkArray();
-                    verts.clear();
+                    g_scratchHkArray.clear();
+                    hkArray<hkVector4> &verts = g_scratchHkArray;
 
                     hkpConvexVerticesShape_getOriginalVertices(convexVerticesShape, verts);
 
@@ -5068,11 +5063,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
             if (ragdoll->easeConstraintsAction) {
                 // Restore constraint limits from before we loosened them last time
 
-                // hkpEaseConstraintsAction keeps raw constraint pointers but does
-                // not record which ragdoll supplied them. If the driver's ragdoll
-                // changes while this snapshot survives, restoring it would touch
-                // a different constraint generation. Require exact provenance and
-                // membership even though that replacement has not been reproduced.
+                // A saved action can outlive a ragdoll or an individual constraint.
+                // Require both origin identity and current constraint membership.
                 struct EaseConstraintsActionLayout
                 {
                     std::byte base[0x48];
@@ -5082,8 +5074,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
                 const auto *actionLayout = reinterpret_cast<const EaseConstraintsActionLayout *>(
                     static_cast<hkpEaseConstraintsAction *>(ragdoll->easeConstraintsAction));
-                // Retaining the origin ragdoll keeps its constraints alive and
-                // prevents a replacement generation from reusing their addresses.
+                // Retain origin identity; independently removed constraints still
+                // require the membership check before any saved pointer is used.
                 bool canRestoreConstraints = ragdoll->easedRagdoll.val() == driver->ragdoll;
                 if (canRestoreConstraints) {
                     for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
@@ -6131,10 +6123,10 @@ void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager,
     {
         SimpleLocker lock(&graphManager->updateLock);
         for (int i = 0; i < graphManager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
-            if (!graph.ptr) continue;
+            BShkbAnimationGraph *graph = graphManager->graphs.GetData()[i].ptr;
+            if (!graph) continue;
 
-            Actor *actor = graph.ptr->holder;
+            Actor *actor = graph->holder;
             if (!actor) continue;
 
             if (IsActiveActor(actor)) {
@@ -6332,7 +6324,7 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
         if (!IsPlannerDirectControl(movementController)) return;
 
         static BSFixedString sPlannerDirectControl("Planner Direct Control");
-        BSTSmartPointer<MovementAgent> movementAgent{ 0 };
+        MovementAgentPtr movementAgent;
         if (!MovementControllerNPC_GetMovementAgent(movementController, sPlannerDirectControl, movementAgent)) return;
 
         MovementPlannerAgentDirectControl *plannerAgentDirectControl = DYNAMIC_CAST(movementAgent.ptr, MovementAgent, MovementPlannerAgentDirectControl);
@@ -7308,6 +7300,22 @@ void BSLookAtModifier_modify_Hook(BSLookAtModifier *_this, const hkbContext &con
 }
 
 
+void RebindAnimationGraphBoneNodes(BSAnimationGraphManager *manager, NiAVObject *oldNode, NiNode *newNode)
+{
+    SimpleLocker lock(&manager->updateLock);
+    for (UInt32 i = 0; i < manager->graphs.size; ++i) {
+        BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+        if (!graph) continue;
+
+        for (UInt32 j = 0; j < graph->boneNodes.count; ++j) {
+            BShkbAnimationGraph::BoneNodeEntry &entry = graph->boneNodes.entries[j];
+            if (entry.node == oldNode) {
+                entry.node = newNode;
+            }
+        }
+    }
+}
+
 typedef NiAVObject * (*_PlayerCharacter_Load3D)(PlayerCharacter *player, bool a2);
 _PlayerCharacter_Load3D PlayerCharacter_Load3D_Original = nullptr;
 static RelocPtr<_PlayerCharacter_Load3D> PlayerCharacter_Load3D_vtbl(0x16E2580);
@@ -7331,6 +7339,11 @@ NiAVObject * PlayerCharacter_Load3D_Hook(PlayerCharacter *player, bool a2)
 
             bool anyChanges = false;
 
+            BSAnimationGraphManagerPtr manager;
+            if (!GetAnimationGraphManager(player, manager)) {
+                return result;
+            }
+
             for (BSFixedString &nodeName : nodeNames) {
                 if (NiPointer<NiAVObject> node = root->GetObjectByName(&nodeName.data)) {
                     if (!DYNAMIC_CAST(node, NiAVObject, BSFadeNode)) { // only convert to a BSFadeNode if it isn't already
@@ -7339,6 +7352,8 @@ NiAVObject * PlayerCharacter_Load3D_Hook(PlayerCharacter *player, bool a2)
 
                         if (BSFadeNode *fadeNode = (BSFadeNode *)Heap_Allocate(sizeof(BSFadeNode))) {
                             BSFadeNode_CtorFromNiNode(fadeNode, node);
+                            NiPointer<BSFadeNode> fadeNodePtr = fadeNode; // just to make sure to keep it alive
+
                             BSFadeNode_SetStippleFade(fadeNode, false);
 
                             get_vfunc<_NiNode_SetAt2>(parent, 0x3D)(parent, parentIndex, fadeNode);
@@ -7351,6 +7366,8 @@ NiAVObject * PlayerCharacter_Load3D_Hook(PlayerCharacter *player, bool a2)
                                     boneTree->boneEntries[boneIndex].node = fadeNode;
                                 }
                             }
+
+                            RebindAnimationGraphBoneNodes(manager.ptr, node, fadeNode);
                         }
                     }
                 }

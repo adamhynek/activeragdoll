@@ -726,8 +726,8 @@ void ForEachRagdollDriver(BSAnimationGraphManager *graphManager, std::function<v
 {
     SimpleLocker lock(&graphManager->updateLock);
     for (int i = 0; i < graphManager->graphs.size; i++) {
-        BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
-        if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+        BShkbAnimationGraph *graph = graphManager->graphs.GetData()[i].ptr;
+        if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
             f(driver);
         }
     }
@@ -745,8 +745,8 @@ void ForEachAnimationGraph(BSAnimationGraphManager *graphManager, std::function<
 {
     SimpleLocker lock(&graphManager->updateLock);
     for (int i = 0; i < graphManager->graphs.size; i++) {
-        BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
-        f(graph.ptr);
+        BShkbAnimationGraph *graph = graphManager->graphs.GetData()[i].ptr;
+        f(graph);
     }
 }
 
