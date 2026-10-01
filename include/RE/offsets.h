@@ -1055,7 +1055,7 @@ extern RelocAddr<_Actor_IsRagdollMovingSlowEnoughToGetUp> Actor_IsRagdollMovingS
 typedef float(*_MovementUtils_ComputeRotationFromDelta)(float a1, float a2, float a3);
 extern RelocAddr<_MovementUtils_ComputeRotationFromDelta> MovementUtils_ComputeRotationFromDelta;
 
-typedef bool(*_MovementControllerNPC_GetMovementAgent)(MovementControllerNPC *_this, BSFixedString &agentName, BSTSmartPointer<MovementAgent> &movementAgentOut);
+typedef bool(*_MovementControllerNPC_GetMovementAgent)(MovementControllerNPC *_this, BSFixedString &agentName, MovementAgentPtr &movementAgentOut);
 extern RelocAddr<_MovementControllerNPC_GetMovementAgent> MovementControllerNPC_GetMovementAgent;
 
 typedef bool(*_GetAnimationEventForAction)(TESObjectREFR *source, int *actionID, BSFixedString *eventNameOut);

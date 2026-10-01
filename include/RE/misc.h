@@ -648,9 +648,12 @@ struct IMovementSetKeepOffsetFromActor
 struct MovementAgent
 {
     void *vtbl; // 00
-    UInt32 unk08;
+    volatile UInt32 m_refCount; // 08
+    UInt32 unk0C; // 0C
     IMovementState *movementState; // 10 - points to ActorState of Actor
 };
+
+using MovementAgentPtr = BSIntrusiveRefPtr<MovementAgent, offsetof(MovementAgent, m_refCount)>;
 
 struct MovementPlannerAgent : MovementAgent
 {

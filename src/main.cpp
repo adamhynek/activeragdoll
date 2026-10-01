@@ -291,8 +291,8 @@ void UpdateCollisionFilterOnAllBones(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
@@ -3092,10 +3092,10 @@ bool IsAddedToWorld(Actor *actor)
         if (manager->graphs.size <= 0) return false;
 
         for (int i = 0; i < manager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-            if (!graph.ptr->world) return false;
+            BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+            if (!graph->world) return false;
 
-            hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+            hkbRagdollDriver *driver = graph->character.ragdollDriver;
             if (!driver) return false;
             hkaRagdollInstance *ragdoll = driver->ragdoll;
             if (!ragdoll) return false;
@@ -3139,8 +3139,8 @@ bool IsAddableToWorld(Actor *actor)
         if (manager->graphs.size <= 0) return false;
 
         for (int i = 0; i < manager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-            hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver;
+            BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+            hkbRagdollDriver *driver = graph->character.ragdollDriver;
             if (!driver) return false;
             hkaRagdollInstance *ragdoll = driver->ragdoll;
             if (!ragdoll) return false;
@@ -3454,8 +3454,8 @@ bool AddRagdollToWorld(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         std::shared_ptr<ActiveRagdoll> activeRagdoll = std::make_shared<ActiveRagdoll>();
 
                         if (Config::options.blendInWhenAddingToWorld) {
@@ -3470,9 +3470,9 @@ bool AddRagdollToWorld(Actor *actor)
                         activeRagdoll->stateChangedTime = g_currentFrameTime;
                         activeRagdoll->state = RagdollState::BlendIn;
 
-                        if (!graph.ptr->world && parentCell) {
+                        if (!graph->world && parentCell) {
                             // World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
-                            graph.ptr->world = GetHavokWorldFromCell(parentCell);
+                            graph->world = GetHavokWorldFromCell(parentCell);
                             activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
                         }
 
@@ -3541,11 +3541,11 @@ void CleanupActiveRagdollTracking(Actor *actor)
         {
             SimpleLocker lock(&manager->updateLock);
             for (int i = 0; i < manager->graphs.size; i++) {
-                BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                     if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
                         if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
-                            graph.ptr->world = nullptr;
+                            graph->world = nullptr;
                         }
                     }
 
@@ -3657,8 +3657,8 @@ void EnableGravity(Actor *actor)
             {
                 SimpleLocker lock(&manager->updateLock);
                 for (int i = 0; i < manager->graphs.size; i++) {
-                    BSTSmartPointer<BShkbAnimationGraph> graph = manager->graphs.GetData()[i];
-                    if (hkbRagdollDriver *driver = graph.ptr->character.ragdollDriver) {
+                    BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
+                    if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                         if (hkaRagdollInstance *ragdoll = driver->ragdoll) {
                             if (ahkpWorld *world = (ahkpWorld *)ragdoll->getWorld()) {
                                 bhkWorld *worldWrapper = world->m_userData;
@@ -6086,10 +6086,10 @@ void GetUpEnd_RemoveRagdollFromWorld_Hook(BSAnimationGraphManager *graphManager,
     {
         SimpleLocker lock(&graphManager->updateLock);
         for (int i = 0; i < graphManager->graphs.size; i++) {
-            BSTSmartPointer<BShkbAnimationGraph> graph = graphManager->graphs.GetData()[i];
-            if (!graph.ptr) continue;
+            BShkbAnimationGraph *graph = graphManager->graphs.GetData()[i].ptr;
+            if (!graph) continue;
 
-            Actor *actor = graph.ptr->holder;
+            Actor *actor = graph->holder;
             if (!actor) continue;
 
             if (IsActiveActor(actor)) {
@@ -6287,7 +6287,7 @@ void Character_ModifyMovementData_Hook(Actor *actor, float a_deltaTime, NiPoint3
         if (!IsPlannerDirectControl(movementController)) return;
 
         static BSFixedString sPlannerDirectControl("Planner Direct Control");
-        BSTSmartPointer<MovementAgent> movementAgent{ 0 };
+        MovementAgentPtr movementAgent;
         if (!MovementControllerNPC_GetMovementAgent(movementController, sPlannerDirectControl, movementAgent)) return;
 
         MovementPlannerAgentDirectControl *plannerAgentDirectControl = DYNAMIC_CAST(movementAgent.ptr, MovementAgent, MovementPlannerAgentDirectControl);
