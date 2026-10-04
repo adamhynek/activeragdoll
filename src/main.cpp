@@ -5063,19 +5063,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
             if (ragdoll->easeConstraintsAction) {
                 // Restore constraint limits from before we loosened them last time
 
-                // A saved action can outlive a ragdoll or an individual constraint.
-                // Require both origin identity and current constraint membership.
-                struct EaseConstraintsActionLayout
-                {
-                    std::byte base[0x48];
-                    hkArray<hkpConstraintInstance *> originalConstraints;
-                };
-                static_assert(offsetof(EaseConstraintsActionLayout, originalConstraints) == 0x48);
-
-                const auto *actionLayout = reinterpret_cast<const EaseConstraintsActionLayout *>(
-                    static_cast<hkpEaseConstraintsAction *>(ragdoll->easeConstraintsAction));
-                // Retain origin identity; independently removed constraints still
-                // require the membership check before any saved pointer is used.
+                // A saved ease constraints action can outlive a ragdoll or an individual constraint.
+                // So we check that the ragdoll has not changed, as well as that all saved constraints are still part of the ragdoll.
                 bool canRestoreConstraints = ragdoll->easedRagdoll.val() == driver->ragdoll;
                 if (canRestoreConstraints) {
                     for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
@@ -5086,10 +5075,8 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                     }
                 }
                 if (canRestoreConstraints) {
-                    for (hkpConstraintInstance *constraint : actionLayout->originalConstraints) {
-                        if (!constraint || std::ranges::find(
-                            driver->ragdoll->getConstraintArray(), constraint) ==
-                            driver->ragdoll->getConstraintArray().end()) {
+                    for (hkpConstraintInstance *constraint : ragdoll->easeConstraintsAction->m_originalConstraints) {
+                        if (!constraint || std::ranges::find(driver->ragdoll->getConstraintArray(), constraint) == driver->ragdoll->getConstraintArray().end()) {
                             canRestoreConstraints = false;
                             break;
                         }
@@ -5111,6 +5098,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                         }
                     }
                 }
+
                 ragdoll->easeConstraintsAction = nullptr;
                 ragdoll->originalConstraintPivots.clear();
                 ragdoll->easedRagdoll = nullptr;
