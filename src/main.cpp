@@ -5063,21 +5063,57 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
             if (ragdoll->easeConstraintsAction) {
                 // Restore constraint limits from before we loosened them last time
 
-                hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
-                ragdoll->easeConstraintsAction = nullptr;
+                // A saved action can outlive a ragdoll or an individual constraint.
+                // Require both origin identity and current constraint membership.
+                struct EaseConstraintsActionLayout
+                {
+                    std::byte base[0x48];
+                    hkArray<hkpConstraintInstance *> originalConstraints;
+                };
+                static_assert(offsetof(EaseConstraintsActionLayout, originalConstraints) == 0x48);
 
-                if (Config::options.loosenRagdollConstraintPivots) {
+                const auto *actionLayout = reinterpret_cast<const EaseConstraintsActionLayout *>(
+                    static_cast<hkpEaseConstraintsAction *>(ragdoll->easeConstraintsAction));
+                // Retain origin identity; independently removed constraints still
+                // require the membership check before any saved pointer is used.
+                bool canRestoreConstraints = ragdoll->easedRagdoll.val() == driver->ragdoll;
+                if (canRestoreConstraints) {
                     for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                        if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
-                            hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+                        if (!constraint || !constraint->getData()) {
+                            canRestoreConstraints = false;
+                            break;
+                        }
+                    }
+                }
+                if (canRestoreConstraints) {
+                    for (hkpConstraintInstance *constraint : actionLayout->originalConstraints) {
+                        if (!constraint || std::ranges::find(
+                            driver->ragdoll->getConstraintArray(), constraint) ==
+                            driver->ragdoll->getConstraintArray().end()) {
+                            canRestoreConstraints = false;
+                            break;
+                        }
+                    }
+                }
 
-                            if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
-                                data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
-                                data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+                if (canRestoreConstraints) {
+                    hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
+                    if (Config::options.loosenRagdollConstraintPivots) {
+                        for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                            if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                                hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                                if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
+                                    data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
+                                    data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+                                }
                             }
                         }
                     }
                 }
+                ragdoll->easeConstraintsAction = nullptr;
+                ragdoll->originalConstraintPivots.clear();
+                ragdoll->easedRagdoll = nullptr;
             }
 
             if (!ragdoll->easeConstraintsAction) {
@@ -5086,6 +5122,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
                 hkpEaseConstraintsAction_ctor(easeConstraintsAction, (const hkArray<hkpEntity *>&)(driver->ragdoll->getRigidBodyArray()), 0);
                 ragdoll->easeConstraintsAction = easeConstraintsAction; // must do this after ctor since this increments the refcount
                 hkReferencedObject_removeReference(ragdoll->easeConstraintsAction);
+                ragdoll->easedRagdoll = driver->ragdoll;
 
                 // Loosen constraint pivots first
                 if (Config::options.loosenRagdollConstraintPivots) {
