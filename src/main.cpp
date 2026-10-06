@@ -3533,6 +3533,49 @@ bool AddRagdollToWorld(Actor *actor)
 }
 
 
+void RestoreAndClearPendingConstraintSnapshot(ActiveRagdoll &ragdoll, hkbRagdollDriver *driver)
+{
+    // A saved ease constraints action can outlive a ragdoll or an individual constraint.
+    // Only restore it when every pointer it will access still belongs to the current ragdoll.
+    bool canRestoreConstraints = ragdoll.easeConstraintsAction && driver->ragdoll && ragdoll.easedRagdoll.val() == driver->ragdoll;
+    if (canRestoreConstraints) {
+        for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+            if (!constraint || !constraint->getData()) {
+                canRestoreConstraints = false;
+                break;
+            }
+        }
+    }
+    if (canRestoreConstraints) {
+        for (hkpConstraintInstance *constraint : ragdoll.easeConstraintsAction->m_originalConstraints) {
+            if (!constraint || std::ranges::find(driver->ragdoll->getConstraintArray(), constraint) == driver->ragdoll->getConstraintArray().end()) {
+                canRestoreConstraints = false;
+                break;
+            }
+        }
+    }
+
+    if (canRestoreConstraints) {
+        hkpEaseConstraintsAction_restoreConstraints(ragdoll.easeConstraintsAction, 0.f);
+        if (Config::options.loosenRagdollConstraintPivots) {
+            for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
+                if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
+                    hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
+
+                    if (auto it = ragdoll.originalConstraintPivots.find(constraint); it != ragdoll.originalConstraintPivots.end()) {
+                        data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
+                        data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
+                    }
+                }
+            }
+        }
+    }
+
+    ragdoll.easeConstraintsAction = nullptr;
+    ragdoll.originalConstraintPivots.clear();
+    ragdoll.easedRagdoll = nullptr;
+}
+
 void CleanupActiveRagdollTracking(Actor *actor)
 {
     BSAnimationGraphManagerPtr animGraphManager;
@@ -3590,6 +3633,26 @@ bool RemoveRagdollFromWorld(Actor *actor)
             _MESSAGE("%d %s: Remove ragdoll from world", *g_currentFrameCounter, name->name);
         }
 #endif // _DEBUG
+
+        ForEachRagdollDriver(animGraphManager.ptr, [](hkbRagdollDriver *driver) {
+            if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
+                bhkWorld *worldWrapper = nullptr;
+                if (hkaRagdollInstance *driverRagdoll = driver->ragdoll) {
+                    if (ahkpWorld *world = (ahkpWorld *)driverRagdoll->getWorld()) {
+                        worldWrapper = world->m_userData;
+                    }
+                }
+
+                if (worldWrapper) {
+                    // driveToPose() is called under a bhkWorld write lock, so in order to not interleave with it try to lock the world
+                    BSWriteLocker lock(&worldWrapper->worldLock);
+                    RestoreAndClearPendingConstraintSnapshot(*ragdoll, driver);
+                }
+                else {
+                    RestoreAndClearPendingConstraintSnapshot(*ragdoll, driver);
+                }
+            }
+        });
 
         if (!isInRagdollState) {
             bool x = false;
@@ -5062,46 +5125,7 @@ void PreDriveToPoseHook(hkbRagdollDriver *driver, hkReal deltaTime, const hkbCon
 
             if (ragdoll->easeConstraintsAction) {
                 // Restore constraint limits from before we loosened them last time
-
-                // A saved ease constraints action can outlive a ragdoll or an individual constraint.
-                // So we check that the ragdoll has not changed, as well as that all saved constraints are still part of the ragdoll.
-                bool canRestoreConstraints = ragdoll->easedRagdoll.val() == driver->ragdoll;
-                if (canRestoreConstraints) {
-                    for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                        if (!constraint || !constraint->getData()) {
-                            canRestoreConstraints = false;
-                            break;
-                        }
-                    }
-                }
-                if (canRestoreConstraints) {
-                    for (hkpConstraintInstance *constraint : ragdoll->easeConstraintsAction->m_originalConstraints) {
-                        if (!constraint || std::ranges::find(driver->ragdoll->getConstraintArray(), constraint) == driver->ragdoll->getConstraintArray().end()) {
-                            canRestoreConstraints = false;
-                            break;
-                        }
-                    }
-                }
-
-                if (canRestoreConstraints) {
-                    hkpEaseConstraintsAction_restoreConstraints(ragdoll->easeConstraintsAction, 0.f);
-                    if (Config::options.loosenRagdollConstraintPivots) {
-                        for (hkpConstraintInstance *constraint : driver->ragdoll->getConstraintArray()) {
-                            if (constraint->getData()->getType() == hkpConstraintData::CONSTRAINT_TYPE_RAGDOLL) {
-                                hkpRagdollConstraintData *data = (hkpRagdollConstraintData *)constraint->getData();
-
-                                if (auto it = ragdoll->originalConstraintPivots.find(constraint); it != ragdoll->originalConstraintPivots.end()) {
-                                    data->m_atoms.m_transforms.m_transformA.m_translation = it->second.first;
-                                    data->m_atoms.m_transforms.m_transformB.m_translation = it->second.second;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                ragdoll->easeConstraintsAction = nullptr;
-                ragdoll->originalConstraintPivots.clear();
-                ragdoll->easedRagdoll = nullptr;
+                RestoreAndClearPendingConstraintSnapshot(*ragdoll, driver);
             }
 
             if (!ragdoll->easeConstraintsAction) {
@@ -8440,4 +8464,3 @@ extern "C" {
         return true;
     }
 };
-
