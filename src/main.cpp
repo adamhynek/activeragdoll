@@ -3473,7 +3473,6 @@ bool AddRagdollToWorld(Actor *actor)
                         if (!graph->world && parentCell) {
                             // World must be set before calling BShkbAnimationGraph::AddRagdollToWorld(), and is required for the graph to register its physics step listener (and hence call hkbRagdollDriver::driveToPose())
                             graph->world = GetHavokWorldFromCell(parentCell);
-                            activeRagdoll->shouldNullOutWorldWhenRemovingFromWorld = true;
                         }
 
                         if (Config::options.fixupSkeletonMappings) {
@@ -3587,7 +3586,8 @@ void CleanupActiveRagdollTracking(Actor *actor)
                 BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
                 if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
                     if (std::shared_ptr<ActiveRagdoll> ragdoll = GetActiveRagdollFromDriver(driver)) {
-                        if (ragdoll && ragdoll->shouldNullOutWorldWhenRemovingFromWorld) {
+                        // Match Actor::MoveHavok: the game nulls the world for actors using furniture
+                        if (IsActorUsingFurniture(actor)) {
                             graph->world = nullptr;
                         }
                     }
