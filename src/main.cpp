@@ -3453,6 +3453,7 @@ bool AddRagdollToWorld(Actor *actor)
 
             {
                 SimpleLocker lock(&manager->updateLock);
+
                 for (int i = 0; i < manager->graphs.size; i++) {
                     BShkbAnimationGraph *graph = manager->graphs.GetData()[i].ptr;
                     if (hkbRagdollDriver *driver = graph->character.ragdollDriver) {
@@ -3502,27 +3503,30 @@ bool AddRagdollToWorld(Actor *actor)
                         }
                     }
                 }
-            }
 
-            if (parentCell) {
-                if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(parentCell)) {
+                // Keep holding the updateLock here so that we always have updateLock, then bhkWorld lock, in that order.
+
+                if (parentCell) {
+                    if (NiPointer<bhkWorld> world = GetHavokWorldFromCell(parentCell)) {
 #ifdef _DEBUG
-                    if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
-                        _MESSAGE("%d %s: Add ragdoll to world", *g_currentFrameCounter, name->name);
-                    }
+                        if (TESFullName *name = DYNAMIC_CAST(actor->baseForm, TESForm, TESFullName)) {
+                            _MESSAGE("%d %s: Add ragdoll to world", *g_currentFrameCounter, name->name);
+                        }
 #endif // _DEBUG
 
-                    BSWriteLocker lock(&world->worldLock);
+                        BSWriteLocker lock(&world->worldLock);
 
-                    bool x = false;
-                    BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
+                        bool x = false;
+                        BSAnimationGraphManager_AddRagdollToWorld(animGraphManager.ptr, &x);
 
-                    ModifyConstraints(actor);
+                        ModifyConstraints(actor);
 
-                    x = false;
-                    BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
+                        x = false;
+                        BSAnimationGraphManager_SetRagdollConstraintsFromBhkConstraints(animGraphManager.ptr, &x);
+                    }
                 }
             }
+
         }
     }
 
