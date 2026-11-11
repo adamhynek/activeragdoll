@@ -70,7 +70,8 @@ extern "C"
         HIGGS_OBS_PALM_VALID = 4,
         HIGGS_OBS_TRACKING_VALID = 8,
         HIGGS_OBS_SECONDARY_SUPPORT = 16,
-        HIGGS_OBS_NATIVE_GRIP_TARGET = 32
+        HIGGS_OBS_NATIVE_GRIP_TARGET = 32,
+        HIGGS_OBS_NATIVE_TRIGGER_TARGET = 64
     };
     enum
     {
@@ -201,7 +202,7 @@ extern "C"
     {
         uint32_t structSize, type, physicalHand, itemRefId;
         uint64_t eventId, epoch, observationId, poseObservationId, observedAtNs;
-        HIGGS_ActionResult result; /* only ACTION_RESULT; physical changes are observations. */
+        HIGGS_ActionResult result; /* ACTION_RESULT, plus original press/request identifiers on input termination. */
         HIGGS_HandRecord hand;     /* exact observation for grab/release/support events. */
     } HIGGS_HandEvent;
     typedef struct HIGGS_PhysicalRequest

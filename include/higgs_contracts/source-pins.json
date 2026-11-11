@@ -1,13 +1,13 @@
 {
   "repository": "https://github.com/Vhodnoylogin/higgs",
-  "baseCommit": "fe537f0fe8f78b0eb7c4e186af6529d217d59e9d",
-  "workingTreeSnapshot": true,
+  "baseCommit": "f3a8320e8a5ff386840396a579f0c2cc703b9a95",
+  "workingTreeSnapshot": false,
   "license": "GPL-3.0",
   "sourcePaths": {
-    "include/higgshandapi.h": "361be43db7fac050270aec30995296340f76895894a26a22abb6260cc91ce9d6",
-    "include/higgshandparts.h": "012b81aefc54542ad570277089deba553810324b387b9487646667351f818ac0",
+    "include/higgshandapi.h": "fd9ef47dcf8c7981b713574a6616219cfe8ef0362d21e7948c929866a4859dd3",
+    "include/higgshandparts.h": "0b7179dd7f42791e68821aa2f180b90395c5689845170191de4c2bee787f6df2",
     "include/higgshandpartsnative.h": "d5f0a9bc3afcee8248d3e7f300f58bccc060c4cb6a6257c52113f8eaa8d74ef9"
   },
-  "note": "Exact public headers from the local HIGGS proposal. Body attribution carries an opaque public owner label. Revision 001 is unchanged.",
+  "note": "Copied public headers from the recorded HIGGS proposal commit.",
   "contentNormalization": "UTF-8 bytes with CRLF converted to LF before SHA-256"
 }
