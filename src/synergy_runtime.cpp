@@ -38,7 +38,7 @@ struct Resource {
     void* context=nullptr;
     PlanckEndpoint endpoint{}; PlanckActorPolicy actorPolicy{}; PlanckHitPolicy hitPolicy{};
     PlanckGeometryRequest geometry{};PlanckRequestResult result{};bool dispatched=false,nativeCommitted=false;
-    bool compound=false;std::vector<PlanckCapsuleEdit> edits;
+    std::vector<PlanckCapsuleEdit> edits; // Empty for a direct body capsule.
     PlanckDrivePolicy drivePolicy{};std::vector<PlanckDriveWeight> driveWeights;
     uint64_t lastDriveSample=0;
     std::unique_ptr<ContactWatch> contact;
@@ -61,14 +61,14 @@ struct Registry {
     std::map<PlanckToken,Client> clients;
     std::map<uint32_t,ActorState> actors;
     std::map<PlanckToken,std::shared_ptr<Resource>> resources;
-    std::map<uint64_t,PlanckHitSnapshot> hits;
-    std::map<uint64_t,PlanckHitEvidence> evidence;
+    // Monotonically allocated IDs order the complete observation and its evidence together.
+    struct HitRecord { PlanckHitSnapshot snapshot; PlanckHitEvidence evidence; };
+    std::map<uint64_t,HitRecord> hits;
     RuleRank ruleRank=nullptr;
     PoseResolver poseResolver=nullptr;
     void (*scheduleEvents)()=nullptr;
     std::deque<Delivery> pendingEvents;
     bool taskQueued=false;
-    std::deque<uint64_t> hitOrder;
     PlanckToken Next() {
         if (exhausted || serial==(std::numeric_limits<uint64_t>::max)()) { exhausted=true; return 0; }
         return serial++;
@@ -201,8 +201,6 @@ PlanckStatus ReleaseClient(PlanckToken owner) {
         clientsRegistered.store(false, std::memory_order_release);
         r.actors.clear();
         r.hits.clear();
-        r.evidence.clear();
-        r.hitOrder.clear();
     }
     return PLANCK_OK;
 }
@@ -305,15 +303,15 @@ PlanckStatus CopyHit(PlanckToken owner,uint64_t id,PlanckHitSnapshot* output) {
     if(!Sized(output))return PLANCK_INVALID;
     auto& r=State();std::lock_guard guard(r.lock);auto status=ClientStatus(r,owner);if(status)return status;
     auto it=r.hits.find(id);if(it==r.hits.end())return PLANCK_NOT_FOUND;
-    *output=it->second;return PLANCK_OK;
+    *output=it->second.snapshot;return PLANCK_OK;
 }
 PlanckStatus CopyEvidence(PlanckToken owner, uint64_t id, PlanckHitEvidence* output) {
     if (!Sized(output)) return PLANCK_INVALID;
     auto& r=State(); std::lock_guard lock(r.lock);
     if (auto status=ClientStatus(r,owner)) return status;
-    auto it=r.evidence.find(id);
-    if (it==r.evidence.end()) return PLANCK_NOT_FOUND;
-    *output=it->second;
+    auto it=r.hits.find(id);
+    if (it==r.hits.end()) return PLANCK_NOT_FOUND;
+    *output=it->second.evidence;
     return PLANCK_OK;
 }
 PlanckStatus RegisterMeleeRule(PlanckToken owner, const char* id, PlanckMeleeRule callback, void* context, PlanckToken* output) {
@@ -372,6 +370,24 @@ PlanckStatus CopyLatestContact(PlanckToken owner, PlanckToken watch, uint64_t af
     *out = last;
     return PLANCK_OK;
 }
+PlanckStatus QueueGeometry(PlanckToken owner,const PlanckGeometryRequest& request,
+    std::vector<PlanckCapsuleEdit> edits,PlanckToken* output){
+    auto& r=State();std::lock_guard guard(r.lock);auto status=ClientStatus(r,owner);if(status)return status;
+    if(!(edits.empty()?r.geometryAvailable:r.compoundAvailable))return PLANCK_UNSUPPORTED;
+    auto* body=FindBody(r,request.body);if(!body)return PLANCK_STALE;
+    if(edits.empty() ? !body->state.capsule : !body->listIdentity||body->children.empty())return PLANCK_UNSUPPORTED;
+    if(body->state.geometryRevision!=request.expectedRevision)return PLANCK_STALE;
+    if(body->state.geometryRevision==(std::numeric_limits<uint64_t>::max)())return PLANCK_LIMIT;
+    for(const auto& edit:edits)if(edit.index>=body->children.size()||body->children[edit.index].state.shapeKind!=PLANCK_SHAPE_CAPSULE)return PLANCK_UNSUPPORTED;
+    for(const auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&(res->active||res->dispatched||res->nativeCommitted)&&
+        res->result.stage==PLANCK_REQUEST_ACCEPTED&&Same(res->geometry.body,request.body))return PLANCK_CONFLICT;
+    if(r.resources.size()>=MaxResources)return PLANCK_LIMIT;
+    auto id=r.Next();if(!id)return PLANCK_LIMIT;
+    auto res=std::make_shared<Resource>();res->kind=Kind::Geometry;res->owner=owner;res->edits=std::move(edits);
+    res->geometry=request;
+    res->result={sizeof(PlanckRequestResult),PLANCK_REQUEST_ACCEPTED,id,0,r.epoch,PLANCK_OK,0,body->state.geometryRevision};
+    r.resources.emplace(id,res);*output=id;return PLANCK_OK;
+}
 PlanckStatus RequestGeometry(PlanckToken owner,const PlanckGeometryRequest* proposal,PlanckToken* output) {
     if(output)*output=0;
     if(!Sized(proposal)||!output||proposal->reserved||proposal->reserved2||!Valid(proposal->body)||!LocalPoint(proposal->capsuleA)||
@@ -382,19 +398,7 @@ PlanckStatus RequestGeometry(PlanckToken owner,const PlanckGeometryRequest* prop
     const double dz=double(proposal->capsuleA.z)-proposal->capsuleB.z;
     if(dx*dx+dy*dy+dz*dz<=1e-12)return PLANCK_INVALID;
     if(callbackDepth)return PLANCK_REENTRANT;
-    auto& r=State();std::lock_guard guard(r.lock);auto status=ClientStatus(r,owner);if(status)return status;
-    if(!r.geometryAvailable)return PLANCK_UNSUPPORTED;
-    auto* body=FindBody(r,proposal->body);if(!body)return PLANCK_STALE;
-    if(!body->state.capsule)return PLANCK_UNSUPPORTED;
-    if(body->state.geometryRevision!=proposal->expectedRevision)return PLANCK_STALE;
-    if(body->state.geometryRevision==(std::numeric_limits<uint64_t>::max)())return PLANCK_LIMIT;
-    for(const auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&(res->active||res->dispatched||res->nativeCommitted)&&
-        res->result.stage==PLANCK_REQUEST_ACCEPTED&&Same(res->geometry.body,proposal->body))return PLANCK_CONFLICT;
-    if(r.resources.size()>=MaxResources)return PLANCK_LIMIT;
-    auto id=r.Next();if(!id)return PLANCK_LIMIT;
-    auto res=std::make_shared<Resource>();res->kind=Kind::Geometry;res->owner=owner;res->geometry=*proposal;
-    res->result={sizeof(PlanckRequestResult),PLANCK_REQUEST_ACCEPTED,id,0,r.epoch,PLANCK_OK,0,body->state.geometryRevision};
-    r.resources.emplace(id,res);*output=id;return PLANCK_OK;
+    return QueueGeometry(owner,*proposal,{},output);
 }
 PlanckStatus GetResult(PlanckToken owner,PlanckToken id,PlanckRequestResult* output) {
     if(!Sized(output))return PLANCK_INVALID;
@@ -431,21 +435,9 @@ PlanckStatus RequestCompoundGeometry(PlanckToken owner,const PlanckCompoundPropo
         if(dx*dx+dy*dy+dz*dz<=1e-12||std::any_of(copied.begin(),copied.end(),[&](const auto& row){return row.index==edit.index;}))return PLANCK_INVALID;
         copied.push_back(edit);
     }
-    auto& r=State();std::lock_guard guard(r.lock);auto status=ClientStatus(r,owner);if(status)return status;
-    if(!r.compoundAvailable)return PLANCK_UNSUPPORTED;
-    auto* body=FindBody(r,proposal->body);if(!body)return PLANCK_STALE;
-    if(!body->listIdentity||body->children.empty())return PLANCK_UNSUPPORTED;
-    if(body->state.geometryRevision!=proposal->expectedRevision)return PLANCK_STALE;
-    if(body->state.geometryRevision==(std::numeric_limits<uint64_t>::max)())return PLANCK_LIMIT;
-    for(const auto& edit:copied)if(edit.index>=body->children.size()||body->children[edit.index].state.shapeKind!=PLANCK_SHAPE_CAPSULE)return PLANCK_UNSUPPORTED;
-    for(const auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&(res->active||res->dispatched||res->nativeCommitted)&&
-        res->result.stage==PLANCK_REQUEST_ACCEPTED&&Same(res->geometry.body,proposal->body))return PLANCK_CONFLICT;
-    if(r.resources.size()>=MaxResources)return PLANCK_LIMIT;
-    auto id=r.Next();if(!id)return PLANCK_LIMIT;
-    auto res=std::make_shared<Resource>();res->kind=Kind::Geometry;res->owner=owner;res->compound=true;res->edits=std::move(copied);
-    res->geometry.body=proposal->body;res->geometry.expectedRevision=proposal->expectedRevision;
-    res->result={sizeof(PlanckRequestResult),PLANCK_REQUEST_ACCEPTED,id,0,r.epoch,PLANCK_OK,0,body->state.geometryRevision};
-    r.resources.emplace(id,res);*output=id;return PLANCK_OK;
+    PlanckGeometryRequest request{};
+    request.body=proposal->body;request.expectedRevision=proposal->expectedRevision;
+    return QueueGeometry(owner,request,std::move(copied),output);
 }
 PlanckStatus CancelRequest(PlanckToken owner,PlanckToken id) {
     auto& r=State();PlanckActorRef actor{};bool emit=false;
@@ -617,9 +609,9 @@ float ChooseMeleeFactor(PlanckHitSnapshot hit, float total, bool eligible, Planc
 }
 void ConfirmMeleeFields(const PlanckHitEvidence& observation) {
     auto& r=State(); std::lock_guard lock(r.lock);
-    auto it=r.evidence.find(observation.hitId);
-    if(it==r.evidence.end() || it->second.epoch!=observation.epoch) return;
-    auto& record=it->second;
+    auto it=r.hits.find(observation.hitId);
+    if(it==r.hits.end() || it->second.snapshot.epoch!=observation.epoch) return;
+    auto& record=it->second.evidence;
     record.facts|=observation.facts;
     record.populatedTotal=observation.populatedTotal; record.appliedFactor=observation.appliedFactor;
     std::memcpy(record.selectedRule,observation.selectedRule,sizeof(record.selectedRule));
@@ -729,10 +721,14 @@ uint64_t CaptureHitEpoch() {
     std::lock_guard lock(r.lock);
     return r.epoch;
 }
-bool IsHitEpochCurrent(uint64_t epoch) {
-    auto& r = State();
-    std::lock_guard lock(r.lock);
-    return !r.suspended && epoch == r.epoch;
+bool PrepareHitForHandler(const PlanckHitSnapshot& hit,bool contactNodeCurrent) {
+    auto& r=State();std::lock_guard lock(r.lock);
+    if(r.suspended||hit.epoch!=r.epoch||(hit.target.actorGeneration&&!CurrentActor(r,hit.target)))return false;
+    if(!hit.hitId)return true; // Retention was full; actor policies are still effective.
+    auto record=r.hits.find(hit.hitId);
+    if(record==r.hits.end()||record->second.snapshot.outcome!=PLANCK_HIT_PENDING)return false;
+    if(!contactNodeCurrent)record->second.evidence.contactId=0;
+    return true;
 }
 const PlanckDriveAPI* GetDriveAPI(){return &driveAPI;}
 const PlanckCompoundGeometryAPI* GetCompoundGeometryAPI(){return &compoundAPI;}
@@ -806,76 +802,25 @@ void SetGeometryExecutorAvailable(bool available){
     // Installed during plugin startup before clients discover the table.
     if(available)api.capabilities|=PLANCK_CAP_CAPSULE_GEOMETRY;else api.capabilities&=~uint64_t(PLANCK_CAP_CAPSULE_GEOMETRY);
 }
-void ProcessActorGeometry(uint32_t handle,uintptr_t model,const std::vector<BodySample>& live,
-    NativeGeometryExecutor execute,void* context,DeferredEvents* deferred){
-    if(!execute)return;
-    auto& r=State();std::lock_guard nativeGuard(r.nativeGate);std::vector<PlanckToken> pending;
-    {
-        std::lock_guard guard(r.lock);
-        for(auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&!res->compound&&(res->active||res->nativeCommitted)&&!res->dispatched&&
-            res->result.stage==PLANCK_REQUEST_ACCEPTED&&res->geometry.body.actor.handle==handle)pending.push_back(id);
-    }
-    DeferredEvents events;
-    for(auto id:pending){
-        std::shared_ptr<Resource> res;BodySample copied{};PlanckStatus status=PLANCK_OK;
-        {
-            std::lock_guard guard(r.lock);auto entry=r.resources.find(id);
-            if(entry==r.resources.end())continue;res=entry->second;
-            if((!res->active&&!res->nativeCommitted)||res->result.stage!=PLANCK_REQUEST_ACCEPTED||res->dispatched)continue;
-            auto* body=FindBody(r,res->geometry.body);auto actor=r.actors.find(handle);
-            if(!body||actor==r.actors.end()||actor->second.model!=model||res->geometry.body.index>=live.size())status=PLANCK_STALE;
-            else{
-                copied=live[res->geometry.body.index];
-                if(copied.identity!=body->identity||copied.lineage!=body->lineage||
-                    (body->state.geometryRevision!=res->geometry.expectedRevision&&
-                     !(res->nativeCommitted&&body->state.geometryRevision==res->geometry.expectedRevision+1))||!copied.state.capsule||
-                    (!res->nativeCommitted&&(copied.state.capsuleRadius!=body->state.capsuleRadius||
-                    std::memcmp(&copied.state.capsuleA,&body->state.capsuleA,sizeof(PlanckVec3))||
-                    std::memcmp(&copied.state.capsuleB,&body->state.capsuleB,sizeof(PlanckVec3)))))status=PLANCK_STALE;
-            }
-            res->dispatched=true;++res->inFlight;
-        }
-        if(status==PLANCK_OK){try{status=execute(id,copied,res->geometry,context);}catch(...){status=PLANCK_LIMIT;}}
-        {
-            std::lock_guard guard(r.lock);res->dispatched=false;--res->inFlight;
-            if(res->result.stage!=PLANCK_REQUEST_ACCEPTED)continue;
-            auto* body=FindBody(r,res->geometry.body);
-            if(!body||(body->state.geometryRevision!=res->geometry.expectedRevision&&
-                !(res->nativeCommitted&&body->state.geometryRevision==res->geometry.expectedRevision+1)))status=PLANCK_STALE;
-            if(status==NativeGeometryPending){res->nativeCommitted=true;continue;}
-            if(status==PLANCK_BUSY)continue; // Safe phase unavailable; nothing was applied.
-            res->nativeCommitted=false;
-            res->active=false;res->result.status=status;
-            if(status==PLANCK_OK){
-                body->state.capsuleA=res->geometry.capsuleA;body->state.capsuleB=res->geometry.capsuleB;
-                body->state.capsuleRadius=res->geometry.radius;
-                body->rootShape=0; // The next native capture identifies the installed root.
-                if(body->state.geometryRevision==res->geometry.expectedRevision)++body->state.geometryRevision;
-                auto& actor=r.actors.at(handle);const auto sample=++r.sample;actor.state.sample=sample;
-                for(auto& b:actor.bodies)b.state.sample=sample;
-                res->result.stage=PLANCK_REQUEST_COMPLETED;res->result.geometryRevision=body->state.geometryRevision;
-                events.push_back({PLANCK_ACTOR_CHANGED,0,res->geometry.body.actor,PLANCK_PHASE_MAIN});
-            }else res->result.stage=PLANCK_REQUEST_REJECTED;
-            events.push_back({PLANCK_REQUEST_RESULT,id,res->geometry.body.actor,PLANCK_PHASE_MAIN});
-        }
-    }
-    if(deferred)deferred->insert(deferred->end(),events.begin(),events.end());else DispatchEvents(events);
-}
 void SetCompoundExecutorAvailable(bool available){
     auto& r=State();std::lock_guard guard(r.lock);r.compoundAvailable=available;
     compoundAPI.capabilities=PLANCK_COMPOUND_COPY|(available?uint64_t(PLANCK_COMPOUND_APPLY):0);
 }
-void ProcessActorCompoundGeometry(uint32_t handle,uintptr_t model,const std::vector<BodySample>& live,
-    NativeCompoundExecutor execute,void* context,DeferredEvents* deferred){
+static bool MatchesRequestRevision(const Resource& request,const BodySample& body){
+    const auto expected=request.geometry.expectedRevision;
+    return body.state.geometryRevision==expected || (request.nativeCommitted && body.state.geometryRevision==expected+1);
+}
+void ProcessActorGeometry(uint32_t handle,uintptr_t model,const std::vector<BodySample>& live,
+    NativeGeometryExecutor execute,void* context,DeferredEvents* deferred){
     if(!execute)return;
     auto& r=State();std::lock_guard nativeGuard(r.nativeGate);std::vector<PlanckToken> pending;DeferredEvents events;
     {
         std::lock_guard guard(r.lock);
-        for(auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&res->compound&&(res->active||res->nativeCommitted)&&
+        for(auto& [id,res]:r.resources)if(res->kind==Kind::Geometry&&(res->active||res->nativeCommitted)&&
             !res->dispatched&&res->result.stage==PLANCK_REQUEST_ACCEPTED&&res->geometry.body.actor.handle==handle)pending.push_back(id);
     }
     for(auto id:pending){
-        std::shared_ptr<Resource> res;BodySample copied{},applied{};PlanckStatus status=PLANCK_OK;PlanckCompoundProposal proposal{};
+        std::shared_ptr<Resource> res;BodySample copied{},applied{};PlanckStatus status=PLANCK_OK;
         {
             std::lock_guard guard(r.lock);auto entry=r.resources.find(id);if(entry==r.resources.end())continue;res=entry->second;
             if((!res->active&&!res->nativeCommitted)||res->dispatched||res->result.stage!=PLANCK_REQUEST_ACCEPTED)continue;
@@ -883,24 +828,24 @@ void ProcessActorCompoundGeometry(uint32_t handle,uintptr_t model,const std::vec
             if(!body||actor==r.actors.end()||actor->second.model!=model||res->geometry.body.index>=live.size())status=PLANCK_STALE;
             else{
                 copied=live[res->geometry.body.index];
-                if(copied.identity!=body->identity||copied.lineage!=body->lineage||!copied.listIdentity||
-                    (body->state.geometryRevision!=res->geometry.expectedRevision&&
-                    !(res->nativeCommitted&&body->state.geometryRevision==res->geometry.expectedRevision+1))||
-                    (!res->nativeCommitted&&!SameChildren(copied,*body)))status=PLANCK_STALE;
+                const bool supported=!res->edits.empty() ? copied.listIdentity!=0 : copied.state.capsule!=0;
+                if(copied.identity!=body->identity||copied.lineage!=body->lineage||!supported||
+                    !MatchesRequestRevision(*res,*body)||(!res->nativeCommitted&&!SameGeometry(copied,*body)))status=PLANCK_STALE;
             }
-            proposal={sizeof(proposal),static_cast<uint32_t>(res->edits.size()),res->geometry.body,res->geometry.expectedRevision,0};
             res->dispatched=true;++res->inFlight;
         }
-        if(status==PLANCK_OK){try{status=execute(id,copied,proposal,res->edits,context,&applied);}catch(...){status=PLANCK_LIMIT;}}
+        if(status==PLANCK_OK){
+            try {status=execute(id,copied,res->geometry,res->edits,context,applied);}
+            catch(...){status=PLANCK_LIMIT;}
+        }
         {
             std::lock_guard guard(r.lock);res->dispatched=false;--res->inFlight;
             if(res->result.stage!=PLANCK_REQUEST_ACCEPTED)continue;
             auto* body=FindBody(r,res->geometry.body);
-            if(!body||(body->state.geometryRevision!=res->geometry.expectedRevision&&
-                !(res->nativeCommitted&&body->state.geometryRevision==res->geometry.expectedRevision+1)))status=PLANCK_STALE;
+            if(!body||!MatchesRequestRevision(*res,*body))status=PLANCK_STALE;
             if(status==NativeGeometryPending){res->nativeCommitted=true;continue;}
             if(status==PLANCK_BUSY)continue;
-            if(status==PLANCK_OK){
+            if(status==PLANCK_OK&&!res->edits.empty()){
                 if(applied.identity!=copied.identity||applied.lineage!=copied.lineage||!applied.listIdentity||
                     applied.children.size()!=copied.children.size()||applied.children.empty()||applied.children.size()>256)status=PLANCK_STALE;
                 for(const auto& edit:res->edits)if(status==PLANCK_OK){
@@ -915,7 +860,12 @@ void ProcessActorCompoundGeometry(uint32_t handle,uintptr_t model,const std::vec
             }
             res->nativeCommitted=false;res->active=false;res->result.status=status;
             if(status==PLANCK_OK){
-                body->rootShape=applied.rootShape;body->listIdentity=applied.listIdentity;body->children=std::move(applied.children);
+                if(!res->edits.empty()){
+                    body->rootShape=applied.rootShape;body->listIdentity=applied.listIdentity;body->children=std::move(applied.children);
+                } else{
+                    body->state.capsuleA=res->geometry.capsuleA;body->state.capsuleB=res->geometry.capsuleB;
+                    body->state.capsuleRadius=res->geometry.radius;body->rootShape=0; // Next capture identifies the new root.
+                }
                 if(body->state.geometryRevision==res->geometry.expectedRevision)++body->state.geometryRevision;
                 auto& actor=r.actors.at(handle);const auto sample=++r.sample;actor.state.sample=sample;
                 for(auto& row:actor.bodies)row.state.sample=sample;
@@ -1028,7 +978,7 @@ void Reset(){
                 cancelled.emplace_back(id,res->geometry.body.actor);
             }
         }
-        r.actors.clear();r.hits.clear();r.evidence.clear();r.hitOrder.clear();
+        r.actors.clear();r.hits.clear();
     }
     for(auto [id,actor]:endpoints)Emit(PLANCK_ENDPOINT_INVALIDATED,id,actor,PLANCK_PHASE_LIFECYCLE);
     for(auto [id,actor]:cancelled)Emit(PLANCK_REQUEST_RESULT,id,actor,PLANCK_PHASE_LIFECYCLE);
@@ -1060,19 +1010,16 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
         }
         // Do not evict an in-flight commitment; nested engine hits are bounded.
         if(r.hits.size()>=MaxHits){
-            auto victim=std::find_if(r.hitOrder.begin(),r.hitOrder.end(),[&](auto id){return r.hits.at(id).outcome!=PLANCK_HIT_PENDING;});
-            if (victim == r.hitOrder.end()) {
+            auto victim=std::find_if(r.hits.begin(),r.hits.end(),[](const auto& record){return record.second.snapshot.outcome!=PLANCK_HIT_PENDING;});
+            if (victim == r.hits.end()) {
                 hit.hitId = 0; // Observational history is full. Still evaluate policies.
             } else {
-                r.hits.erase(*victim);
-                r.evidence.erase(*victim);
-                r.hitOrder.erase(victim);
+                r.hits.erase(victim);
             }
         }
         if (hit.hitId) {
-            r.hits.emplace(hit.hitId,hit);
-            r.evidence.emplace(hit.hitId,PlanckHitEvidence{sizeof(PlanckHitEvidence),0,hit.hitId,r.epoch,contact.epoch==r.epoch?contact.id:0,-1.f,1.f,{}});
-            r.hitOrder.push_back(hit.hitId);
+            r.hits.emplace(hit.hitId,Registry::HitRecord{hit, {sizeof(PlanckHitEvidence),0,hit.hitId,r.epoch,
+                contact.epoch==r.epoch?contact.id:0,-1.f,1.f,{}}});
         }
     }
     if (hit.hitId) Emit(PLANCK_HIT_CANDIDATE,hit.hitId,hit.target,PLANCK_PHASE_HIT);
@@ -1094,18 +1041,20 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
     {
         std::lock_guard guard(r.lock);
         if(r.epoch!=hit.epoch||(hit.target.actorGeneration&&!CurrentActor(r,hit.target))||(hit.hitId&&!r.hits.contains(hit.hitId))){
-            hit.outcome=PLANCK_HIT_CANCELLED;
+            hit.outcome=denied ? PLANCK_HIT_DENIED : PLANCK_HIT_CANCELLED;
+            hit.damageScale=1.f; // The old scope can no longer authorize a numeric edit.
             // Target removal can occur during a policy callback. Retire the
             // stored pending snapshot too, even when the caller returns early.
             // Reset may already have evicted it; never recreate that old epoch.
             auto stored=r.hits.find(hit.hitId);
-            if(stored!=r.hits.end()&&stored->second.outcome==PLANCK_HIT_PENDING){stored->second=hit;terminal=true;}
+            if(stored!=r.hits.end()&&stored->second.snapshot.outcome==PLANCK_HIT_PENDING){stored->second.snapshot=hit;terminal=true;}
         } else {
             // Pending until FinishHit: observers cannot turn this into a commitment.
             hit.outcome=denied?PLANCK_HIT_DENIED:PLANCK_HIT_PENDING;
             if (hit.hitId) {
-                r.hits[hit.hitId]=hit;
-                if (!denied) r.evidence.at(hit.hitId).facts|=PLANCK_ADMITTED;
+                auto& record=r.hits.at(hit.hitId);
+                record.snapshot=hit;
+                if (!denied) record.evidence.facts|=PLANCK_ADMITTED;
                 terminal=denied;
             }
         }
@@ -1115,9 +1064,9 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
 }
 void FinishHit(uint64_t id,bool committed){
     if(!id)return;auto& r=State();PlanckActorRef actor{};
-    {std::lock_guard guard(r.lock);auto it=r.hits.find(id);if(it==r.hits.end()||it->second.outcome!=PLANCK_HIT_PENDING)return;
-        it->second.outcome=committed?PLANCK_HIT_ALLOWED:PLANCK_HIT_CANCELLED;actor=it->second.target;
-        if (committed) r.evidence.at(id).facts|=PLANCK_HANDLER_INVOKED;}
+    {std::lock_guard guard(r.lock);auto it=r.hits.find(id);if(it==r.hits.end()||it->second.snapshot.outcome!=PLANCK_HIT_PENDING)return;
+        it->second.snapshot.outcome=committed?PLANCK_HIT_ALLOWED:PLANCK_HIT_CANCELLED;actor=it->second.snapshot.target;
+        if (committed) it->second.evidence.facts|=PLANCK_HANDLER_INVOKED;}
     Emit(PLANCK_HIT_COMMITTED,id,actor,PLANCK_PHASE_HIT);
 }
 }

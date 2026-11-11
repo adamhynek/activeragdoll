@@ -48,18 +48,14 @@ namespace PlanckSynergy {
     // freshly resolves the actor/body, then calls VisitResolvedEndpoint.
     void InstallNativeEndpointResolver(NativeEndpointResolver resolver);
     using NativeGeometryExecutor = PlanckStatus(*)(PlanckToken requestId,const BodySample&,
-        const PlanckGeometryRequest&,void*);
+        const PlanckGeometryRequest&,const std::vector<PlanckCapsuleEdit>& edits,void*,BodySample& applied);
     constexpr PlanckStatus NativeGeometryPending=0x80000001u;
+    void SetGeometryExecutorAvailable(bool available);
+    void SetCompoundExecutorAvailable(bool available);
     // Capture/publication, then this pass, occur under one graph -> world write
     // acquisition. Only the freshly captured sample is given to the executor.
-    void ProcessActorGeometry(uint32_t handle,uintptr_t modelIdentity,
-        const std::vector<BodySample>& liveBodies,NativeGeometryExecutor,void*,DeferredEvents*);
-    void SetGeometryExecutorAvailable(bool available);
-    using NativeCompoundExecutor=PlanckStatus(*)(PlanckToken,const BodySample&,
-        const PlanckCompoundProposal&,const std::vector<PlanckCapsuleEdit>&,void*,BodySample* applied);
-    void SetCompoundExecutorAvailable(bool available);
-    void ProcessActorCompoundGeometry(uint32_t handle,uintptr_t modelIdentity,
-        const std::vector<BodySample>& liveBodies,NativeCompoundExecutor,void*,DeferredEvents*);
+    void ProcessActorGeometry(uint32_t handle,uintptr_t modelIdentity, const std::vector<BodySample>& liveBodies,
+        NativeGeometryExecutor,void*,DeferredEvents*);
     PlanckStatus VisitResolvedEndpoint(PlanckToken client,PlanckToken lease,
         uintptr_t modelIdentity,uintptr_t bodyIdentity,uintptr_t lineage,
         const PlanckNativeEndpoint&,PlanckEndpointVisitor,void*);
@@ -74,7 +70,7 @@ namespace PlanckSynergy {
     void InvalidateBody(uintptr_t identity);
     bool HasClients();
     uint64_t CaptureHitEpoch();
-    bool IsHitEpochCurrent(uint64_t epoch);
+    bool PrepareHitForHandler(const PlanckHitSnapshot&,bool contactNodeCurrent);
     void Reset();
     void SetSuspended(bool suspended);
     PlanckHitSnapshot BeginHit(uint32_t kind, uint32_t target, uint32_t source,

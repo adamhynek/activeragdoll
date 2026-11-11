@@ -1,5 +1,5 @@
 #pragma once
-#include "higgs_contracts/higgsowncontactnative.h"
+#include "higgs_contracts/higgsnativeinterop.h"
 #include <atomic>
 namespace PlanckSynergy {
 using OwnContactObserver=HIGGS_HandStatus(HIGGS_HAND_CALL*)(const HIGGS_NativeOwnContact*,uint64_t*);

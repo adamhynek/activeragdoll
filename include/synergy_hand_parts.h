@@ -1,5 +1,5 @@
 #pragma once
-#include "higgs_contracts/higgshandpartsnative.h"
+#include "higgs_contracts/higgsnativeinterop.h"
 #include <atomic>
 
 namespace PlanckSynergy {
