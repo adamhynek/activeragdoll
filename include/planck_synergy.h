@@ -24,13 +24,14 @@ enum { PLANCK_OK=0, PLANCK_INVALID=1, PLANCK_STALE=2, PLANCK_NOT_FOUND=3,
 enum { PLANCK_PHASE_MAIN=1, PLANCK_PHASE_PRE_PHYSICS=2, PLANCK_PHASE_HIT=3,
     PLANCK_PHASE_LIFECYCLE=4 };
 enum { PLANCK_ACTOR_CHANGED=1, PLANCK_ENDPOINT_INVALIDATED=2, PLANCK_HIT_CANDIDATE=4,
-    PLANCK_HIT_FINALIZED=8, PLANCK_HIT_COMMITTED=PLANCK_HIT_FINALIZED, PLANCK_REQUEST_RESULT=16, PLANCK_RESET=32 };
+    PLANCK_HIT_FINALIZED=8, PLANCK_HIT_COMMITTED=PLANCK_HIT_FINALIZED, PLANCK_REQUEST_RESULT=16, PLANCK_RESET=32,
+    PLANCK_EVENT_GAP=256 }; /* Deferred observations overflowed; query live state again. */
 enum { PLANCK_CAP_ACTORS=1, PLANCK_CAP_ENDPOINTS=2, PLANCK_CAP_HIT_POLICY=4,
     PLANCK_CAP_ACTOR_POLICY=8, PLANCK_CAP_CAPSULE_GEOMETRY=16, PLANCK_CAP_SAMPLE_TIME=32 };
 enum { PLANCK_HIT_MELEE=1, PLANCK_HIT_CLUTTER=2 };
 enum { PLANCK_HIT_PENDING=0, PLANCK_HIT_ALLOWED=1, PLANCK_HIT_DENIED=2,
     PLANCK_HIT_CANCELLED=3 };
-enum { PLANCK_POLICY_SUPPRESS_HITS=1 };
+enum { PLANCK_POLICY_SUPPRESS_HITS=1, PLANCK_POLICY_CAP_MELEE_FACTOR=2 };
 enum { PLANCK_REQUEST_ACCEPTED=0, PLANCK_REQUEST_COMPLETED=1,
     PLANCK_REQUEST_REJECTED=2, PLANCK_REQUEST_CANCELLED=3 };
 typedef struct PlanckVec3 { float x,y,z; } PlanckVec3;
@@ -66,7 +67,8 @@ typedef struct PlanckEndpoint {
 } PlanckEndpoint;
 typedef struct PlanckActorPolicy {
     uint32_t size, flags; PlanckActorRef actor;
-    /* Commutative restrictions: deny wins, smallest damage scale wins [0,1]. */
+    /* Clutter takes the smallest factor in [0,1]. Request 7 also honors
+     * CAP_MELEE_FACTOR on eligible melee after choosing the numeric rule. */
     float damageScale; uint32_t hitKinds;
 } PlanckActorPolicy;
 typedef struct PlanckHitSnapshot {

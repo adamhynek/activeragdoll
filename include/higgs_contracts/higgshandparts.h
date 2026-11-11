@@ -1,5 +1,6 @@
 #ifndef HIGGS_HAND_PARTS_H
 #define HIGGS_HAND_PARTS_H
+#define HIGGS_HAND_PARTS_ABI_VERSION 2u
 #include "higgshandapi.h"
 #ifdef __cplusplus
 extern "C" {

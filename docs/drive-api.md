@@ -26,7 +26,7 @@ This API does not supply arbitrary pose-track edits, joint-pivot targets, contro
 
 `PLANCK_DRIVE_OBSERVED` uses the existing removable event mechanism. Its `subject` is the sample identifier and phase is `PLANCK_PHASE_DRIVE`. An observer should copy the snapshot and compare that sample identifier before using it. Ordinary pose publication preserves the last drive observation; the stored frame/tick distinguishes a previous observation from a current one. Reset clears it. An outer call with no usable inner controller reports that absence instead of inventing successful actuation.
 
-The existing engine drive already owns its graph/world phase. Observers run after the provider registry/lifecycle locks are released, but engine ownership may still be held by the caller. They receive copied data only: no engine mutation, waiting or graph/world acquisition. As with other provider events, new registrations or policy requests from inside a callback return `REENTRANT`; queue them for the next permitted maintenance boundary. Removal and client teardown use the existing nonblocking callback drainage contract.
+The engine drive owns its graph/world phase. PLANCK sends passive observations to a subsequent SKSE main task. Each copied event retains the originating drive phase and thread. A subscription gap requires a fresh drive snapshot. Schedule new registrations and policy requests at the next maintenance boundary. Removal and client teardown use the nonblocking callback drainage contract.
 
 ## Verification
 

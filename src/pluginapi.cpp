@@ -28,6 +28,8 @@ void *GetApi(unsigned int revisionNumber) {
     case 3: return const_cast<PlanckPhysicalInteropAPI*>(PlanckSynergy::GetPhysicalInteropAPI());
     case 4: return const_cast<PlanckDriveAPI*>(PlanckSynergy::GetDriveAPI());
     case 5: return const_cast<PlanckCompoundGeometryAPI*>(PlanckSynergy::GetCompoundGeometryAPI());
+    case 6: return const_cast<PlanckContactsAPI*>(PlanckSynergy::GetContactsAPI());
+    case 7: return const_cast<PlanckHitApplicationAPI*>(PlanckSynergy::GetHitApplicationAPI());
     }
     return nullptr;
 }

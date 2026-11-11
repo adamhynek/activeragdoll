@@ -9,7 +9,7 @@ namespace PlanckSynergy {
     inline std::atomic<HandPartResolver> handPartResolver{nullptr};
 
     inline bool InstallHandPartResolver(const HIGGS_HandPartsNativeInterface& api){
-        if(api.structSize<sizeof(api)||api.abiVersion!=1||!api.ResolveBody)return false;
+        if(api.structSize<sizeof(api)||api.abiVersion!=HIGGS_HAND_PARTS_NATIVE_ABI_VERSION||!api.ResolveBody)return false;
         // A valid early table can have capabilities zero until HIGGS's first
         // native maintenance. ResolveBody then returns NOT_READY; retry on use.
         handPartResolver.store(api.ResolveBody,std::memory_order_release);return true;

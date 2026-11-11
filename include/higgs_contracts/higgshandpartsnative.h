@@ -1,5 +1,6 @@
 #ifndef HIGGS_HAND_PARTS_NATIVE_H
 #define HIGGS_HAND_PARTS_NATIVE_H
+#define HIGGS_HAND_PARTS_NATIVE_ABI_VERSION 2u
 #include "higgshandparts.h"
 #ifdef __cplusplus
 extern "C" {
@@ -21,7 +22,7 @@ typedef struct HIGGS_HandPartsNativeInterface {
    prepared disabled body can have appliedRevision0. Never cache, deserialize or
    manufacture nativeBody keys. Call only while the borrowed object is valid.
    Portable/early builds advertise capability0 and return NOT_READY; retry after
-   native maintenance installs the actual resolver. Exact v1 table. */
+   native maintenance installs the actual resolver. Exact v2 table. */
 typedef HIGGS_HandStatus(HIGGS_HAND_CALL *HIGGS_QueryHandPartsNativeInterfaceFn)(uint32_t,uint32_t,HIGGS_HandPartsNativeInterface*);
 HIGGS_HandStatus HIGGS_HAND_CALL HIGGS_QueryHandPartsNativeInterface(uint32_t,uint32_t,HIGGS_HandPartsNativeInterface*);
 #ifdef __cplusplus

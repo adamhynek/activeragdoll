@@ -82,6 +82,7 @@ void ForwardOwnItemCosmeticContact(const hkpContactPointEvent& event,bool respon
 void PublishSynergyActor(Actor* actor);
 PlanckStatus ResolveSynergyEndpoint(PlanckToken,PlanckToken,const PlanckEndpoint&,PlanckEndpointVisitor,void*);
 void RetireSynergyGeometry(uintptr_t);
+PlanckSynergy::ContactOrigin CapturePotentialContact(const hkpContactPointEvent&) noexcept;
 
 
 // SKSE globals
@@ -348,7 +349,8 @@ namespace {
         void Dispose() override {} // Process-lifetime, function-local task.
     };
 
-    uint32_t CopyBodyPose(uint32_t actorHandle, const char* boneName, PlanckBodyPose* out) noexcept
+    struct NamedBodyLookup { PlanckToken client; uint64_t expected; PlanckBodyRef body{}; PlanckStatus status=PLANCK_STALE; };
+    uint32_t ReadNamedBody(uint32_t actorHandle, const char* boneName, PlanckBodyPose* out, NamedBodyLookup* lookup) noexcept
     {
         if (!out || out->size < sizeof(*out)) return PLANCK_POSE_INVALID;
         *out = {sizeof(*out)};
@@ -388,6 +390,11 @@ namespace {
                     found = true;
                     result.generation = BodyGeneration(body, actorHandle, actor->GetNiNode(), active);
                     if (!result.generation) return PLANCK_POSE_UNAVAILABLE;
+                    if (lookup && lookup->expected==result.generation) {
+                        lookup->status=PlanckSynergy::MatchPoseBody(lookup->client,actorHandle,
+                            reinterpret_cast<uintptr_t>(actor->GetNiNode()),reinterpret_cast<uintptr_t>(ragdoll),
+                            reinterpret_cast<uintptr_t>(body),reinterpret_cast<uintptr_t>(body->getWorld()),&lookup->body);
+                    }
                     result.frame = static_cast<uint32_t>(*g_currentFrameCounter);
                     using namespace std::chrono;
                     result.observedAtNs = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
@@ -402,6 +409,9 @@ namespace {
             return PLANCK_POSE_UNAVAILABLE;
         }
     }
+    uint32_t CopyBodyPose(uint32_t actor,const char* name,PlanckBodyPose* out) noexcept {
+        return ReadNamedBody(actor,name,out,nullptr);
+    }
 }
 
 PlanckActorPoseAPI* GetActorPoseAPI()
@@ -413,6 +423,20 @@ PlanckActorPoseAPI* GetActorPoseAPI()
         return PlanckActorPoseAPI{sizeof(PlanckActorPoseAPI), 2, CopyBodyPose};
     }();
     return &api;
+}
+
+PlanckStatus ResolveNamedPoseBody(PlanckToken client,uint32_t actor,const char* name,uint64_t generation,PlanckBodyRef* out) {
+    if (!GetActorPoseAPI()) return PLANCK_UNSUPPORTED;
+    NamedBodyLookup lookup{client,generation};
+    PlanckBodyPose pose{sizeof(pose)};
+    switch (ReadNamedBody(actor,name,&pose,&lookup)) {
+    case PLANCK_POSE_OK:
+        if (lookup.status==PLANCK_OK) *out=lookup.body;
+        return lookup.status;
+    case PLANCK_POSE_BUSY: return PLANCK_BUSY;
+    case PLANCK_POSE_AMBIGUOUS: return PLANCK_CONFLICT;
+    default: return PLANCK_STALE;
+    }
 }
 
 
@@ -1485,7 +1509,25 @@ SwingHandler g_leftSwingHandler{ true };
 bool g_isInPlanckHit = false;
 bool g_isCurrentHitFatal = false;
 
-bool HitActor(Actor *source, Actor *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash)
+struct MeleeApplicationScope {
+    Actor *source, *target;
+    bool offhand;
+    const PlanckHitSnapshot* hit;
+    MeleeApplicationScope* previous;
+    static thread_local MeleeApplicationScope* current;
+    MeleeApplicationScope(Actor* s, Actor* t, bool hand, const PlanckHitSnapshot* info)
+        : source(s),target(t),offhand(hand),hit(info),previous(current) { current=this; }
+    ~MeleeApplicationScope() { current=previous; }
+    static const PlanckHitSnapshot* Take(Actor* s, Actor* t, bool hand) {
+        if (!current || current->source!=s || current->target!=t || current->offhand!=hand) return nullptr;
+        const auto* result=current->hit;
+        current->hit=nullptr;
+        return result;
+    }
+};
+thread_local MeleeApplicationScope* MeleeApplicationScope::current=nullptr;
+
+bool HitActor(Actor *source, Actor *target, NiAVObject *hitNode, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, bool isLeft, bool isOffhand, bool isPowerAttack, bool isBash, const PlanckHitSnapshot* hit)
 {
     // Handle bow/crossbow/torch/shield bash (set attackstate to kBash)
     TESForm *offhandObj = source->GetEquippedObject(true);
@@ -1533,7 +1575,10 @@ bool HitActor(Actor *source, Actor *target, NiAVObject *hitNode, const NiPoint3 
     g_isCurrentHitFatal = false;
 
     g_isInPlanckHit = true;
-    Actor_HitTarget(source, target, nullptr, isOffhand); // Populates HitData and so relies on attackState/attackData
+    {
+        MeleeApplicationScope application(source,target,isOffhand,hit);
+        Actor_HitTarget(source, target, nullptr, isOffhand); // Populates HitData using attackState/attackData.
+    }
     g_isInPlanckHit = false;
 
     bool isFatal = g_isCurrentHitFatal;
@@ -1753,12 +1798,13 @@ struct DoActorHitTask : TaskDelegate
             uint64_t id = 0;
             ~HitScope() { PlanckSynergy::FinishHit(id, false); }
         } hitScope;
+        PlanckHitSnapshot candidate{};
         if (synergyEpoch) {
             if (hitNode && !DoesRefrHaveNode(hitActor, hitNode)) return;
-            auto candidate = PlanckSynergy::BeginHit(PLANCK_HIT_MELEE, GetOrCreateRefrHandle(hitActor),
+            candidate = PlanckSynergy::BeginHit(PLANCK_HIT_MELEE, GetOrCreateRefrHandle(hitActor),
                 GetOrCreateRefrHandle(player), SynergyVector(hitPosition * *g_havokWorldScale),
                 SynergyVector(hitVelocity * *g_havokWorldScale), -1.f, isLeft ? 1 : 0,
-                *g_currentFrameCounter, g_synergyPhysicsTick.load());
+                *g_currentFrameCounter, g_synergyPhysicsTick.load(), contactId);
             if (candidate.outcome != PLANCK_HIT_PENDING) return;
             hitScope.id = candidate.hitId;
         }
@@ -1790,7 +1836,8 @@ struct DoActorHitTask : TaskDelegate
         *playerLastHitVelocity = hitVelocity;
 
         if (synergyEpoch && (!PlanckSynergy::IsHitEpochCurrent(synergyEpoch) || (hitNode && !DoesRefrHaveNode(hitActor, hitNode)))) return;
-        bool isFatal = HitActor(player, hitActor, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash);
+        bool isFatal = HitActor(player, hitActor, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash,
+            candidate.epoch ? &candidate : nullptr);
         PlanckSynergy::FinishHit(hitScope.id, true);
         hitScope.id = 0;
 
@@ -1820,11 +1867,11 @@ struct DoActorHitTask : TaskDelegate
         }
     }
 
-    DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
-        : hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab), synergyEpoch(PlanckSynergy::CaptureHitEpoch()) {}
+    DoActorHitTask(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab, PlanckSynergy::ContactOrigin contact)
+        : hitActorHandle(actorHandle), hitPosition(hitPosition), hitVelocity(hitVelocity), hitNode(hitNode), impulseMult(impulseMult), isLeft(isLeft), isOffhand(isOffhand), isTwoHanding(isTwoHanding), isStab(isStab), synergyEpoch(PlanckSynergy::CaptureHitEpoch()),contactId(contact) {}
 
-    static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab) {
-        return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+    static DoActorHitTask *Create(UInt32 actorHandle, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity, NiPointer<NiAVObject> hitNode, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab, PlanckSynergy::ContactOrigin contact) {
+        return new DoActorHitTask(actorHandle, hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab, contact);
     }
 
     virtual void Run() {
@@ -1851,6 +1898,7 @@ struct DoActorHitTask : TaskDelegate
     bool isTwoHanding;
     bool isStab;
     uint64_t synergyEpoch;
+    PlanckSynergy::ContactOrigin contactId;
 };
 
 
@@ -2062,7 +2110,7 @@ struct PhysicsListener :
     }
 
     void DoHit(TESObjectREFR *hitRefr, hkpRigidBody *hitRigidBody, hkpRigidBody *hittingRigidBody, const hkpContactPointEvent &evnt, const NiPoint3 &hitPosition, const NiPoint3 &hitVelocity,
-        TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab)
+        TESForm *weapon, float impulseMult, bool isLeft, bool isOffhand, bool isTwoHanding, bool isStab, PlanckSynergy::ContactOrigin contactId)
     {
         PlayerCharacter *player = *g_thePlayer;
         if (hitRefr == player) return;
@@ -2075,7 +2123,7 @@ struct PhysicsListener :
             evnt.m_contactPointProperties->m_flags |= hkpContactPointProperties::CONTACT_IS_DISABLED;
 
             NiPointer<NiAVObject> hitNode = GetNodeFromCollidable(hitRigidBody->getCollidable());
-            g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitActor), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab));
+            g_taskInterface->AddTask(DoActorHitTask::Create(GetOrCreateRefrHandle(hitActor), hitPosition, hitVelocity, hitNode, impulseMult, isLeft, isOffhand, isTwoHanding, isStab, contactId));
         }
         else {
             if (hittingRigidBody->getQualityType() == hkpCollidableQualityType::HK_COLLIDABLE_QUALITY_KEYFRAMED_REPORTING && !IsMoveableEntity(hitRigidBody)) {
@@ -2095,7 +2143,7 @@ struct PhysicsListener :
         }
     }
 
-    void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, const NiPoint3 &hitPos, const NiPoint3 &hitNormal, float minMass, float minSpeed)
+    void ApplyPhysicsDamage(Actor *source, Actor *target, bhkRigidBody *collidingBody, const NiPoint3 &hitPos, const NiPoint3 &hitNormal, float minMass, float minSpeed, PlanckSynergy::ContactOrigin contactId=PlanckSynergy::ContactOrigin())
     {
         bhkCharacterController::CollisionEvent collisionEvent{
             collidingBody,
@@ -2129,7 +2177,7 @@ struct PhysicsListener :
                 auto candidate = PlanckSynergy::BeginHit(PLANCK_HIT_CLUTTER, GetOrCreateRefrHandle(target),
                     source ? GetOrCreateRefrHandle(source) : 0, SynergyVector(hitPos),
                     SynergyVector(HkVectorToNiPoint(collidingBody->hkBody->getLinearVelocity())),
-                    hitData.totalDamage, 2, *g_currentFrameCounter, g_synergyPhysicsTick.load());
+                    hitData.totalDamage, 2, *g_currentFrameCounter, g_synergyPhysicsTick.load(), contactId);
                 if (candidate.outcome != PLANCK_HIT_PENDING || candidate.damageScale == 0.f) {
                     PlanckSynergy::FinishHit(candidate.hitId, false);
                     HitData_dtor(&hitData);
@@ -2176,6 +2224,7 @@ struct PhysicsListener :
 
         hkpRigidBody *rigidBodyA = evnt.m_bodies[0];
         hkpRigidBody *rigidBodyB = evnt.m_bodies[1];
+        const PlanckSynergy::ContactOrigin contactId = PlanckSynergy::HasContactWatches() ? CapturePotentialContact(evnt) : PlanckSynergy::ContactOrigin{};
         PlanckSynergy::HandPartContactScope partContact(reinterpret_cast<uintptr_t>(rigidBodyA),reinterpret_cast<uintptr_t>(rigidBodyB));
 
         UInt32 layerA = GetCollisionLayer(rigidBodyA);
@@ -2262,7 +2311,7 @@ struct PhysicsListener :
                                 Actor *aggressor = g_higgsLingeringRigidBodies.count(collidingRigidBody) ? *g_thePlayer : nullptr;
                                 float minMass = aggressor ? Config::options.collisionDamageMinMassPlayerInflicted : *g_fPhysicsDamage1Mass;
                                 float minSpeed = aggressor ? Config::options.collisionDamageMinSpeedPlayerInflicted : *g_fPhysicsDamageSpeedMin;
-                                ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()), minMass, minSpeed);
+                                ApplyPhysicsDamage(aggressor, actor, collidingRigidBody, HkVectorToNiPoint(evnt.m_contactPoint->getPosition()), HkVectorToNiPoint(evnt.m_contactPoint->getNormal()), minMass, minSpeed, contactId);
                             }
                         }
                     }
@@ -2507,7 +2556,7 @@ struct PhysicsListener :
             }
 
             float impulseMult = isStab ? Config::options.hitStabImpulseMult : (isPunch ? Config::options.hitPunchImpulseMult : Config::options.hitSwingImpulseMult);
-            DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding, isStab);
+            DoHit(hitRefr, hitRigidBody, hittingRigidBody, evnt, hitPosition, hitVelocity, equippedObj, impulseMult, isLeft, isOffhand, isTwoHanding, isStab, contactId);
         }
         else if (hitRefr->formType == kFormType_Character && doHit && disableHit) {
             // Hit is disabled and we hit a character. Disable this contact point but don't disable future ones.
@@ -4428,6 +4477,8 @@ PlanckStatus ApplySynergyCapsule(PlanckToken requestId,const PlanckSynergy::Body
 
 void CaptureSynergyList(PlanckSynergy::BodySample& sample,hkpRigidBody* body)
 {
+    sample.world = reinterpret_cast<uintptr_t>(body->getWorld());
+    sample.rootShape = reinterpret_cast<uintptr_t>(body->getCollidable()->m_shape);
     auto* list=DYNAMIC_CAST(body->getCollidable()->m_shape,hkpShape,hkpListShape);
     if(!list||list->m_childInfo.getSize()<=0||list->m_childInfo.getSize()>256)return;
     sample.listIdentity=reinterpret_cast<uintptr_t>(list);
@@ -4590,6 +4641,44 @@ void PublishSynergyActor(Actor* actor)
     }
     // No client callback runs while our graph/world acquisition is held.
     PlanckSynergy::DispatchEvents(events);
+}
+
+PlanckSynergy::ContactOrigin CapturePotentialContact(const hkpContactPointEvent& event) noexcept {
+    try {
+        auto* first = event.m_bodies[0];
+        auto* second = event.m_bodies[1];
+        if (!event.m_contactPoint || !first || !second || first == second || !first->getWorld() ||
+            first->getWorld() != second->getWorld() || !PlanckSynergy::WatchesContactPair(
+                reinterpret_cast<uintptr_t>(first), reinterpret_cast<uintptr_t>(second))) return {};
+        const auto position = event.m_contactPoint->getPosition();
+        const auto normal = event.m_contactPoint->getNormal();
+        PlanckSynergy::ContactSide sides[2]{};
+        for (unsigned i = 0; i < 2; ++i) {
+            auto* body = event.m_bodies[i];
+            auto& side = sides[i];
+            side.geometry.identity = reinterpret_cast<uintptr_t>(body);
+            if (auto* capsule = DYNAMIC_CAST(body->getCollidable()->m_shape,hkpShape,hkpCapsuleShape)) {
+                side.geometry.state.capsule = 1;
+                side.geometry.state.capsuleA = SynergyVector(HkVectorToNiPoint(capsule->getVertex(0)));
+                side.geometry.state.capsuleB = SynergyVector(HkVectorToNiPoint(capsule->getVertex(1)));
+                side.geometry.state.capsuleRadius = capsule->m_radius;
+            }
+            CaptureSynergyList(side.geometry, body);
+            side.shapeKey = UINT32_MAX;
+            // A leaf-to-root key identifies a direct child only on a flat capsule list.
+            if (side.geometry.listIdentity && std::all_of(side.geometry.children.begin(), side.geometry.children.end(),
+                [](const auto& c) { return c.state.shapeKind == PLANCK_SHAPE_CAPSULE; })) {
+                if (auto* keys = event.getShapeKeys(i)) side.shapeKey = keys[0];
+            }
+            if (NiPointer<TESObjectREFR> ref = GetRefFromCollidable(body->getCollidable())) {
+                side.reference = ref->formID;
+            }
+            side.velocity = SynergyVector(hkpRigidBody_getPointVelocity(body, position));
+        }
+        return PlanckSynergy::ObserveContact(reinterpret_cast<uintptr_t>(first->getWorld()), sides,
+            SynergyVector(HkVectorToNiPoint(position)), SynergyVector(HkVectorToNiPoint(normal)),
+            *g_currentFrameCounter, g_synergyPhysicsTick.load(), PlanckSynergy::MonotonicNowNs());
+    } catch (...) { return {}; } // Optional telemetry cannot reject original physics processing.
 }
 
 PlanckStatus ResolveSynergyEndpoint(PlanckToken owner,PlanckToken lease,const PlanckEndpoint& endpoint,
@@ -6471,8 +6560,33 @@ bool IsPhysicallyBlocked(Actor *attacker)
 }
 
 _HitData_populate Character_HitTarget_HitData_populate_Original = 0;
+void ApplyPopulatedMeleeFields(const PlanckHitSnapshot& hit, HitData& fields) {
+    using Flag=HitData::Flag;
+    constexpr auto bits=[](Flag flag){return static_cast<uint32_t>(flag);};
+    constexpr uint32_t outcomeFlags = bits(Flag::kCritical) | bits(Flag::kCriticalOnDeath) | bits(Flag::kFatal) |
+        bits(Flag::kDismemberLimb) | bits(Flag::kExplodeLimb) | bits(Flag::kCrippleLimb) | bits(Flag::kDisarm) |
+        bits(Flag::kPredictDamage) | bits(Flag::kBash) | bits(Flag::kTimedBash) | bits(Flag::kRicochet) | bits(Flag::kExplosion);
+    PlanckHitEvidence result{};
+    const bool numeric=std::isfinite(fields.healthDamage) && std::isfinite(fields.physicalDamage) &&
+        std::isfinite(fields.targetedLimbDamage) && std::isfinite(fields.resistedPhysicalDamage) &&
+        std::isfinite(fields.resistedTypedDamage) && std::isfinite(fields.reflectedDamage);
+    const float factor=PlanckSynergy::ChooseMeleeFactor(hit,fields.totalDamage,numeric && (fields.flags & outcomeFlags)==0,result);
+    if (factor!=1.f) {
+        fields.totalDamage*=factor;
+        fields.healthDamage*=factor;
+        fields.physicalDamage*=factor;
+        fields.targetedLimbDamage*=factor;
+        fields.resistedPhysicalDamage*=factor;
+        fields.resistedTypedDamage*=factor;
+        fields.reflectedDamage*=factor;
+        result.facts|=PLANCK_SCALE_APPLIED;
+    }
+    PlanckSynergy::ConfirmMeleeFields(result);
+}
 void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr, Actor *targetRefr, InventoryEntryData *weapon, bool isOffhand)
 {
+    // Claim before the original call: a nested population can never take its parent's hit.
+    const auto* application=MeleeApplicationScope::Take(srcRefr,targetRefr,isOffhand);
     if (targetRefr == *g_thePlayer) {
         // TODO: This works, but the game still does the cone check so I think it's possible it doesn't work if we aren't looking at the enemy?
 
@@ -6494,6 +6608,7 @@ void Character_HitTarget_HitData_Populate_Hook(HitData *hitData, Actor *srcRefr,
         Character_HitTarget_HitData_populate_Original(hitData, srcRefr, targetRefr, weapon, isOffhand);
     }
 
+    if (application) ApplyPopulatedMeleeFields(*application,*hitData);
     if (g_isInPlanckHit) {
         // Set an unused bit to signify this hit will have additional info from planck
         hitData->flags |= (1 << 30);
@@ -8893,7 +9008,7 @@ extern "C" {
                     if(contactQuery&&contactQuery(1,sizeof(contacts),&contacts)==HIGGS_HAND_OK)PlanckSynergy::InstallOwnContactObserver(contacts);
                     const auto query=reinterpret_cast<HIGGS_QueryHandPartsNativeInterfaceFn>(GetProcAddress(module,"HIGGS_QueryHandPartsNativeInterface"));
                     HIGGS_HandPartsNativeInterface parts{};
-                    if(query&&query(1,sizeof(parts),&parts)==HIGGS_HAND_OK)PlanckSynergy::InstallHandPartResolver(parts);
+                    if(query&&query(HIGGS_HAND_PARTS_NATIVE_ABI_VERSION,sizeof(parts),&parts)==HIGGS_HAND_OK)PlanckSynergy::InstallHandPartResolver(parts);
                 }
                 // Get the HIGGS plugin API
                 HiggsPluginAPI::GetHiggsInterface001(g_pluginHandle, g_messaging);
@@ -8972,6 +9087,10 @@ extern "C" {
     {	// Called by SKSE to load this plugin
         _MESSAGE("PLANCK loaded");
         PlanckSynergy::InstallNativeEndpointResolver(ResolveSynergyEndpoint);
+        PlanckSynergy::InstallPoseResolver(ResolveNamedPoseBody);
+        PlanckSynergy::InstallRuleRank([](const char* id)->int32_t {
+            return static_cast<int32_t>(GetPrivateProfileIntA("MeleeDamagePolicies",id,0,Config::GetConfigPath().c_str()));
+        });
         PlanckSynergy::SetGeometryExecutorAvailable(true);
         PlanckSynergy::SetCompoundExecutorAvailable(true);
 
@@ -8994,6 +9113,15 @@ extern "C" {
             ShowErrorBoxAndLog("[CRITICAL] Could not get SKSE task interface");
             return false;
         }
+        PlanckSynergy::InstallEventScheduler([] {
+            class DeliverEvents final : public TaskDelegate {
+            public:
+                void Run() override { PlanckSynergy::DeliverMainThreadEvents(); }
+                void Dispose() override {}
+            };
+            static DeliverEvents task;
+            g_taskInterface->AddTask(&task);
+        });
 
         g_trampoline = (SKSETrampolineInterface *)skse->QueryInterface(kInterface_Trampoline);
         if (!g_trampoline) {
