@@ -7,9 +7,16 @@ extern "C" {
 #endif
 enum { PLANCK_ADMITTED=1, PLANCK_HANDLER_INVOKED=2, PLANCK_POPULATED_MELEE=4,
     PLANCK_SCALE_APPLIED=8, PLANCK_SCALE_UNAVAILABLE=16, PLANCK_FACTOR_SELECTED=32 };
+/* SCALE_APPLIED has a fixed field set: the matching populated native HitData's
+ * totalDamage, healthDamage, physicalDamage, targetedLimbDamage,
+ * resistedPhysicalDamage, resistedTypedDamage and reflectedDamage were each
+ * multiplied by appliedFactor, once, before the native melee handler. No other
+ * fields are covered. Factor 1 selects a rule without SCALE_APPLIED. This is a
+ * numeric-write receipt, not evidence of handler invocation or health loss. */
 typedef struct PlanckHitEvidence {
     uint32_t size, facts;
-    uint64_t hitId, epoch, contactId; /* zero contactId = causal contact unavailable */
+    uint64_t hitId, epoch, contactId; /* zero contactId = causal contact unavailable;
+        otherwise use request-6 CopyContact on an owned watch of either end. */
     float populatedTotal, appliedFactor; /* Sources: POPULATED_MELEE and FACTOR_SELECTED. */
     char selectedRule[64];
 } PlanckHitEvidence;

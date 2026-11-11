@@ -27,7 +27,8 @@ std::atomic<uint32_t> watchedContacts{0};
 struct ContactWatch {
     PlanckBodyRef body;
     uintptr_t identity;
-    PlanckContactSample last{};
+    uint64_t sequence=0;
+    std::array<PlanckContactSample,PLANCK_CONTACT_HISTORY_CAPACITY> history{};
     ContactWatch(PlanckBodyRef ref, uintptr_t key) : body(ref), identity(key) { ++watchedContacts; }
     ~ContactWatch() { --watchedContacts; }
 };
@@ -364,11 +365,26 @@ PlanckStatus CopyLatestContact(PlanckToken owner, PlanckToken watch, uint64_t af
     if (auto status = ClientStatus(r, owner)) return status;
     auto resource = Owned(r, owner, watch);
     if (!resource || resource->kind != Kind::Contact) return PLANCK_INVALID;
-    if (!resource->contact || !FindBody(r, resource->contact->body)) return PLANCK_STALE;
-    const auto& last = resource->contact->last;
-    if (last.sequence <= after) return PLANCK_NOT_FOUND;
+    if (!resource->active || !resource->contact || !FindBody(r, resource->contact->body)) return PLANCK_STALE;
+    const auto& contact = *resource->contact;
+    if (contact.sequence <= after) return PLANCK_NOT_FOUND;
+    const auto& last = contact.history[(contact.sequence-1)%PLANCK_CONTACT_HISTORY_CAPACITY];
     *out = last;
     return PLANCK_OK;
+}
+PlanckStatus CopyContact(PlanckToken owner, PlanckToken watch, uint64_t epoch, uint64_t id, PlanckContactSample* out) {
+    if (!Sized(out) || !epoch || !id) return PLANCK_INVALID;
+    auto& r = State();
+    std::lock_guard lock(r.lock);
+    if (auto status = ClientStatus(r, owner)) return status;
+    auto resource = Owned(r, owner, watch);
+    if (!resource || resource->kind != Kind::Contact) return PLANCK_INVALID;
+    if (epoch != r.epoch || !resource->active || !resource->contact || !FindBody(r, resource->contact->body)) return PLANCK_STALE;
+    for (const auto& sample : resource->contact->history) if (sample.contactId == id) {
+        *out = sample;
+        return PLANCK_OK;
+    }
+    return PLANCK_NOT_FOUND;
 }
 PlanckStatus QueueGeometry(PlanckToken owner,const PlanckGeometryRequest& request,
     std::vector<PlanckCapsuleEdit> edits,PlanckToken* output){
@@ -639,7 +655,7 @@ PlanckStatus ResolvePoseBody(PlanckToken client,uint32_t actor,const char* bone,
     return resolve?resolve(client,actor,bone,generation,output):PLANCK_UNSUPPORTED;
 }
 const PlanckContactsAPI* GetContactsAPI() {
-    static const PlanckContactsAPI contacts{sizeof(contacts), 1, Boundary<WatchBody>::Call, Boundary<CopyLatestContact>::Call, Boundary<ResolvePoseBody>::Call};
+    static const PlanckContactsAPI contacts{sizeof(contacts), 1, Boundary<WatchBody>::Call, Boundary<CopyLatestContact>::Call, Boundary<ResolvePoseBody>::Call, Boundary<CopyContact>::Call};
     return &contacts;
 }
 bool HasContactWatches() noexcept { return watchedContacts.load(std::memory_order_relaxed) != 0; }
@@ -696,7 +712,7 @@ ContactOrigin ObserveContact(uintptr_t world, const ContactSide (&sides)[2], Pla
     }
     for (const auto& [id,resource]:r.resources) {
         auto* watch=resource->contact.get();
-        if (!resource->active || !watch || watch->last.sequence==UINT64_MAX) continue;
+        if (!resource->active || !watch || watch->sequence==UINT64_MAX) continue;
         const int side=sideOf(*watch);
         if (side<0) continue;
         const auto& current=matches[side];
@@ -707,8 +723,9 @@ ContactOrigin ObserveContact(uintptr_t world, const ContactSide (&sides)[2], Pla
         if (!contactId) contactId=r.Next();
         if (!contactId) return {};
         const PlanckVec3 toward=side ? PlanckVec3{-normal.x,-normal.y,-normal.z} : normal;
-        watch->last={sizeof(PlanckContactSample),other.reference,watch->body,knownOther?opposite.body->state.body:PlanckBodyRef{},
-            watch->last.sequence+1,frame,tick,time,current.revision,current.childKey,knownOther?opposite.childKey:UINT32_MAX,point,toward,
+        auto& sample=watch->history[watch->sequence%PLANCK_CONTACT_HISTORY_CAPACITY];
+        sample={sizeof(PlanckContactSample),other.reference,watch->body,knownOther?opposite.body->state.body:PlanckBodyRef{},
+            ++watch->sequence,frame,tick,time,current.revision,current.childKey,knownOther?opposite.childKey:UINT32_MAX,point,toward,
             sides[side].velocity,other.velocity,contactId,knownOther?opposite.revision:0,PLANCK_PREFILTER_POTENTIAL,0};
     }
     return {r.epoch,contactId};
