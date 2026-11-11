@@ -170,6 +170,7 @@
     <ClCompile Include="src\papyrusapi.cpp" />
     <ClCompile Include="src\planckinterface001.cpp" />
     <ClCompile Include="src\pluginapi.cpp" />
+    <ClCompile Include="src\synergy_runtime.cpp" />
     <ClCompile Include="src\RE\havok.cpp" />
     <ClCompile Include="src\RE\offsets.cpp" />
     <ClCompile Include="src\utils.cpp" />

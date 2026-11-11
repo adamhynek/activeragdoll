@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/Vhodnoylogin/higgs",
+  "baseCommit": "374173095fa72d8005924b2fc6c6d2db381db04d",
+  "workingTreeSnapshot": false,
+  "license": "GPL-3.0",
+  "sourcePaths": {
+    "include/higgshandapi.h": "25edd3851e53314b934c0ada71f193bd32f5ec997c591847714fbd66ff01f726",
+    "include/higgshandparts.h": "c84e10ecf89b038540a64228dc1895686d051cd08f024a184e013e9fa83663b6",
+    "include/higgshandpartsnative.h": "8de2943fc35c45636775c943c37541862dcfae470fa07e9ae86de78595b14e9c"
+  },
+  "note": "Copied public contracts from published HIGGS development; original001 unchanged; no upstream agreement claimed.",
+  "contentNormalization": "UTF-8 bytes with CRLF converted to LF before SHA-256"
+}

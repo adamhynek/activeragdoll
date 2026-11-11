@@ -3,6 +3,10 @@
 #include "config.h"
 #include "pluginapi.h"
 #include "version.h"
+#include "synergy_runtime.h"
+#include "planck_actor_pose.h"
+
+PlanckActorPoseAPI* GetActorPoseAPI();
 
 using namespace PlanckPluginAPI;
 
@@ -18,7 +22,12 @@ PlanckInterface001 g_interface001;
 // Constructs and returns an API of the revision number requested
 void *GetApi(unsigned int revisionNumber) {
     switch (revisionNumber) {
+    case PLANCK_QUERY_ACTOR_POSE: return GetActorPoseAPI();
     case 1:	_MESSAGE("Interface revision 1 requested"); return &g_interface001;
+    case 2: return const_cast<PlanckSynergyAPI*>(PlanckSynergy::GetAPI());
+    case 3: return const_cast<PlanckPhysicalInteropAPI*>(PlanckSynergy::GetPhysicalInteropAPI());
+    case 4: return const_cast<PlanckDriveAPI*>(PlanckSynergy::GetDriveAPI());
+    case 5: return const_cast<PlanckCompoundGeometryAPI*>(PlanckSynergy::GetCompoundGeometryAPI());
     }
     return nullptr;
 }
