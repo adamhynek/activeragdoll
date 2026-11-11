@@ -3,6 +3,9 @@
 #include "config.h"
 #include "pluginapi.h"
 #include "version.h"
+#include "planck_actor_pose.h"
+
+PlanckActorPoseAPI* GetActorPoseAPI();
 
 using namespace PlanckPluginAPI;
 
@@ -18,6 +21,7 @@ PlanckInterface001 g_interface001;
 // Constructs and returns an API of the revision number requested
 void *GetApi(unsigned int revisionNumber) {
     switch (revisionNumber) {
+    case PLANCK_QUERY_ACTOR_POSE: return GetActorPoseAPI();
     case 1:	_MESSAGE("Interface revision 1 requested"); return &g_interface001;
     }
     return nullptr;

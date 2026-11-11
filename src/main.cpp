@@ -1,5 +1,8 @@
 ﻿#include <functional>
 #include <atomic>
+#include <chrono>
+#include <cstring>
+#include "planck_actor_pose.h"
 #include <string>
 #include <regex>
 #include <limits>
@@ -268,6 +271,77 @@ std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driv
 }
 
 // This mainly exists to get ActiveRagdoll data without having to go through ForEachRagdollDriver and acquiring the anim graph manager's updateLock
+namespace {
+    std::atomic<DWORD> poseTaskThread{0};
+
+    class IdentifyPoseTaskThread final : public TaskDelegate {
+    public:
+        void Run() override { poseTaskThread.store(GetCurrentThreadId()); }
+        void Dispose() override {} // Process-lifetime, function-local task.
+    };
+
+    uint32_t CopyBodyPose(uint32_t actorHandle, const char* boneName, PlanckBodyPose* out) noexcept
+    {
+        if (!out) return PLANCK_POSE_INVALID;
+        *out = {};
+        if (!actorHandle || !boneName || !boneName[0]) return PLANCK_POSE_INVALID;
+        if (poseTaskThread.load() != GetCurrentThreadId()) return PLANCK_POSE_BUSY;
+        try {
+            NiPointer<TESObjectREFR> reference;
+            UInt32 handle = actorHandle;
+            if (!LookupREFRByHandle(handle, reference) || !reference) return PLANCK_POSE_UNAVAILABLE;
+            Actor* actor = DYNAMIC_CAST(reference, TESObjectREFR, Actor);
+            if (!actor || !actor->parentCell) return PLANCK_POSE_UNAVAILABLE;
+            NiPointer<bhkWorld> world = GetHavokWorldFromCell(actor->parentCell);
+            BSAnimationGraphManagerPtr manager;
+            if (!world || !world->world || !GetAnimationGraphManager(actor, manager)) return PLANCK_POSE_UNAVAILABLE;
+
+            PlanckBodyPose result{};
+            bool found = false;
+            SimpleLocker graphLock(&manager.ptr->updateLock);
+            for (UInt32 graphIndex = 0; graphIndex < manager.ptr->graphs.size; ++graphIndex) {
+                auto* graph = manager.ptr->graphs.GetData()[graphIndex].ptr;
+                hkbRagdollDriver* driver = graph ? graph->character.ragdollDriver : nullptr;
+                if (!driver || !GetActiveRagdollFromDriver(driver)) continue;
+                BSReadLocker worldLock(&world->worldLock);
+                hkaRagdollInstance* ragdoll = driver->ragdoll;
+                if (!ragdoll || !ragdoll->getSkeleton() || ragdoll->getRigidBodyArray().isEmpty() ||
+                    ragdoll->getWorld() != world->world.val()) continue;
+                for (int i = 0; i < ragdoll->getNumBones(); ++i) {
+                    const char* name = ragdoll->getSkeleton()->m_bones[i].m_name.cString();
+                    if (!name || std::strcmp(name, boneName) != 0) continue;
+                    // Sparse skeletons may have no rigid body for this bone.
+                    auto* body = ragdoll->getRigidBodyOfBone(i);
+                    if (!body || body->getWorld() != world->world.val()) continue;
+                    if (found) return PLANCK_POSE_AMBIGUOUS;
+                    found = true;
+                    using namespace std::chrono;
+                    result.observedAtNs = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+                    for (int axis = 0; axis < 3; ++axis) result.positionMetres[axis] = body->getPosition()(axis);
+                    for (int axis = 0; axis < 4; ++axis) result.rotationXyzw[axis] = body->getRotation().m_vec(axis);
+                }
+            }
+            if (!found) return PLANCK_POSE_UNAVAILABLE;
+            *out = result;
+            return PLANCK_POSE_OK;
+        } catch (...) {
+            return PLANCK_POSE_UNAVAILABLE;
+        }
+    }
+}
+
+PlanckActorPoseAPI* GetActorPoseAPI()
+{
+    if (!g_taskInterface) return nullptr;
+    static IdentifyPoseTaskThread identify;
+    static PlanckActorPoseAPI api = [] {
+        g_taskInterface->AddTask(&identify);
+        return PlanckActorPoseAPI{sizeof(PlanckActorPoseAPI), 1, CopyBodyPose};
+    }();
+    return &api;
+}
+
+
 std::vector<std::shared_ptr<ActiveRagdoll>> GetActiveRagdollsFromActor(Actor *actor)
 {
     std::vector<std::shared_ptr<ActiveRagdoll>> ragdolls;
