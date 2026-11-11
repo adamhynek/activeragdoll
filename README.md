@@ -47,3 +47,16 @@ public:
   }
 };
 ```
+
+### Optional read of a physical bone
+
+A VR mod placing a pocket at an NPC's pelvis can ask PLANCK where that physical bone is. Request `PLANCK_QUERY_ACTOR_POSE` through the existing SKSE message at PostPostLoad and check the returned table's size and version (2). Call from an SKSE main-thread task before taking any engine locks. [C interface](include/planck_actor_pose.h)
+
+```cpp
+PlanckBodyPose pose{sizeof(pose)};
+if (api->CopyBodyPose(actorHandle, "NPC Pelvis [Pelv]", &pose) == PLANCK_POSE_OK) {
+    // Transform the pocket using pose.positionMetres and pose.rotationXyzw.
+}
+```
+
+Use `observedAtNs` to compare the pose with the hand sample. End an ongoing interaction on failure or a changed `generation`, including removal and re-addition of the same body. A corpse can still supply a pose while PLANCK tracks its physical body. The consumer decides whether its pocket is usable on a corpse. All values are copies. No subscription, native pointer, physics write or configuration change is required.

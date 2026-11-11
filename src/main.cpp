@@ -2,6 +2,9 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
 #include "planck_actor_pose.h"
 #include <string>
 #include <regex>
@@ -270,9 +273,43 @@ std::shared_ptr<ActiveRagdoll> GetActiveRagdollFromDriver(hkbRagdollDriver *driv
     return it->second;
 }
 
-// This mainly exists to get ActiveRagdoll data without having to go through ForEachRagdollDriver and acquiring the anim graph manager's updateLock
 namespace {
     std::atomic<DWORD> poseTaskThread{0};
+    struct PoseLifetime {
+        uint32_t actor;
+        const NiNode* model;
+        std::weak_ptr<ActiveRagdoll> ragdoll;
+        uint64_t generation;
+    };
+    std::mutex poseLock;
+    std::unordered_map<const hkpEntity*, PoseLifetime> observedBodies;
+    uint64_t nextPoseGeneration = 1;
+    std::atomic<bool> poseLoadPending{false};
+    bool ObservesPoseWorld(bhkWorld* world);
+
+    void ForgetPoseBody(const hkpEntity* body) {
+        if (!poseTaskThread.load()) return;
+        std::lock_guard lock(poseLock);
+        observedBodies.erase(body);
+    }
+
+    void ResetPoseLifetimes() {
+        std::lock_guard lock(poseLock);
+        observedBodies.clear();
+    }
+
+    uint64_t BodyGeneration(const hkpEntity* body, uint32_t actor, const NiNode* model,
+        const std::shared_ptr<ActiveRagdoll>& active) {
+        std::lock_guard lock(poseLock);
+        if (poseLoadPending || !model) return 0;
+        auto it = observedBodies.find(body);
+        if (it != observedBodies.end() && it->second.actor == actor && it->second.model == model &&
+            it->second.ragdoll.lock() == active) return it->second.generation;
+        if (!nextPoseGeneration) return 0;
+        const auto generation = nextPoseGeneration++;
+        observedBodies.insert_or_assign(body, PoseLifetime{actor, model, active, generation});
+        return generation;
+    }
 
     class IdentifyPoseTaskThread final : public TaskDelegate {
     public:
@@ -282,8 +319,8 @@ namespace {
 
     uint32_t CopyBodyPose(uint32_t actorHandle, const char* boneName, PlanckBodyPose* out) noexcept
     {
-        if (!out) return PLANCK_POSE_INVALID;
-        *out = {};
+        if (!out || out->size < sizeof(*out)) return PLANCK_POSE_INVALID;
+        *out = {sizeof(*out)};
         if (!actorHandle || !boneName || !boneName[0]) return PLANCK_POSE_INVALID;
         if (poseTaskThread.load() != GetCurrentThreadId()) return PLANCK_POSE_BUSY;
         try {
@@ -296,14 +333,17 @@ namespace {
             BSAnimationGraphManagerPtr manager;
             if (!world || !world->world || !GetAnimationGraphManager(actor, manager)) return PLANCK_POSE_UNAVAILABLE;
 
-            PlanckBodyPose result{};
+            PlanckBodyPose result{sizeof(result)};
             bool found = false;
             SimpleLocker graphLock(&manager.ptr->updateLock);
             for (UInt32 graphIndex = 0; graphIndex < manager.ptr->graphs.size; ++graphIndex) {
                 auto* graph = manager.ptr->graphs.GetData()[graphIndex].ptr;
                 hkbRagdollDriver* driver = graph ? graph->character.ragdollDriver : nullptr;
-                if (!driver || !GetActiveRagdollFromDriver(driver)) continue;
+                if (!driver) continue;
+                const auto active = GetActiveRagdollFromDriver(driver);
+                if (!active) continue;
                 BSReadLocker worldLock(&world->worldLock);
+                if (!ObservesPoseWorld(world)) continue;
                 hkaRagdollInstance* ragdoll = driver->ragdoll;
                 if (!ragdoll || !ragdoll->getSkeleton() || ragdoll->getRigidBodyArray().isEmpty() ||
                     ragdoll->getWorld() != world->world.val()) continue;
@@ -315,6 +355,9 @@ namespace {
                     if (!body || body->getWorld() != world->world.val()) continue;
                     if (found) return PLANCK_POSE_AMBIGUOUS;
                     found = true;
+                    result.generation = BodyGeneration(body, actorHandle, actor->GetNiNode(), active);
+                    if (!result.generation) return PLANCK_POSE_UNAVAILABLE;
+                    result.frame = static_cast<uint32_t>(*g_currentFrameCounter);
                     using namespace std::chrono;
                     result.observedAtNs = duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
                     for (int axis = 0; axis < 3; ++axis) result.positionMetres[axis] = body->getPosition()(axis);
@@ -336,12 +379,13 @@ PlanckActorPoseAPI* GetActorPoseAPI()
     static IdentifyPoseTaskThread identify;
     static PlanckActorPoseAPI api = [] {
         g_taskInterface->AddTask(&identify);
-        return PlanckActorPoseAPI{sizeof(PlanckActorPoseAPI), 1, CopyBodyPose};
+        return PlanckActorPoseAPI{sizeof(PlanckActorPoseAPI), 2, CopyBodyPose};
     }();
     return &api;
 }
 
 
+// This mainly exists to get ActiveRagdoll data without having to go through ForEachRagdollDriver and acquiring the anim graph manager's updateLock
 std::vector<std::shared_ptr<ActiveRagdoll>> GetActiveRagdollsFromActor(Actor *actor)
 {
     std::vector<std::shared_ptr<ActiveRagdoll>> ragdolls;
@@ -2570,6 +2614,9 @@ struct PhysicsListener :
         }
     }
 
+    void entityRemovedCallback(hkpEntity* entity) override { ForgetPoseBody(entity); }
+    void entityDeletedCallback(hkpEntity* entity) override { ForgetPoseBody(entity); }
+
     virtual void entityAddedCallback(hkpEntity *entity) override {
         if (!Config::options.convertNonRagdollBipedObjectsToDeadBip) return;
 
@@ -2596,6 +2643,11 @@ struct PhysicsListener :
     bhkWorld *m_world = nullptr;
 };
 PhysicsListener g_physicsListener{};
+namespace {
+    bool ObservesPoseWorld(bhkWorld* world) {
+        return world == g_physicsListener.m_world && hkpWorld_hasEntityListener(world->world, &g_physicsListener);
+    }
+}
 std::mutex PhysicsListener::collisionCooldownTargetsLock{};
 
 
@@ -4148,6 +4200,7 @@ bool UpdateActorShove(Actor *actor)
 
 void ResetObjects()
 {
+    ResetPoseLifetimes();
 #ifdef _DEBUG
     _MESSAGE("%d Reset objects", *g_currentFrameCounter);
 #endif // _DEBUG
@@ -8442,10 +8495,18 @@ extern "C" {
                     ShowErrorBoxAndTerminate("[CRITICAL] Did NOT get higgs interface. HIGGS is required for this mod.");
                 }
             }
+            else if (msg->type == SKSEMessagingInterface::kMessage_PreLoadGame) {
+                poseLoadPending = true;
+                ResetPoseLifetimes();
+            }
             else if (msg->type == SKSEMessagingInterface::kMessage_PostLoadGame || msg->type == SKSEMessagingInterface::kMessage_NewGame) {
+                poseLoadPending = false;
                 bool loadSucceeded = (bool)msg->data;
                 if (loadSucceeded) {
                     ResetObjects();
+                }
+                else if (msg->type == SKSEMessagingInterface::kMessage_NewGame) {
+                    ResetPoseLifetimes();
                 }
             }
         }
