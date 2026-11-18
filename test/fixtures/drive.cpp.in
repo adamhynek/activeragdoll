@@ -1,0 +1,203 @@
+// Actual new PLANCK outer/inner hook methods and production native adapter.
+// Engine/controller objects below are explicit synthetic seams, not Havok ABI.
+#include "synergy_runtime.h"
+#include "synergy_drive_native.h"
+#include <atomic>
+#include <cassert>
+#include "support/check.h"
+#include <cmath>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <stdexcept>
+#include <thread>
+#include <vector>
+extern "C" int run_drive_c(const PlanckDriveAPI*);
+using hkReal=float;
+template<class T>struct Array:std::vector<T>{using std::vector<T>::operator=;int getSize()const{return static_cast<int>(this->size());}};
+struct hkVector4{float value=0;};struct hkQsTransform{};struct hkbContext{};struct hkbGeneratorOutput{};
+struct hkpConstraintData{enum{CONSTRAINT_TYPE_RAGDOLL=7};int getType()const{return CONSTRAINT_TYPE_RAGDOLL;}};
+struct hkpRagdollConstraintData:hkpConstraintData{struct Atoms{struct Transforms{struct Transform{hkVector4 m_translation;}m_transformA,m_transformB;}m_transforms;}m_atoms;};
+struct hkpConstraintInstance{hkpRagdollConstraintData* data;hkpConstraintData* getData(){return data;}};
+struct hkpRigidBody{};
+struct FakeRagdoll{Array<hkpRigidBody*> m_rigidBodies;std::vector<hkpConstraintInstance*> constraints;auto& getConstraintArray(){return constraints;}};
+struct hkbRagdollDriver{FakeRagdoll* ragdoll;};
+struct Control {float m_hierarchyGain=.6f,m_velocityGain=.6f,m_positionGain=.05f,other=77.f;};
+struct hkaRagdollRigidBodyController {
+    FakeRagdoll* m_ragdollInstance=nullptr;Array<Control> m_controlDataPalette;Array<int> m_bodyIndexToPaletteIndex;
+    struct Data{int m_numRigidBodies=0;hkpRigidBody*const* m_rigidBodies=nullptr;int* m_controlDataIndices=nullptr;const float* m_boneWeights=nullptr;}m_bodyData;
+};
+namespace hkaKeyFrameHierarchyUtility{struct Output{int unused;};}
+namespace Config{struct Options{bool applyRigidBodyTWhenWritingRigidBodies=false;bool loosenRagdollConstraintPivots=true;float loosenConstraintsActivateDeltaThreshold=.001f;} options;}
+struct hkpEaseConstraintsAction{std::vector<hkpConstraintInstance*> m_originalConstraints;};
+template<class T>struct Ref{T* pointer=nullptr;T* val()const{return pointer;}Ref& operator=(T* value){pointer=value;return *this;}};
+struct ActiveRagdoll{hkpEaseConstraintsAction* easeConstraintsAction=nullptr;Ref<FakeRagdoll> easedRagdoll;std::map<hkpConstraintInstance*,std::pair<hkVector4,hkVector4>> originalConstraintPivots;};
+unsigned restoredConstraints=0;void hkpEaseConstraintsAction_restoreConstraints(hkpEaseConstraintsAction*,float){++restoredConstraints;}
+/*@RESTORE_CONSTRAINTS@*/
+void ApplyRigidBodyTTransformsToPose(FakeRagdoll*,const hkQsTransform&,hkQsTransform*,hkQsTransform*){}
+struct Actor{void* GetNiNode(){return reinterpret_cast<void*>(999);}} fakeActor;
+Actor* GetActorFromRagdollDriver(hkbRagdollDriver*){return &fakeActor;}
+uint32_t frame=10;uint32_t* g_currentFrameCounter=&frame;std::atomic<uint64_t> g_synergyPhysicsTick{20};
+hkaKeyFrameHierarchyUtility::Output g_stressOut[200];void* g_currentlyDrivingRagdoll=nullptr;
+bool observedPivot=false,throwInNative=false;unsigned originalCalls=0,postCalls=0;
+bool invalidateBeforeInner=false,closeInsideNative=false;
+PlanckToken closingOwner=0,competingOwner=0;PlanckDrivePolicy competingPolicy{};PlanckDriveWeight competingWeight{};
+hkaRagdollRigidBodyController* actualController=nullptr;
+using _hkaRagdollRigidBodyController_driveToPose=void(*)(hkaRagdollRigidBodyController*,hkReal,hkQsTransform*,const hkQsTransform&,hkaKeyFrameHierarchyUtility::Output*);
+_hkaRagdollRigidBodyController_driveToPose hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original=nullptr;
+void PreDriveToPoseHook(hkbRagdollDriver* driver,hkReal,const hkbContext&,hkbGeneratorOutput&){
+    /*@PIVOT_POLICY@*/
+    observedPivot=allowPivotMotion;g_currentlyDrivingRagdoll=reinterpret_cast<void*>(1);
+}
+void PostDriveToPoseHook(hkbRagdollDriver*,hkReal,const hkbContext&,hkbGeneratorOutput&){++postCalls;}
+/*@INNER_DRIVE@*/
+using _hkbRagdollDriver_driveToPose=void(*)(hkbRagdollDriver*,hkReal,const hkbContext&,hkbGeneratorOutput&);
+_hkbRagdollDriver_driveToPose hkbRagdollDriver_driveToPose_Original=nullptr;
+/*@OUTER_DRIVE@*/
+using namespace PlanckSynergy;
+const auto* core=GetAPI();const auto* api=GetDriveAPI();
+PlanckToken Client(const char* name){PlanckClientIdentity id{sizeof(id),0,{}};assert(strlen(name)<sizeof(id.id));std::memcpy(id.id,name,strlen(name)+1);PlanckToken c=0;assert(core->RegisterClient(&id,&c)==PLANCK_OK);return c;}
+void Publish(FakeRagdoll& ragdoll,uintptr_t model=999){
+    std::vector<BodySample> bodies;
+    for(auto* p:ragdoll.m_rigidBodies){BodySample b;b.identity=reinterpret_cast<uintptr_t>(p);b.lineage=reinterpret_cast<uintptr_t>(&ragdoll);b.state.worldRotation[3]=1;b.state.size=sizeof(b.state);bodies.push_back(b);}
+    PublishActor(42,model,false,frame,20,1.,bodies);
+}
+PlanckBodyPhysics Body(PlanckToken client){
+    PlanckActorPhysics a{sizeof(a)};PlanckBodyPhysics b[2]{};for(auto& x:b)x.size=sizeof(x);uint32_t n=0;
+    assert(core->CopyActorPhysics(client,42,&a,b,2,&n)==PLANCK_OK&&n==2);return b[0];
+}
+void Run(hkbRagdollDriver& driver){hkbContext c;hkbGeneratorOutput o;DriveToPoseHook(&driver,.01f,c,o);}
+float expectedHierarchy=.4f,expectedFirstWeight=2.5f;
+void NativeDrive(hkaRagdollRigidBodyController* c,hkReal,hkQsTransform*,const hkQsTransform&,hkaKeyFrameHierarchyUtility::Output* out){
+    ++originalCalls;assert(out==g_stressOut);
+    assert(std::abs(c->m_controlDataPalette[0].m_hierarchyGain-expectedHierarchy)<1e-6f);
+    assert(std::abs((c->m_bodyData.m_boneWeights?c->m_bodyData.m_boneWeights[0]:1.f)-expectedFirstWeight)<1e-6f);
+    c->m_controlDataPalette[0].other=88.f; // Unowned data must survive our restoration.
+    if(closeInsideNative){
+        assert(core->ReleaseClient(closingOwner)==PLANCK_BUSY);PlanckToken rejected=999;
+        assert(api->RequestActorDrivePolicy(competingOwner,&competingPolicy,&competingWeight,&rejected)==PLANCK_CONFLICT&&rejected==0);
+    }
+    if(throwInNative)throw std::runtime_error("synthetic native failure");
+}
+void OriginalDriver(hkbRagdollDriver*,hkReal dt,const hkbContext&,hkbGeneratorOutput&){
+    if(invalidateBeforeInner)InvalidateActor(42);
+    hkQsTransform pose,world;hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Hook(actualController,dt,&pose,world,nullptr);
+}
+float mappedExpectedFraction=0;
+void MappingNativeDrive(hkaRagdollRigidBodyController* c,hkReal,hkQsTransform*,const hkQsTransform&,hkaKeyFrameHierarchyUtility::Output*){
+    const int index=c->m_bodyIndexToPaletteIndex.getSize()==c->m_bodyData.m_numRigidBodies?c->m_bodyIndexToPaletteIndex[0]:0;
+    const float actual=c->m_controlDataPalette[index].m_hierarchyGain*c->m_bodyData.m_boneWeights[0];
+    assert(std::abs(actual-mappedExpectedFraction)<1e-6f&&actual<=1.f);
+}
+void MappingRegression(){
+    Reset();hkpRigidBody first,second;FakeRagdoll ragdoll;ragdoll.m_rigidBodies={&first,&second};
+    const auto client=Client("drive.mapping");Publish(ragdoll);const auto body=Body(client);
+    PlanckDrivePolicy policy{sizeof(policy),0,body.body.actor};policy.weightCount=1;
+    PlanckDriveWeight weight{sizeof(weight),0,body.body,8.f,0};PlanckToken lease=0;
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK);
+    hkaRagdollRigidBodyController controller;controller.m_ragdollInstance=&ragdoll;
+    controller.m_controlDataPalette.push_back({.1f,.6f,.05f,0});controller.m_controlDataPalette.push_back({1.f,.6f,.05f,0});
+    float weights[2]{1,1};int stale[2]{0,0};controller.m_bodyData={2,ragdoll.m_rigidBodies.data(),stale,weights};
+    actualController=&controller;hkbRagdollDriver driver{&ragdoll};
+    hkbRagdollDriver_driveToPose_Original=OriginalDriver;
+    hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original=MappingNativeDrive;
+    for(const auto& mapping:std::vector<std::vector<int>>{{1,0},{1},{1,1,1}}){
+        controller.m_bodyIndexToPaletteIndex.assign(mapping.begin(),mapping.end());
+        mappedExpectedFraction=mapping.size()==2?1.f:.8f;Run(driver);
+        PlanckDriveSnapshot snapshot{sizeof(snapshot)};PlanckDriveBody observed[2]{};for(auto& sample:observed)sample.size=sizeof(sample);uint32_t count=0;
+        assert(api->CopyActorDrive(client,42,&snapshot,observed,2,&count)==PLANCK_OK&&snapshot.status==PLANCK_OK);
+        assert(std::abs(observed[0].hierarchyFraction-mappedExpectedFraction)<1e-6f);
+        assert(controller.m_bodyData.m_boneWeights==weights);
+    }
+    assert(core->ReleaseClient(client)==PLANCK_OK);actualController=nullptr;
+}
+struct NiPoint3{float value=0;};
+struct SavedPivotData{float pivotA,pivotB;};
+float HkVectorToNiPoint(hkVector4 value){return value.value;}
+hkVector4 NiPointToHkVector(float value){return {value};}
+float VectorLength(NiPoint3 v){return std::abs(v.value);}
+float AdvanceVector(float from,float to,float step,NiPoint3* delta){
+    const auto value=from+(std::min)((std::max)(to-from,-step),step);delta->value=value-from;return value;
+}
+void ActualGradualPivotStep(bool allowPivotMotion,hkpRagdollConstraintData* data,const SavedPivotData& savedData,float linearStep){
+    using std::max;bool shouldActivate=false;float maxDeltaPivot=0;
+    /*@GRADUAL_PIVOT@*/
+    (void)shouldActivate;(void)maxDeltaPivot;
+}
+int main(){
+    assert(run_drive_c(api));Reset();auto client=Client("drive.owner"),other=Client("drive.other");
+    hkpRigidBody first,second;FakeRagdoll ragdoll;ragdoll.m_rigidBodies={&first,&second};hkbRagdollDriver driver{&ragdoll};Publish(ragdoll);
+    auto body=Body(client);PlanckDrivePolicy policy{sizeof(policy),PLANCK_DRIVE_BLOCK_PIVOT_LOOSENING,body.body.actor,PLANCK_DRIVE_HIERARCHY_GAIN,1,.4f,0,0,0};
+    PlanckDriveWeight weight{sizeof(weight),0,body.body,8.f,0};PlanckToken lease=999;
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK&&lease);
+    PlanckToken denied=999;assert(api->RequestActorDrivePolicy(other,&policy,&weight,&denied)==PLANCK_CONFLICT&&denied==0);
+    auto malformed=weight;malformed.multiplier=NAN;assert(api->RequestActorDrivePolicy(other,&policy,&malformed,&denied)==PLANCK_INVALID&&denied==0);
+    malformed=weight;malformed.reserved2=1;assert(api->RequestActorDrivePolicy(other,&policy,&malformed,&denied)==PLANCK_INVALID);
+    auto malformedPolicy=policy;malformedPolicy.velocityGain=.5f;assert(api->RequestActorDrivePolicy(other,&malformedPolicy,&weight,&denied)==PLANCK_INVALID);
+    PlanckDrivePolicy blockOnly{sizeof(blockOnly),PLANCK_DRIVE_BLOCK_PIVOT_LOOSENING,body.body.actor};PlanckToken block=0;
+    assert(api->RequestActorDrivePolicy(other,&blockOnly,nullptr,&block)==PLANCK_OK);
+    PlanckDrivePolicyState state{sizeof(state)};assert(api->CopyDrivePolicyState(client,lease,&state)==PLANCK_OK&&state.state==PLANCK_DRIVE_POLICY_ACCEPTED);
+    assert(api->CopyDrivePolicyState(other,lease,&state)==PLANCK_INVALID);
+    hkaRagdollRigidBodyController ctl;ctl.m_ragdollInstance=&ragdoll;ctl.m_controlDataPalette.push_back({});
+    ctl.m_bodyData.m_numRigidBodies=2;ctl.m_bodyData.m_rigidBodies=ragdoll.m_rigidBodies.data();
+    float engineWeights[2]{.5f,.25f};ctl.m_bodyData.m_boneWeights=engineWeights;actualController=&ctl;
+    hkbRagdollDriver_driveToPose_hkaRagdollRigidBodyController_driveToPose_Original=NativeDrive;
+    hkbRagdollDriver_driveToPose_Original=OriginalDriver;Run(driver);
+    assert(!observedPivot&&Config::options.loosenRagdollConstraintPivots&&originalCalls==1&&postCalls==1);
+    assert(ctl.m_bodyData.m_boneWeights==engineWeights&&ctl.m_controlDataPalette[0].m_hierarchyGain==.6f&&ctl.m_controlDataPalette[0].other==88.f);
+    assert(!currentDrivePlan&&!currentDriveExecution&&g_currentlyDrivingRagdoll==0);
+    PlanckDriveSnapshot snapshot{sizeof(snapshot)};PlanckDriveBody observed[2]{};for(auto& b:observed)b.size=sizeof(b);uint32_t n=0;
+    assert(api->CopyActorDrive(client,42,&snapshot,nullptr,0,&n)==PLANCK_BUFFER&&n==2);
+    assert(api->CopyActorDrive(client,42,&snapshot,observed,2,&n)==PLANCK_OK&&snapshot.status==PLANCK_OK&&snapshot.phase==PLANCK_PHASE_DRIVE&&snapshot.numericalPolicy==lease);
+    assert(observed[0].requestedMultiplier==8.f&&observed[0].engineWeight==.5f&&observed[0].effectiveWeight==2.5f&&observed[0].hierarchyFraction==1.f&&observed[0].flags==PLANCK_DRIVE_WEIGHT_SATURATED);
+    assert(observed[1].effectiveWeight==.25f);assert(api->CopyDrivePolicyState(client,lease,&state)==PLANCK_OK&&state.lastObservedSample==snapshot.sample);
+    Publish(ragdoll);assert(api->CopyActorDrive(client,42,&snapshot,observed,2,&n)==PLANCK_OK); // Normal pose publication retains last real drive observation.
+    throwInNative=true;try{Run(driver);assert(false);}catch(const std::runtime_error&){}
+    assert(ctl.m_bodyData.m_boneWeights==engineWeights&&ctl.m_controlDataPalette[0].m_hierarchyGain==.6f&&!currentDrivePlan&&!currentDriveExecution);throwInNative=false;
+    assert(core->ReleaseLease(client,lease)==PLANCK_OK);assert(core->ReleaseLease(other,block)==PLANCK_OK);
+    expectedHierarchy=.6f;expectedFirstWeight=.5f;Run(driver);assert(observedPivot); // No policy preserves engine defaults/weights exactly.
+    policy.actor=body.body.actor;assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK);
+    Publish(ragdoll,1000);assert(api->CopyDrivePolicyState(client,lease,&state)==PLANCK_OK&&state.state==PLANCK_DRIVE_POLICY_STALE);
+    assert(core->ReleaseLease(client,lease)==PLANCK_OK);
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_STALE);
+    Publish(ragdoll);body=Body(client);policy.actor=body.body.actor;weight.body=body.body;
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK);
+    invalidateBeforeInner=true;Run(driver);invalidateBeforeInner=false;
+    assert(ctl.m_controlDataPalette[0].m_hierarchyGain==.6f&&ctl.m_bodyData.m_boneWeights==engineWeights);
+    assert(api->CopyDrivePolicyState(client,lease,&state)==PLANCK_OK&&state.state==PLANCK_DRIVE_POLICY_STALE);
+    assert(core->ReleaseLease(client,lease)==PLANCK_OK);
+    Publish(ragdoll);body=Body(client);policy.actor=body.body.actor;weight.body=body.body;
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK);
+    closingOwner=client;competingOwner=other;competingPolicy=policy;competingWeight=weight;
+    closeInsideNative=true;expectedHierarchy=.4f;expectedFirstWeight=2.5f;Run(driver);closeInsideNative=false;
+    assert(core->ReleaseClient(client)==PLANCK_OK);client=Client("drive.owner.again");
+    assert(api->RequestActorDrivePolicy(client,&policy,&weight,&lease)==PLANCK_OK);Reset();
+    assert(api->CopyDrivePolicyState(client,lease,&state)==PLANCK_OK&&state.state==PLANCK_DRIVE_POLICY_STALE);
+    assert(core->ReleaseClient(client)==PLANCK_OK&&core->ReleaseClient(other)==PLANCK_OK);
+    hkpRagdollConstraintData constraintData;hkpConstraintInstance constraint{&constraintData};
+    ragdoll.constraints.push_back(&constraint);hkpEaseConstraintsAction ease;ease.m_originalConstraints.push_back(&constraint);
+    ActiveRagdoll saved;saved.easeConstraintsAction=&ease;saved.easedRagdoll=&ragdoll;
+    saved.originalConstraintPivots[&constraint]={{3.f},{4.f}};Config::options.loosenRagdollConstraintPivots=true;
+    RestoreAndClearPendingConstraintSnapshot(saved,&driver);
+    assert(restoredConstraints==1&&constraintData.m_atoms.m_transforms.m_transformA.m_translation.value==3.f&&constraintData.m_atoms.m_transforms.m_transformB.m_translation.value==4.f);
+    assert(!saved.easeConstraintsAction&&saved.originalConstraintPivots.empty()&&!saved.easedRagdoll.val());
+    // Old eased values must not be written back after restoring originals while blocked.
+    ActualGradualPivotStep(false,&constraintData,{30.f,40.f},.25f);
+    assert(constraintData.m_atoms.m_transforms.m_transformA.m_translation.value==3.f&&constraintData.m_atoms.m_transforms.m_transformB.m_translation.value==4.f);
+    ActualGradualPivotStep(false,&constraintData,{3.f,4.f},.25f);
+    assert(constraintData.m_atoms.m_transforms.m_transformA.m_translation.value==3.f);
+    ActualGradualPivotStep(true,&constraintData,{30.f,40.f},.25f);
+    assert(constraintData.m_atoms.m_transforms.m_transformA.m_translation.value==29.75f);
+    // A scoped block can restore saved pivots after config changes; unrelated removal keeps the authored condition.
+    Config::options.loosenRagdollConstraintPivots=false;
+    auto restoreWithBlock=[&](bool blocked){
+        ActiveRagdoll snapshot;snapshot.easeConstraintsAction=&ease;snapshot.easedRagdoll=&ragdoll;
+        snapshot.originalConstraintPivots[&constraint]={{13.f},{14.f}};
+        constraintData.m_atoms.m_transforms.m_transformA.m_translation={7.f};
+        RestoreAndClearPendingConstraintSnapshot(snapshot,&driver,blocked);
+        return constraintData.m_atoms.m_transforms.m_transformA.m_translation.value;
+    };
+    assert(restoreWithBlock(false)==7.f && restoreWithBlock(true)==13.f);
+    MappingRegression();
+    std::cout<<"PASS PLANCK drive C ABI, ownership/conflict, pivot scope, actual outer/inner hooks, engine weight composition/clamp, field-only exception restoration, observations and lifecycle\n";
+}

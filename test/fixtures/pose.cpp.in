@@ -1,0 +1,96 @@
+#include <cassert>
+#include "support/check.h"
+#include <chrono>
+#include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <vector>
+#include <memory>
+#include <mutex>
+#include <unordered_map>
+#include "planck_actor_pose.h"
+#include "synergy_runtime.h"
+using UInt32=uint32_t;using DWORD=uint32_t;
+DWORD tid=3;DWORD GetCurrentThreadId(){return tid;}
+struct TaskDelegate{virtual void Run()=0;virtual void Dispose()=0;};
+struct TaskHost{TaskDelegate* pending{};void AddTask(TaskDelegate* t){assert(!pending);pending=t;}};
+TaskHost taskHost;auto* g_taskInterface=&taskHost;
+bool graphLocked=false,worldLocked=false;
+struct SimpleLocker{SimpleLocker(int*){assert(!graphLocked);graphLocked=true;}~SimpleLocker(){graphLocked=false;}};
+struct BSReadLocker{BSReadLocker(int*){assert(graphLocked&&!worldLocked);worldLocked=true;}~BSReadLocker(){worldLocked=false;}};
+template<class T>struct NiPointer{T* ptr{};NiPointer(T* p=nullptr):ptr(p){} T* operator->()const{return ptr;}operator T*()const{return ptr;}T* val()const{return ptr;}};
+struct TESObjectREFR{};struct NiNode {}; NiNode root, replacementRoot; NiNode* fixtureModel = &root;
+struct Actor: TESObjectREFR {int* parentCell; NiNode* GetNiNode(){return fixtureModel;}};
+int cell; Actor theActor{{},&cell};
+bool LookupREFRByHandle(UInt32& handle,NiPointer<TESObjectREFR>& ref){if(handle!=42)return false;ref=&theActor;return true;}
+#define DYNAMIC_CAST(ref,from,to) static_cast<to*>(static_cast<from*>(ref))
+struct bhkWorld{NiPointer<int> world;int worldLock;}; int worldID;bhkWorld testWorld{&worldID,0};
+bhkWorld* GetHavokWorldFromCell(int*){return &testWorld;}
+struct Vec{float v[4];float operator()(int i)const{return v[i];}};
+struct Quat{Vec m_vec;};
+struct hkpEntity{};
+struct Body: hkpEntity {Body(Vec pos):p(pos){} Vec p;int* getWorld()const{return &worldID;}Vec getPosition()const{assert(worldLocked&&graphLocked);return p;}Quat getRotation()const{return{{0,0,0,1}};}};
+struct Name{const char* s;const char* cString()const{return s;}};
+struct Bone{Name m_name;};struct Skeleton{std::vector<Bone> m_bones;};
+struct Bodies:std::vector<Body*>{using std::vector<Body*>::vector;bool isEmpty()const{return empty();}};
+struct hkaRagdollInstance{Skeleton sk;Bodies bodies;std::vector<int> map;Skeleton* getSkeleton(){return &sk;}const Bodies& getRigidBodyArray()const{return bodies;}int* getWorld(){return &worldID;}int getNumBones(){return(int)sk.m_bones.size();}Body* getRigidBodyOfBone(int i){return map[i]<0?nullptr:bodies.at(map[i]);}};
+struct hkbRagdollDriver{hkaRagdollInstance* ragdoll;};struct ActiveRagdoll{}; auto fixtureRagdoll=std::make_shared<ActiveRagdoll>(); auto GetActiveRagdollFromDriver(hkbRagdollDriver*){return fixtureRagdoll;}
+struct Graph{struct{hkbRagdollDriver* ragdollDriver;}character;};
+struct Graphs{std::vector<NiPointer<Graph>> items;uint32_t size=0;const auto* GetData(){return items.data();}};
+struct Manager{Graphs graphs;int updateLock;};Manager testManager;
+struct BSAnimationGraphManagerPtr{Manager* ptr;};
+bool GetAnimationGraphManager(Actor*,BSAnimationGraphManagerPtr& m){m.ptr=&testManager;return true;}
+int frame=17;auto* g_currentFrameCounter=&frame;
+bool monitored=true; enum { PostLoadGame=1,NewGame=2,PreLoadGame=3 };
+namespace PlanckSynergy {
+PlanckStatus MatchPoseBody(PlanckToken client,uint32_t actor,uintptr_t model,uintptr_t lineage,uintptr_t body,uintptr_t world,PlanckBodyRef* out) {
+    assert(graphLocked && worldLocked && model==(uintptr_t)fixtureModel && lineage && body && world==(uintptr_t)&worldID);
+    if (client!=100 || actor!=42) return PLANCK_STALE;
+    *out={{8,9,42,0},body,0,0};
+    return PLANCK_OK;
+}}
+// @ADAPTER@
+namespace {bool ObservesPoseWorld(bhkWorld* w){return w==&testWorld && monitored;}}
+namespace PlanckSynergy { void InvalidateBody(uintptr_t) {} }
+void RetireSynergyGeometry(uintptr_t) {}
+struct Listener {
+// @BODYHOOKS@
+};
+int main(){
+    Body b0{{1,0,0,0}},b1{{2,0,0,0}};hkaRagdollInstance rag{{{{"pouch"},{"missing"},{"other"}}},{&b0,&b1},{1,-1,0}};
+    hkbRagdollDriver drv{&rag}; Graph graph{{&drv}};testManager.graphs.items={&graph};testManager.graphs.size=1;
+    auto* api=GetActorPoseAPI();assert(GetActorPoseAPI()==api && api->version==2);
+    PlanckBodyPose s{sizeof(s)};assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_BUSY);
+    taskHost.pending->Run();taskHost.pending->Dispose();
+    monitored=false;assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_UNAVAILABLE);monitored=true;
+    auto gen=[&] { assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_OK && s.generation && s.frame==uint32_t(frame)); return s.generation; };
+    const auto first=gen();assert(gen()==first);
+    PlanckBodyRef named{};assert(ResolveNamedPoseBody(100,42,"pouch",first,&named)==PLANCK_OK && named.bodyGeneration==(uintptr_t)&b1);
+    assert(ResolveNamedPoseBody(100,42,"pouch",first+290,&named)==PLANCK_STALE);
+    assert(ResolveNamedPoseBody(99,42,"pouch",first,&named)==PLANCK_STALE);
+    Listener listener;
+    listener.entityRemovedCallback(&b0);assert(gen()==first); // Unrelated physical body.
+    listener.entityRemovedCallback(&b1);const auto readded=gen();assert(readded!=first);
+    listener.entityDeletedCallback(&b1);const auto reused=gen();assert(reused!=readded);
+    fixtureRagdoll.reset();assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_UNAVAILABLE && !s.generation);
+    fixtureRagdoll=std::make_shared<ActiveRagdoll>();const auto newRagdoll=gen();assert(newRagdoll!=reused);
+    fixtureModel=&replacementRoot;const auto newModel=gen();assert(newModel!=newRagdoll);
+    poseLoadPending=true;ResetPoseLifetimes();assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_UNAVAILABLE);
+    ResetPoseLifetimes();assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_UNAVAILABLE);
+    poseLoadPending=false;const auto postLoad=gen();assert(postLoad!=newModel);
+    ResetPoseLifetimes();assert(gen()!=postLoad);
+    fixtureModel=nullptr;assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_UNAVAILABLE);fixtureModel=&root;
+    uint64_t sentinel=s.observedAtNs=0x1234;s.size=4;
+    assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_INVALID && s.observedAtNs==sentinel);s.size=sizeof(s);
+    assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_OK && s.positionMetres[0]==2 && s.rotationXyzw[3]==1 && s.observedAtNs);
+    assert(api->CopyBodyPose(42,"missing",&s)==PLANCK_POSE_UNAVAILABLE && !s.observedAtNs);
+    assert(api->CopyBodyPose(42,"other",&s)==PLANCK_POSE_OK && s.positionMetres[0]==1);
+    assert(api->CopyBodyPose(123,"other",&s)==PLANCK_POSE_UNAVAILABLE && !s.observedAtNs);
+    assert(api->CopyBodyPose(42,"",&s)==PLANCK_POSE_INVALID && !s.observedAtNs);
+    testManager.graphs.items.push_back(&graph);testManager.graphs.size=2;
+    assert(ResolveNamedPoseBody(100,42,"pouch",first,&named)==PLANCK_CONFLICT);
+    assert(api->CopyBodyPose(42,"other",&s)==PLANCK_POSE_AMBIGUOUS && !s.observedAtNs);
+    tid=4;assert(api->CopyBodyPose(42,"pouch",&s)==PLANCK_POSE_BUSY);
+    assert(!graphLocked&&!worldLocked);std::puts("PASS pose/time/frame, target lifetime across removal/re-add/deletion/address reuse, replacement ragdoll/fixtureModel, loading/world reset, frame/size/thread checks and sparse bone mapping");
+}

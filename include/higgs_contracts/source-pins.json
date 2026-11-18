@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/Vhodnoylogin/higgs",
+  "baseCommit": "05b54000a776f0cc5b6041cb0eca4ea4af1bde9b",
+  "workingTreeSnapshot": false,
+  "license": "GPL-3.0",
+  "sourcePaths": {
+    "include/higgsabitypes.h": "68b5e3e83c416c3e7e5f4f31772cf4ccfac769b477f8860c67ff57dffbbbfc85",
+    "include/higgsnativeinterop.h": "cdb1738dde494eafa84dd81f7216b47a5631bdf3460715a9eb58f30d0199b441"
+  },
+  "note": "Both native provider contracts come from the same canonical HIGGS SDK snapshot.",
+  "contentNormalization": "UTF-8 bytes with CRLF converted to LF before SHA-256"
+}

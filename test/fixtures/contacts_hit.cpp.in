@@ -1,0 +1,172 @@
+#include "synergy_runtime.h"
+#include <cassert>
+#include "support/check.h"
+#include <cstdio>
+#include <cstring>
+#include <vector>
+#include <cmath>
+#include <cstddef>
+using namespace PlanckSynergy;
+struct Actor{};
+struct HitData {
+    // @FLAGS@
+    uint32_t flags{};
+    float totalDamage=20,healthDamage=20,physicalDamage=10,targetedLimbDamage=2,
+        resistedPhysicalDamage=4,resistedTypedDamage=6,reflectedDamage=2,stagger=7;
+};
+// @SCOPE@
+// @APPLICATION@
+
+struct Vote { float factor; uint32_t answer=1; unsigned calls=0; };
+uint32_t PLANCK_CALL Rule(const PlanckHitSnapshot* hit,float* out,void* ctx) {
+    assert(hit->proposedDamage==20 && hit->kind==PLANCK_HIT_MELEE);
+    auto& v=*static_cast<Vote*>(ctx); *out=v.factor; ++v.calls; return v.answer;
+}
+int32_t Rank(const char* id){return strcmp(id,"priority")==0 ? 9 : 0;}
+PlanckToken Register(const char* name) {
+    PlanckClientIdentity id{sizeof(id)};assert(strlen(name)<sizeof(id.id));std::memcpy(id.id,name,strlen(name)+1);
+    PlanckToken token=0;assert(GetAPI()->RegisterClient(&id,&token)==PLANCK_OK);return token;
+}
+unsigned schedules=0;
+void Schedule(){++schedules;}
+std::vector<PlanckEvent> events;
+void PLANCK_CALL Record(const PlanckEvent* e,void*){events.push_back(*e);}
+
+int main(){
+    const auto* api=GetAPI(); const auto* contacts=GetContactsAPI(); const auto* hits=GetHitApplicationAPI();
+    const auto c=Register("review.c"), other=Register("review.other");
+    InstallEventScheduler(Schedule);InstallRuleRank(Rank);
+    PlanckToken subscription=0;
+    assert(api->Subscribe(c,PLANCK_ACTOR_CHANGED|PLANCK_HIT_FINALIZED,Record,nullptr,&subscription)==0);
+    BodySample a{},b{}; a.identity=11; a.world=77; a.rootShape=101; a.lineage=1; a.state.capsule=1;a.state.capsuleRadius=.3f;
+    b.identity=12;b.world=77;b.rootShape=b.listIdentity=102;b.lineage=1;
+    ShapeChildSample child{};child.identity=31;child.state.enabled=1;child.state.shapeKind=PLANCK_SHAPE_CAPSULE;child.state.radius=.2f;
+    b.children.push_back(child);
+    PublishActor(42,12,false,70,30,1,{a,b},nullptr,100);
+    assert(events.empty() && schedules==1);DeliverMainThreadEvents();assert(events.size()==1);
+    PlanckActorPhysics ar{sizeof(ar)};PlanckBodyPhysics bod[2]{{sizeof(*bod)},{sizeof(*bod)}};uint32_t req;
+    assert(api->CopyActorPhysics(c,42,&ar,bod,2,&req)==0 && req==2 && ar.observedAtNs==100);
+    PlanckBodyRef mapped{};assert(MatchPoseBody(c,42,12,1,12,77,&mapped)==0 && mapped.bodyGeneration==bod[1].body.bodyGeneration);
+    assert(MatchPoseBody(c,42,12,1,12,78,&mapped)==PLANCK_STALE);
+    PlanckToken w1,w2;assert(contacts->WatchBody(c,bod[0].body,&w1)==0);assert(contacts->WatchBody(other,bod[1].body,&w2)==0);
+    assert(HasContactWatches() && WatchesContactPair(11,12) && !WatchesContactPair(40,41));
+    ContactSide sides[2]{{a,101,UINT32_MAX,{2,0,0}},{b,102,0,{1,0,0}}};
+    auto emit=[&]{return ObserveContact(77,sides,{1,2,3},{1,0,0},71,31,1001);};
+    const auto origin=emit();assert(origin.id && origin.epoch==ar.actor.epoch);
+    PlanckContactSample first{sizeof(first)},second{sizeof(second)};
+    assert(contacts->CopyLatest(other,w1,0,&first)==PLANCK_INVALID && contacts->CopyLatest(c,w1,0,&first)==0);
+    assert(contacts->CopyLatest(other,w2,0,&second)==0 && first.sequence==1 && first.stage==PLANCK_PREFILTER_POTENTIAL);
+    assert(first.contactId==second.contactId && first.otherFormId==102 && second.otherFormId==101);
+    assert(first.shapeKey==UINT32_MAX && first.otherShapeKey==0 && second.shapeKey==0);
+    assert(first.geometryRevision==1 && first.otherGeometryRevision==1 && second.otherBody.bodyGeneration==bod[0].body.bodyGeneration);
+    assert(second.normalTowardBody.x==-1 && first.normalTowardBody.x==1 && first.bodyPointVelocity.x==2 && second.bodyPointVelocity.x==1);
+    assert(contacts->CopyLatest(c,w1,1,&first)==PLANCK_NOT_FOUND);
+    sides[1].geometry.children[0].state.radius=.15f;emit();emit();
+    assert(contacts->CopyLatest(other,w2,1,&second)==0 && second.sequence==3 && !second.geometryRevision && second.shapeKey==UINT32_MAX);
+    assert(!ObserveContact(90,sides,{},{},71,31,1001).id);
+    // A shared native address can appear in two independently published actor references.
+    PublishActor(52,29,false,71,31,1,{b},nullptr,1001);
+    PlanckActorPhysics alias{sizeof(alias)};PlanckBodyPhysics aliasBody{sizeof(aliasBody)};
+    assert(api->CopyActorPhysics(c,52,&alias,&aliasBody,1,&req)==0);
+    PlanckToken aliasWatch;assert(contacts->WatchBody(c,aliasBody.body,&aliasWatch)==0);
+    emit();assert(contacts->CopyLatest(c,w1,3,&first)==0 && !first.otherBody.bodyGeneration);
+    assert(contacts->CopyLatest(other,w2,3,&second)==PLANCK_NOT_FOUND && api->ReleaseLease(c,aliasWatch)==0);
+    auto begin=[&](ContactOrigin input){return BeginHit(PLANCK_HIT_MELEE,42,11,{},{},-1,0,71,31,input);};
+    auto evidence=[&](uint64_t id){PlanckHitEvidence e{sizeof(e)};assert(hits->CopyEvidence(c,id,&e)==0);return e;};
+    auto test=begin(origin);assert(evidence(test.hitId).contactId==origin.id && evidence(test.hitId).facts==PLANCK_ADMITTED);
+    // The hit refers to sequence 1; the latest observation already reached 4
+    // and has different geometry attribution. Exact history must recover 1.
+    assert(contacts->version==1 && contacts->size>=sizeof(PlanckContactsAPI));
+    PlanckContactSample exact{sizeof(exact)};
+    assert(contacts->CopyContact(c,w1,evidence(test.hitId).epoch,evidence(test.hitId).contactId,&exact)==PLANCK_OK);
+    assert(exact.sequence==1 && exact.contactId==origin.id && exact.otherShapeKey==0 && exact.otherGeometryRevision==1);
+    assert(exact.body.bodyGeneration==bod[0].body.bodyGeneration && exact.positionMetres.y==2 && exact.bodyPointVelocity.x==2);
+    assert(contacts->CopyContact(other,w2,origin.epoch,origin.id,&exact)==PLANCK_OK && exact.sequence==1 && exact.normalTowardBody.x==-1);
+    const auto unchanged=exact;
+    auto unchangedOutput=[&]{assert(!memcmp(&exact,&unchanged,sizeof(exact)));};
+    assert(contacts->CopyContact(other,w1,origin.epoch,origin.id,&exact)==PLANCK_INVALID);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,origin.epoch+1,origin.id,&exact)==PLANCK_STALE);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,origin.epoch,origin.id+100000,&exact)==PLANCK_NOT_FOUND);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,0,origin.id,&exact)==PLANCK_INVALID);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,origin.epoch,0,&exact)==PLANCK_INVALID);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,origin.epoch,origin.id,nullptr)==PLANCK_INVALID);
+    PlanckContactSample tooSmall{sizeof(tooSmall)-1};
+    assert(contacts->CopyContact(c,w1,origin.epoch,origin.id,&tooSmall)==PLANCK_INVALID);
+    PlanckToken lateWatch;assert(contacts->WatchBody(c,bod[0].body,&lateWatch)==PLANCK_OK);
+    assert(contacts->CopyContact(c,lateWatch,origin.epoch,origin.id,&exact)==PLANCK_NOT_FOUND);unchangedOutput();
+    assert(api->ReleaseLease(c,lateWatch)==PLANCK_OK);
+    assert(contacts->CopyContact(c,lateWatch,origin.epoch,origin.id,&exact)==PLANCK_INVALID);unchangedOutput();
+
+    Actor attacker,target,foreign;
+    {
+        MeleeApplicationScope outer(&attacker,&target,false,&test);
+        assert(!MeleeApplicationScope::Take(&attacker,&foreign,false) && !MeleeApplicationScope::Take(&attacker,&target,true));
+        MeleeApplicationScope inner(&attacker,&target,false,nullptr);
+        assert(!MeleeApplicationScope::Take(&attacker,&target,false));
+    }
+    assert(!MeleeApplicationScope::Take(&attacker,&target,false));
+    Vote low{.1f},high{.8f};PlanckToken lower,higher;
+    assert(hits->RegisterMeleeRule(other,"alpha",Rule,&low,&lower)==0);
+    assert(hits->RegisterMeleeRule(c,"priority",Rule,&high,&higher)==0);
+    PlanckActorPolicy cap{sizeof(cap),PLANCK_POLICY_CAP_MELEE_FACTOR,ar.actor,.4f,PLANCK_HIT_MELEE};PlanckToken lease;
+    assert(api->RequestActorPolicy(c,&cap,&lease)==0);
+    HitData numeric;ApplyPopulatedMeleeFields(test,numeric);auto applied=evidence(test.hitId);
+    assert(applied.appliedFactor==.4f && applied.populatedTotal==20 && !strcmp(applied.selectedRule,"priority"));
+    assert((applied.facts & (PLANCK_POPULATED_MELEE|PLANCK_SCALE_APPLIED|PLANCK_FACTOR_SELECTED))==(PLANCK_POPULATED_MELEE|PLANCK_SCALE_APPLIED|PLANCK_FACTOR_SELECTED));
+    assert(!(applied.facts&PLANCK_HANDLER_INVOKED) && numeric.totalDamage==8 && numeric.physicalDamage==4 && numeric.stagger==7 && !low.calls && high.calls==1);
+
+    // Check every field named by SCALE_APPLIED, with a binary-exact factor.
+    high.factor=.5f;assert(api->ReleaseLease(c,lease)==PLANCK_OK);
+    auto fixed=begin({});HitData seven;
+    seven.totalDamage=20;seven.healthDamage=18;seven.physicalDamage=16;seven.targetedLimbDamage=14;
+    seven.resistedPhysicalDamage=12;seven.resistedTypedDamage=10;seven.reflectedDamage=8;
+    ApplyPopulatedMeleeFields(fixed,seven);
+    assert(seven.totalDamage==10 && seven.healthDamage==9 && seven.physicalDamage==8 && seven.targetedLimbDamage==7);
+    assert(seven.resistedPhysicalDamage==6 && seven.resistedTypedDamage==5 && seven.reflectedDamage==4 && seven.stagger==7 && seven.flags==0);
+    assert((evidence(fixed.hitId).facts&PLANCK_SCALE_APPLIED) && evidence(fixed.hitId).appliedFactor==.5f);
+    FinishHit(fixed.hitId,true);high.factor=.8f;
+    assert(api->RequestActorPolicy(c,&cap,&lease)==PLANCK_OK);
+    FinishHit(test.hitId,true);assert(evidence(test.hitId).facts&PLANCK_HANDLER_INVOKED);
+    auto noLink=begin({origin.epoch+1,origin.id});assert(!evidence(noLink.hitId).contactId);
+    HitData terminal;terminal.flags=static_cast<uint32_t>(HitData::Flag::kFatal);ApplyPopulatedMeleeFields(noLink,terminal);
+    assert(terminal.totalDamage==20 && high.calls==2 && (evidence(noLink.hitId).facts&PLANCK_SCALE_UNAVAILABLE));
+    FinishHit(noLink.hitId,false);assert(!(evidence(noLink.hitId).facts&PLANCK_HANDLER_INVOKED));
+    assert(api->ReleaseLease(c,lease)==0 && api->Unsubscribe(c,higher)==0);
+    assert(hits->RegisterMeleeRule(c,"priority",Rule,&high,&higher)==0); high.answer=0;
+    auto next=begin({});HitData passed;ApplyPopulatedMeleeFields(next,passed);
+    assert(passed.totalDamage==2 && !strcmp(evidence(next.hitId).selectedRule,"alpha"));FinishHit(next.hitId,true);
+    high.answer=1;high.factor=1;next=begin({});HitData plain;ApplyPopulatedMeleeFields(next,plain);
+    assert(plain.totalDamage==20 && (evidence(next.hitId).facts&PLANCK_FACTOR_SELECTED) && !(evidence(next.hitId).facts&PLANCK_SCALE_APPLIED));FinishHit(next.hitId,true);
+
+    ContactOrigin oldestRetained{};
+    for(unsigned i=0;i<PLANCK_CONTACT_HISTORY_CAPACITY;++i){auto observed=emit();if(i==0)oldestRetained=observed;}
+    assert(contacts->CopyContact(c,w1,origin.epoch,origin.id,&exact)==PLANCK_NOT_FOUND);unchangedOutput();
+    assert(contacts->CopyContact(c,w1,oldestRetained.epoch,oldestRetained.id,&exact)==PLANCK_OK);
+    emit();const auto beforeEvicted=exact;
+    assert(contacts->CopyContact(c,w1,oldestRetained.epoch,oldestRetained.id,&exact)==PLANCK_NOT_FOUND && !memcmp(&exact,&beforeEvicted,sizeof(exact)));
+    auto afterEviction=begin(origin);assert(afterEviction.outcome==PLANCK_HIT_PENDING && evidence(afterEviction.hitId).contactId==origin.id);
+    FinishHit(afterEviction.hitId,true);assert(evidence(afterEviction.hitId).facts&PLANCK_HANDLER_INVOKED);
+    PlanckEndpointQuery query{sizeof(query),0,bod[0].body,{},0}; PlanckEndpoint endpoint{sizeof(endpoint)};
+    assert(api->AcquireAttachmentEndpoint(c,&query,&endpoint)==0);
+    a.world=b.world=99;PublishActor(42,12,false,72,32,1,{a,b},nullptr,1002);
+    assert(contacts->CopyLatest(c,w1,0,&first)==PLANCK_STALE && !HasContactWatches() &&
+           api->ValidateAttachmentEndpoint(c,endpoint.lease,&endpoint)==PLANCK_STALE);
+
+    const auto beforeStale=exact;
+    assert(contacts->CopyContact(c,w1,origin.epoch,origin.id,&exact)==PLANCK_STALE && !memcmp(&exact,&beforeStale,sizeof(exact)));
+    PlanckActorPhysics newActor{sizeof(newActor)};PlanckBodyPhysics newBody[2]{{sizeof(*newBody)},{sizeof(*newBody)}};
+    assert(api->CopyActorPhysics(c,42,&newActor,newBody,2,&req)==PLANCK_OK);
+    PlanckToken resetWatch;assert(contacts->WatchBody(c,newBody[0].body,&resetWatch)==PLANCK_OK);
+    assert(api->Unsubscribe(c,subscription)==0);
+    const auto previous=events.size();DeliverMainThreadEvents();assert(events.size()==previous);
+    assert(api->Subscribe(c,PLANCK_ACTOR_CHANGED,Record,nullptr,&subscription)==0);
+    for(unsigned i=0;i<1050;++i)DispatchEvents({{PLANCK_ACTOR_CHANGED,i,{},PLANCK_PHASE_LIFECYCLE}});
+    DeliverMainThreadEvents();assert(events.size()==previous+1025 && events.back().type==PLANCK_EVENT_GAP && events.back().phase==PLANCK_PHASE_LIFECYCLE);
+
+    Reset();assert(hits->CopyEvidence(c,test.hitId,&applied)==PLANCK_NOT_FOUND);
+    assert(contacts->CopyContact(c,resetWatch,newActor.actor.epoch,origin.id,&exact)==PLANCK_STALE);
+    assert(!HasContactWatches());
+
+    assert(api->ReleaseClient(c)==0 && api->ReleaseClient(other)==0);
+    puts("PASS exact bounded history, owner/epoch/generation/release/reset failures, passive overflow, all seven damage fields; contacts, world/shape generations, cursor loss, named pose match, extracted scaling on HitData double and protected flags, exact hit causality, priority/caps, deferred delivery/gap and immediate invalidation");
+}
