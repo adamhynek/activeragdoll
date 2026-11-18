@@ -30,4 +30,4 @@ The engine drive owns its graph/world phase. PLANCK sends passive observations t
 
 ## Verification
 
-The [offline fixtures and runner](https://github.com/Vhodnoylogin/activeragdoll/blob/ab6291e949d1b00fcb3ebac8ce7d17d983445e1e/tests/run_drive_tests.py) are maintained alongside the provider prototype.
+The [self-contained offline runner](../test/README.md) checks scoped drive policies against the production registry and current native drive functions with engine doubles. Real ragdoll behavior and gameplay remain separate qualification.

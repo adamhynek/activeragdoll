@@ -2,6 +2,8 @@
 
 This mod is also complicated.
 
+The proposed cooperation APIs have self-contained offline tests in [test/](test/README.md). Run `python test/run.py --build-dir <external-build-directory>` with Python 3.9+ and an x64 C11/C++20 toolchain. No Skyrim, SKSE or Havok installation is needed for these tests; their native adapter fixtures use engine doubles and do not qualify plugin initialization or gameplay.
+
 To build from source, it requires object definitions / headers similar to those belonging to havok 2010.2. I will not be providing these, nor do I claim to have them myself.
 
 

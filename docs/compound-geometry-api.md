@@ -26,6 +26,6 @@ Installed root and child wrappers and the native body remain retained until a la
 
 ## Verification and limits
 
-The [offline fixtures and runner](https://github.com/Vhodnoylogin/activeragdoll/blob/ab6291e949d1b00fcb3ebac8ce7d17d983445e1e/tests/run_synergy_tests.py) are maintained alongside the provider prototype.
+The [self-contained offline runner](../test/README.md) checks direct/list geometry requests, adoption, revision and lifetime handling against the current registry and native adapter functions with engine doubles. Actual Havok shape adoption remains separate qualification.
 
 The complete native DLL also compiles and links against the staged external SDK. Compilation and synthetic engine checks do not establish engine clone/reference/cache behavior, collision quality or actual PPB compatibility in Skyrim. No plugin was installed or game started. The full concept and current qualification limits remain in the [canonical Body Pouches documents](https://github.com/Vhodnoylogin/body-pouches/tree/main/docs/trinity-synergy).

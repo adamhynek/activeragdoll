@@ -1,0 +1,332 @@
+// Actual production publication and clutter commitment method, fake engine.
+#include "synergy_runtime.h"
+#include <atomic>
+#include <cassert>
+#include "support/check.h"
+#include <cstring>
+#include <iostream>
+#include <algorithm>
+#include <cmath>
+#include <map>
+#include <functional>
+#include <set>
+#include <vector>
+#include <mutex>
+#include <memory>
+using UInt32=uint32_t;using DWORD=uint32_t;
+thread_local DWORD fakeThread=1;DWORD GetCurrentThreadId(){return fakeThread;}
+std::atomic<DWORD> g_synergyActorThread{0};
+struct NiPoint3 {
+    float x=0,y=0,z=0;
+    NiPoint3 operator*(float n)const{return{x*n,y*n,z*n};}
+    float operator()(int index)const{return index==0?x:index==1?y:z;}
+    void set(float a,float b,float c,float){x=a;y=b;z=c;}
+};
+using hkVector4=NiPoint3;
+struct hkQuaternion {float m_vec(int index)const{return index==3?1.f:0.f;}};
+PlanckVec3 SynergyVector(NiPoint3 v){return{v.x,v.y,v.z};}
+NiPoint3 HkVectorToNiPoint(NiPoint3 v){return v;}
+NiPoint3 NiPointToHkVector(NiPoint3 v){return v;}
+float inverseScale=1;float* g_inverseHavokWorldScale=&inverseScale;
+float VectorLength(NiPoint3 v){return v.x;}
+template<class T>struct Pointer {
+    T* p=nullptr;Pointer()=default;Pointer(T* value):p(value){}
+    Pointer& operator=(T* value){p=value;return *this;}
+    T* val()const{return p;}T* operator->()const{return p;}operator T*()const{return p;}
+};
+template<class T>using NiPointer=Pointer<T>;
+namespace RE {template<class T>using hkRefPtr=Pointer<T>;}
+struct TESForm {uint32_t formID=1;};
+struct TESObjectREFR {virtual ~TESObjectREFR()=default;TESObjectREFR(TESForm* form=nullptr,uint32_t h=1):baseForm(form),handle(h){}TESForm* baseForm=nullptr;uint32_t handle=1;};
+struct TESObjectCELL;
+struct Actor:TESObjectREFR {TESObjectCELL* parentCell=nullptr;int root=0;void* GetNiNode(){return &root;}};
+uint32_t GetOrCreateRefrHandle(TESObjectREFR* r){return r->handle;}
+template<class T>struct EngineArray:std::vector<T>{
+    int getSize()const{return static_cast<int>(this->size());}
+};
+struct hkpShape {
+    virtual ~hkpShape()=default;uintptr_t m_userData=0;mutable int references=2;
+    void addReference()const{++references;}void removeReference()const{assert(references>0);--references;}
+};
+struct hkpCapsuleShape:hkpShape {
+    struct Vertex {float x,y,z,w;operator NiPoint3()const{return {x,y,z};}float operator()(int index)const{return index==0?x:index==1?y:z;}};
+    float m_radius=.1f;Vertex vertices[2]{{0,0,0,.1f},{0,0,.5f,.1f}};
+    int getReferenceCount()const{return references;}
+    Vertex getVertex(int i)const{return vertices[i];}
+    void setVertex(int i,NiPoint3 v){vertices[i]={v.x,v.y,v.z,m_radius};}
+};
+struct hkpListShape:hkpShape {
+    struct ChildInfo {const hkpShape* m_shape=nullptr;uint32_t m_collisionFilterInfo=0;int m_shapeSize=64,m_numChildShapes=1;};
+    EngineArray<ChildInfo> m_childInfo;uint16_t m_flags=3,m_numDisabledChildren=0;
+    NiPoint3 m_aabbCenter{},m_aabbHalfExtents{};uint32_t m_enabledChildren[8]{~0u,~0u,~0u,~0u,~0u,~0u,~0u,~0u};
+    int isChildEnabled(int index)const{return m_enabledChildren[index>>5]&(1u<<(index&31));}
+};
+struct bhkShape {Pointer<hkpShape> shape;uint32_t materialId=0,filterInfo=0;};
+struct Collidable {hkpShape* m_shape=nullptr;};
+struct hkpWorld {int critical=0;int areCriticalOperationsLocked()const{return critical;}};
+struct bhkWorld {Pointer<hkpWorld> world;int worldLock=0;};
+bool graphHeld=false,worldHeld=false;
+std::function<void()> afterWorldUnlock;
+struct SimpleLocker {
+    explicit SimpleLocker(int*){assert(!graphHeld&&!worldHeld);graphHeld=true;}
+    ~SimpleLocker(){assert(graphHeld&&!worldHeld);graphHeld=false;}
+};
+struct BSWriteLocker {
+    explicit BSWriteLocker(int*){assert(graphHeld&&!worldHeld);worldHeld=true;}
+    ~BSWriteLocker(){worldHeld=false;if(afterWorldUnlock){auto callback=std::move(afterWorldUnlock);afterWorldUnlock={};callback();}}
+};
+#define DYNAMIC_CAST(value,from,to) dynamic_cast<to*>(static_cast<from*>(value))
+std::set<const void*> livingBodies;
+struct hkpRigidBody {
+    hkpRigidBody(){livingBodies.insert(this);}
+    ~hkpRigidBody(){livingBodies.erase(this);}
+    void Check()const{assert(livingBodies.count(this)&&worldHeld);}
+    bool postpone=false;hkpShape* queuedShape=nullptr;
+    void setShape(hkpShape* value){Check();if(postpone)queuedShape=value;else collidable.m_shape=value;}
+    hkpWorld* world=nullptr;Collidable collidable;NiPoint3 position{},velocity{10,0,0};hkQuaternion rotation;
+    hkpWorld* getWorld(){Check();return world;}Collidable* getCollidable(){return &collidable;}
+    NiPoint3 getPosition(){Check();return position;}hkQuaternion getRotation(){Check();return rotation;}
+    NiPoint3 getLinearVelocity(){return velocity;}float getMassInv(){return .1f;}
+};
+struct bhkRigidBody {hkpRigidBody* hkBody;};
+struct BoneName {const char* text="NPC Test";const char* cString()const{return text;}};
+struct Bone {BoneName m_name;};
+struct Skeleton {EngineArray<Bone> m_bones;};
+struct hkaRagdollInstance {
+    hkpWorld* world=nullptr;Skeleton* m_skeleton=nullptr;EngineArray<hkpRigidBody*> m_rigidBodies;
+    EngineArray<int> boneToBody;
+    int getBoneIndexOfRigidBody(hkpRigidBody* body) const {
+        for (int i=0; i<boneToBody.getSize(); ++i) {
+            if (boneToBody[i]>=0 && m_rigidBodies[boneToBody[i]]==body) return i;
+        }
+        return -1;
+    }
+    hkpWorld* getWorld(){assert(graphHeld&&worldHeld&&!m_rigidBodies.empty());return world;}
+};
+struct hkbRagdollDriver {hkaRagdollInstance* ragdoll=nullptr;};
+struct BShkbAnimationGraph {struct Character {hkbRagdollDriver* ragdollDriver=nullptr;} character;};
+struct GraphPointer {BShkbAnimationGraph* ptr=nullptr;};
+struct Graphs {uint32_t size=1;GraphPointer data[1];GraphPointer* GetData(){return data;}};
+struct BSAnimationGraphManager {int updateLock=0;Graphs graphs;};
+struct BSAnimationGraphManagerPtr {BSAnimationGraphManager* ptr=nullptr;};
+BSAnimationGraphManager fakeManager;
+struct TESObjectCELL {bhkWorld* world;};
+bool GetAnimationGraphManager(Actor*,BSAnimationGraphManagerPtr& result){result.ptr=&fakeManager;return true;}
+NiPointer<bhkWorld> GetHavokWorldFromCell(TESObjectCELL* cell){return{cell->world};}
+bool GetActiveRagdollFromDriver(hkbRagdollDriver*){return true;}
+bool Actor_IsInRagdollState(Actor*){return false;}
+Actor* resolvedActor=nullptr;
+bool LookupREFRByHandle(UInt32& handle,NiPointer<TESObjectREFR>& out){if(!resolvedActor||resolvedActor->handle!=handle)return false;out=resolvedActor;return true;}
+struct bhkCharacterController {struct CollisionEvent {bhkRigidBody* body;NiPoint3 position,normal,bodyVelocity;};};
+struct HitData {
+    NiPoint3 hitPosition;uint32_t aggressor=0,flags=0;
+    float totalDamage=0,healthDamage=0,physicalDamage=0,targetedLimbDamage=0,
+        resistedPhysicalDamage=0,resistedTypedDamage=0,reflectedDamage=0;
+};
+unsigned ctorCalls=0,dtorCalls=0,commitCalls=0,selfDamageCalls=0;
+HitData committed{};
+void HitData_ctor(HitData*){++ctorCalls;}
+void HitData_dtor(HitData*){++dtorCalls;}
+void HitData_PopulateFromPhysicalHit(HitData* h,Actor*,Actor*,float damage,const bhkCharacterController::CollisionEvent& e){
+    h->hitPosition=e.position;h->totalDamage=h->healthDamage=h->physicalDamage=damage;
+}
+float GetPhysicsDamage(float,float,float,float){return 20.f;}
+void Actor_GetHit(Actor*,HitData& h){++commitCalls;committed=h;}
+TESForm objectForm;TESObjectREFR object{&objectForm,99};
+NiPointer<TESObjectREFR> GetRefFromCollidable(Collidable*){return{&object};}
+struct BSTaskPool {static BSTaskPool* GetSingleton(){return nullptr;}};
+void BSTaskPool_QueueDamageObjectTask(BSTaskPool*,TESObjectREFR*,float,bool,Actor*){++selfDamageCalls;}
+namespace Config {struct Options {bool showCollisionDamageHitFx=true;float physicsHitRecoveryTime=1.f;bool damageHittingObjectOnPhysicalHit=true;float hittingObjectSelfDamage=1.f;} options;}
+#define _DMESSAGE(...) ((void)0)
+uint32_t frame=1;uint32_t* g_currentFrameCounter=&frame;
+std::atomic<uint64_t> g_synergyPhysicsTick{1};double g_currentFrameTime=1.;
+struct NiCloningProcess {};
+bool cloneSharesRoot=false,cloneSharesCapsule=false;
+bhkShape* NiObject_Clone(bhkShape* source,NiCloningProcess*){
+    auto* old=dynamic_cast<hkpCapsuleShape*>(source->shape.val());
+    hkpShape* copy=nullptr;
+    if(old)copy=cloneSharesCapsule?old:new hkpCapsuleShape(*old);
+    else{
+        auto* list=dynamic_cast<hkpListShape*>(source->shape.val());assert(list);
+        if(cloneSharesRoot)return new bhkShape{{list}};
+        auto* cloned=new hkpListShape(*list);for(const auto& child:cloned->m_childInfo)if(child.m_shape)child.m_shape->addReference();copy=cloned;
+    }
+    auto* wrapper=new bhkShape{{copy}};
+    if(cloneSharesCapsule)return wrapper; // An invalid clone must not change the original's back-pointer.
+    copy->m_userData=reinterpret_cast<uintptr_t>(wrapper);return wrapper;
+}
+/*@GEOMETRY_NATIVE@*/
+/*@ACTOR_PUBLICATION@*/
+/*@ENDPOINT_RESOLVER@*/
+struct Listener {
+    uint32_t lastPhysicsDamageFormId=0;
+    std::map<std::pair<Actor*,hkpRigidBody*>,double> physicsHitCooldownTargets;
+    /*@CLUTTER_HIT@*/
+};
+void PLANCK_CALL Deny(const PlanckHitSnapshot*,PlanckHitDecision* d,void*){d->deny=1;}
+void PLANCK_CALL Reduce(const PlanckHitSnapshot*,PlanckHitDecision* d,void*){d->damageScale=.25f;}
+int main(){
+    const auto* api=PlanckSynergy::GetAPI();PlanckClientIdentity id{sizeof(id),0,"native.fake"};PlanckToken client=0;
+    assert(api->RegisterClient(&id,&client)==PLANCK_OK);
+    PlanckHitPolicy p{sizeof(p),PLANCK_HIT_CLUTTER,{}};PlanckToken policy=0;
+    hkpRigidBody body;bhkRigidBody wrapper{&body};Actor target;target.handle=42;Listener listener;
+    assert(api->RegisterHitPolicy(client,&p,Deny,nullptr,&policy)==PLANCK_OK);
+    listener.ApplyPhysicsDamage(nullptr,&target,&wrapper,{},{},0,0);
+    assert(commitCalls==0&&selfDamageCalls==0&&listener.physicsHitCooldownTargets.empty()&&ctorCalls==dtorCalls);
+    assert(api->Unsubscribe(client,policy)==PLANCK_OK);
+    assert(api->RegisterHitPolicy(client,&p,Reduce,nullptr,&policy)==PLANCK_OK);
+    listener.ApplyPhysicsDamage(nullptr,&target,&wrapper,{},{},0,0);
+    assert(commitCalls==1&&committed.totalDamage==5.f&&committed.healthDamage==5.f&&committed.physicalDamage==5.f);
+    assert(selfDamageCalls==1&&listener.physicsHitCooldownTargets.size()==1&&ctorCalls==dtorCalls);
+    assert(api->ReleaseClient(client)==PLANCK_OK);
+    static PlanckToken finishingReader=0;PlanckToken passiveSub=0;
+    assert(api->RegisterClient(&id,&finishingReader)==PLANCK_OK);
+    assert(api->Subscribe(finishingReader,PLANCK_HIT_CANDIDATE,+[](const PlanckEvent*,void*){},nullptr,&passiveSub)==PLANCK_OK);
+    PlanckSynergy::InstallEventScheduler(+[]{assert(PlanckSynergy::GetAPI()->ReleaseClient(finishingReader)==PLANCK_OK);});
+    Listener passiveListener;
+    passiveListener.ApplyPhysicsDamage(nullptr,&target,&wrapper,{},{},0,0);
+    assert(commitCalls==2&&committed.totalDamage==20.f&&committed.healthDamage==20.f&&selfDamageCalls==2&&ctorCalls==dtorCalls);
+    PlanckSynergy::DeliverMainThreadEvents();PlanckSynergy::InstallEventScheduler(nullptr);
+    PlanckSynergy::Reset();
+    assert(api->RegisterClient(&id,&client)==PLANCK_OK);
+    PlanckSynergy::SetGeometryExecutorAvailable(true);assert(api->capabilities&PLANCK_CAP_CAPSULE_GEOMETRY);
+    hkpWorld world;bhkWorld bw{{&world}};TESObjectCELL cell{&bw};target.parentCell=&cell;
+    auto* live=new hkpRigidBody;live->world=&world;
+    hkpCapsuleShape shape;bhkShape sourceShape{{&shape}};shape.m_userData=reinterpret_cast<uintptr_t>(&sourceShape);live->collidable.m_shape=&shape;
+    Skeleton skeleton;skeleton.m_bones.push_back({{"unmapped"}});skeleton.m_bones.push_back({{"NPC Pelvis"}});
+    hkaRagdollInstance ragdoll;ragdoll.world=&world;ragdoll.m_skeleton=&skeleton;ragdoll.m_rigidBodies.push_back(live);
+    ragdoll.boneToBody.push_back(-1);ragdoll.boneToBody.push_back(0);
+    hkbRagdollDriver driver{&ragdoll};BShkbAnimationGraph graph;graph.character.ragdollDriver=&driver;fakeManager.graphs.data[0].ptr=&graph;
+    unsigned published=0;PlanckToken subscription=0;
+    auto observer=+[](const PlanckEvent* e,void* p){if(e->phase==PLANCK_PHASE_MAIN){assert(!graphHeld&&!worldHeld);++*static_cast<unsigned*>(p);}};
+    assert(api->Subscribe(client,PLANCK_ACTOR_CHANGED,observer,&published,&subscription)==PLANCK_OK);
+    PublishSynergyActor(&target);resolvedActor=&target;
+    PlanckSynergy::InstallNativeEndpointResolver(ResolveSynergyEndpoint);
+    PlanckActorPhysics a{sizeof(a)};PlanckBodyPhysics b{sizeof(b)};uint32_t needed=0;
+    assert(api->CopyActorPhysics(client,42,&a,&b,1,&needed)==PLANCK_OK);
+    assert(std::strcmp(b.boneName,"NPC Pelvis")==0 && a.observedAtNs>0);
+    PlanckEndpointQuery query{sizeof(query),0,b.body,{0,0,.2f},0};PlanckEndpoint endpoint{sizeof(endpoint)};
+    assert(api->AcquireAttachmentEndpoint(client,&query,&endpoint)==PLANCK_OK);
+    auto visit=+[](const PlanckNativeEndpoint* n,void* p)->PlanckStatus{
+        assert(graphHeld&&worldHeld&&n->rigidBody==reinterpret_cast<uintptr_t>(p)&&n->endpoint.localPoint.z==.2f);
+        return PLANCK_OK;
+    };
+    fakeThread=2;assert(PlanckSynergy::GetPhysicalInteropAPI()->WithAttachmentEndpoint(client,endpoint.lease,visit,live)==PLANCK_BUSY);fakeThread=1;
+    assert(PlanckSynergy::GetPhysicalInteropAPI()->WithAttachmentEndpoint(client,endpoint.lease,visit,live)==PLANCK_OK);
+    PlanckGeometryRequest g{sizeof(g),0,b.body,b.geometryRevision,{0,0,0},{0,0,.7f},.15f,0};PlanckToken request=0;
+    assert(api->RequestActorGeometry(client,&g,&request)==PLANCK_OK);
+    world.critical=1;PublishSynergyActor(&target);
+    PlanckRequestResult result{sizeof(result)};assert(api->GetRequestResult(client,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_ACCEPTED);
+    assert(shape.m_radius==.1f);world.critical=0;live->postpone=true;PublishSynergyActor(&target);
+    assert(api->CancelRequest(client,request)==PLANCK_BUSY&&live->queuedShape);
+    assert(shape.m_radius==.1f);live->collidable.m_shape=live->queuedShape;live->queuedShape=nullptr;live->postpone=false;
+    PublishSynergyActor(&target);assert(api->GetRequestResult(client,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_COMPLETED&&result.geometryRevision==2);
+    auto* adopted=dynamic_cast<hkpCapsuleShape*>(live->collidable.m_shape);assert(adopted&&adopted!=&shape&&adopted->m_radius==.15f&&shape.m_radius==.1f);
+    assert(adopted->getVertex(1).z==.7f&&shape.getVertex(1).z==.5f);
+    assert(adopted->getVertex(0).w==.15f&&adopted->getVertex(1).w==.15f);
+    assert(api->ReleaseLease(client,request)==PLANCK_OK);
+    const auto address=reinterpret_cast<uintptr_t>(live);
+    afterWorldUnlock=[&]{
+        // The registry publication MUST already exist before releasing world ownership.
+        PlanckActorPhysics actor{sizeof(actor)};PlanckBodyPhysics copied{sizeof(copied)};uint32_t count=0;
+        assert(api->CopyActorPhysics(client,42,&actor,&copied,1,&count)==PLANCK_OK&&count==1);
+        PlanckSynergy::InvalidateBody(address);RetireSynergyGeometry(address);assert(!adopted->m_userData);delete live;live=nullptr;ragdoll.m_rigidBodies.clear();
+    };
+    PublishSynergyActor(&target);
+    assert(!live&&!livingBodies.count(reinterpret_cast<void*>(address))&&published==3);
+    PlanckActorPhysics actor{sizeof(actor)};uint32_t count=0;
+    assert(api->CopyActorPhysics(client,42,&actor,nullptr,0,&count)==PLANCK_NOT_FOUND);
+    // A fresh object can reuse an old numerical address only after invalidation;
+    // publication never resurrects the destroyed sample after its unlock callback.
+    PublishSynergyActor(&target);
+    assert(api->CopyActorPhysics(client,42,&actor,nullptr,0,&count)==PLANCK_NOT_FOUND);
+    g.body=b.body;request=999;assert(api->RequestActorGeometry(client,&g,&request)==PLANCK_STALE&&request==0);
+    assert(api->ReleaseClient(client)==PLANCK_OK);
+    // Compound-list fitting is an atomic body operation. All original children,
+    // disabled/filter state and callbacks remain owned by their original source.
+    assert(api->RegisterClient(&id,&client)==PLANCK_OK);
+    PlanckClientIdentity secondId{sizeof(secondId),0,"native.competing"};PlanckToken other=0;assert(api->RegisterClient(&secondId,&other)==PLANCK_OK);
+    const auto* compound=PlanckSynergy::GetCompoundGeometryAPI();PlanckSynergy::SetCompoundExecutorAvailable(true);
+    auto* listBody=new hkpRigidBody;listBody->world=&world;hkpCapsuleShape childA,childB;
+    bhkShape childWrapperA{{&childA},123,321},childWrapperB{{&childB},456,654};childA.m_userData=reinterpret_cast<uintptr_t>(&childWrapperA);childB.m_userData=reinterpret_cast<uintptr_t>(&childWrapperB);
+    hkpListShape sourceList;sourceList.m_childInfo.push_back({&childA,33,64,1});sourceList.m_childInfo.push_back({&childB,55,64,1});
+    sourceList.m_enabledChildren[0]&=~2u;sourceList.m_numDisabledChildren=1;bhkShape listWrapper{{&sourceList}};sourceList.m_userData=reinterpret_cast<uintptr_t>(&listWrapper);
+    listBody->collidable.m_shape=&sourceList;ragdoll.m_rigidBodies.push_back(listBody);PublishSynergyActor(&target);
+    assert(api->CopyActorPhysics(client,42,&a,&b,1,&needed)==PLANCK_OK);
+    PlanckBodyGeometry geometry{sizeof(geometry)};PlanckShapeChild children[2]{};for(auto& child:children)child.size=sizeof(child);
+    assert(compound->CopyBodyGeometry(client,b.body,&geometry,nullptr,0,&needed)==PLANCK_BUFFER&&needed==2);
+    assert(compound->CopyBodyGeometry(client,b.body,&geometry,children,2,&needed)==PLANCK_OK&&geometry.geometryRevision==1&&geometry.shapeKind==PLANCK_SHAPE_LIST);
+    assert(children[0].enabled&&children[0].collisionFilter==33&&!children[1].enabled&&children[1].collisionFilter==55);
+    PlanckCompoundProposal proposal{sizeof(proposal),2,b.body,geometry.geometryRevision,0};
+    PlanckCapsuleEdit edits[2]{{sizeof(PlanckCapsuleEdit),0,{0,0,0},{0,0,1.5f},.2f,0},{sizeof(PlanckCapsuleEdit),1,{0,0,0},{0,0,2.5f},.3f,0}};
+    auto malformed=proposal;malformed.reserved=1;assert(compound->RequestCapsuleEdits(client,&malformed,edits,&request)==PLANCK_INVALID);
+    auto duplicate=edits[1];edits[1].index=0;assert(compound->RequestCapsuleEdits(client,&proposal,edits,&request)==PLANCK_INVALID);edits[1]=duplicate;
+    malformed=proposal;--malformed.expectedRevision;assert(compound->RequestCapsuleEdits(client,&malformed,edits,&request)==PLANCK_INVALID);
+    assert(compound->RequestCapsuleEdits(client,&proposal,edits,&request)==PLANCK_OK);PlanckToken rejected=999;
+    assert(compound->RequestCapsuleEdits(other,&proposal,edits,&rejected)==PLANCK_CONFLICT&&rejected==0);
+    world.critical=1;PublishSynergyActor(&target);assert(listBody->collidable.m_shape==&sourceList);world.critical=0;
+    listBody->postpone=true;PublishSynergyActor(&target);assert(listBody->queuedShape&&listBody->collidable.m_shape==&sourceList);
+    assert(api->CancelRequest(client,request)==PLANCK_BUSY&&api->ReleaseClient(client)==PLANCK_BUSY);
+    assert(compound->RequestCapsuleEdits(other,&proposal,edits,&rejected)==PLANCK_CONFLICT);
+    listBody->collidable.m_shape=listBody->queuedShape;listBody->queuedShape=nullptr;listBody->postpone=false;PublishSynergyActor(&target);
+    assert(api->GetRequestResult(client,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_COMPLETED&&result.geometryRevision==2);
+    auto* adoptedList=dynamic_cast<hkpListShape*>(listBody->collidable.m_shape);assert(adoptedList&&adoptedList!=&sourceList);
+    assert(adoptedList->m_childInfo[0].m_shape!=&childA&&adoptedList->m_childInfo[1].m_shape!=&childB&&adoptedList->m_childInfo[0].m_shape!=adoptedList->m_childInfo[1].m_shape);
+    assert(childA.m_radius==.1f&&childB.m_radius==.1f&&sourceList.m_childInfo[0].m_shape==&childA&&sourceList.m_childInfo[1].m_shape==&childB);
+    assert(adoptedList->m_enabledChildren[0]==sourceList.m_enabledChildren[0]&&adoptedList->m_numDisabledChildren==1&&adoptedList->m_flags==sourceList.m_flags);
+    assert(adoptedList->m_childInfo[0].m_collisionFilterInfo==33&&adoptedList->m_childInfo[1].m_collisionFilterInfo==55);
+    auto* clonedChildA=reinterpret_cast<bhkShape*>(adoptedList->m_childInfo[0].m_shape->m_userData);
+    auto* clonedChildB=reinterpret_cast<bhkShape*>(adoptedList->m_childInfo[1].m_shape->m_userData);
+    assert(clonedChildA->materialId==123&&clonedChildA->filterInfo==321&&clonedChildB->materialId==456&&clonedChildB->filterInfo==654);
+    assert(std::abs(adoptedList->m_aabbCenter.z-1.25f)<1e-6f&&std::abs(adoptedList->m_aabbHalfExtents.z-1.55f)<1e-6f);
+    assert(compound->CopyBodyGeometry(other,b.body,&geometry,children,2,&needed)==PLANCK_OK&&geometry.geometryRevision==2&&children[1].radius==.3f&&children[1].capsuleB.z==2.5f);
+    PublishSynergyActor(&target);assert(compound->CopyBodyGeometry(other,b.body,&geometry,children,2,&needed)==PLANCK_OK&&geometry.geometryRevision==2);
+    assert(api->ReleaseClient(client)==PLANCK_OK);
+    unsigned geometryChanges=0;PlanckToken geometrySubscription=0;
+    assert(api->Subscribe(other,PLANCK_ACTOR_CHANGED,observer,&geometryChanges,&geometrySubscription)==PLANCK_OK);
+    adoptedList->m_enabledChildren[0]^=1u;PublishSynergyActor(&target);
+    assert(compound->CopyBodyGeometry(other,b.body,&geometry,children,2,&needed)==PLANCK_OK&&geometry.geometryRevision==3&&geometryChanges==1);
+    proposal.expectedRevision=geometry.geometryRevision;
+    for(int invalidClone=0;invalidClone<2;++invalidClone){
+        assert(compound->RequestCapsuleEdits(other,&proposal,edits,&request)==PLANCK_OK);
+        cloneSharesRoot=invalidClone==0;cloneSharesCapsule=invalidClone==1;PublishSynergyActor(&target);cloneSharesRoot=false;cloneSharesCapsule=false;
+        assert(api->GetRequestResult(other,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_REJECTED&&result.status==PLANCK_UNSUPPORTED);
+        assert(listBody->collidable.m_shape==adoptedList);assert(api->ReleaseLease(other,request)==PLANCK_OK);
+    }
+    for(bool deferred: {false,true}){
+        // An external root replacement can preserve the rigid-body generation.
+        // Direct adoption must retire every previous compound child wrapper too.
+        listBody->collidable.m_shape=&sourceList;PublishSynergyActor(&target);
+        assert(api->CopyActorPhysics(other,42,&a,&b,1,&needed)==PLANCK_OK);
+        proposal.body=b.body;proposal.expectedRevision=b.geometryRevision;
+        assert(compound->RequestCapsuleEdits(other,&proposal,edits,&request)==PLANCK_OK);PublishSynergyActor(&target);
+        assert(api->GetRequestResult(other,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_COMPLETED);
+        assert(api->ReleaseLease(other,request)==PLANCK_OK);
+        adoptedList=dynamic_cast<hkpListShape*>(listBody->collidable.m_shape);assert(adoptedList&&adoptedList->m_userData);
+        listBody->collidable.m_shape=&shape;PublishSynergyActor(&target);
+        assert(api->CopyActorPhysics(other,42,&a,&b,1,&needed)==PLANCK_OK);
+        g.body=b.body;g.expectedRevision=b.geometryRevision;g.radius=.25f;
+        assert(api->RequestActorGeometry(other,&g,&request)==PLANCK_OK);listBody->postpone=deferred;PublishSynergyActor(&target);
+        if(deferred){
+            assert(listBody->queuedShape&&adoptedList->m_userData&&adoptedList->m_childInfo[0].m_shape->m_userData);
+            listBody->collidable.m_shape=listBody->queuedShape;listBody->queuedShape=nullptr;listBody->postpone=false;PublishSynergyActor(&target);
+        }
+        assert(api->GetRequestResult(other,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_COMPLETED);
+        assert(!adoptedList->m_userData&&!adoptedList->m_childInfo[0].m_shape->m_userData&&!adoptedList->m_childInfo[1].m_shape->m_userData);
+        assert(api->ReleaseLease(other,request)==PLANCK_OK);
+    }
+    // A late unsupported child refuses the complete batch after preparing the
+    // first private child: no root, authored geometry or retained owner changes.
+    hkpShape unsupported;sourceList.m_childInfo[1].m_shape=&unsupported;listBody->collidable.m_shape=&sourceList;PublishSynergyActor(&target);
+    assert(api->CopyActorPhysics(other,42,&a,&b,1,&needed)==PLANCK_OK);
+    proposal.body=b.body;proposal.expectedRevision=b.geometryRevision;proposal.editCount=1;
+    assert(compound->RequestCapsuleEdits(other,&proposal,edits,&request)==PLANCK_OK);PublishSynergyActor(&target);
+    assert(api->GetRequestResult(other,request,&result)==PLANCK_OK&&result.stage==PLANCK_REQUEST_REJECTED&&result.status==PLANCK_UNSUPPORTED);
+    assert(listBody->collidable.m_shape==&sourceList&&sourceList.m_childInfo[0].m_shape==&childA&&childA.m_radius==.1f&&sourceList.m_childInfo[1].m_shape==&unsupported);
+    assert(api->ReleaseLease(other,request)==PLANCK_OK);
+    PlanckSynergy::InvalidateBody(reinterpret_cast<uintptr_t>(listBody));RetireSynergyGeometry(reinterpret_cast<uintptr_t>(listBody));
+    assert(!adoptedList->m_userData&&!adoptedList->m_childInfo[0].m_shape->m_userData&&!adoptedList->m_childInfo[1].m_shape->m_userData);
+    delete listBody;ragdoll.m_rigidBodies.clear();assert(api->ReleaseClient(other)==PLANCK_OK);
+    std::cout<<"PASS actual-source clutter, scoped endpoints, direct/compound clone adoption, revisions, deferred/closing ownership, alias/partial refusal, disabled/filter/AABB preservation and all wrapper retirement paths\n";
+
+}

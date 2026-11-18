@@ -8,4 +8,4 @@ Only contacts that reach PLANCK's existing listener, are potential and are not a
 
 The headers under `include/higgs_contracts/` are separately negotiated additions. `source-pins.json` records their source snapshot; original 001 remains unchanged. The cosmetic consumer polls HIGGS in a safe phase, chooses audio and uses ordinary HIGGS haptics. No audio assets, hardware pulses or in-game qualification are supplied here.
 
-The [offline fixtures and runner](https://github.com/Vhodnoylogin/activeragdoll/blob/9d646f141dccd9dd5c75a6e1b886b80a8a7f692f/tests/run_own_contact_tests.py) are maintained alongside the provider prototype.
+The [self-contained offline runner](../test/README.md) compiles the current own-item forwarding and hand-part functions with explicit engine doubles. It checks the copied evidence and optional-provider fallback, not real solver contacts.
