@@ -4126,18 +4126,19 @@ void PreVrikPreHiggsCallback()
 {
     // Wand nodes are up to date at this point
 
-    for (int i = 0; i < 2; i++) {
-        bool isLeft = bool(i);
-        NiAVObjectPtr wandNode = GetWandNode(isLeft);
-        NiPoint3 wandPositionRoomspace = wandNode->m_localTransform.pos;
+    for (int isLeft = 0; isLeft < 2; isLeft++) {
+        if (NiAVObjectPtr wandNode = GetWandNode(isLeft)) {
+            NiPoint3 wandPositionRoomspace = wandNode->m_localTransform.pos;
 
-        ControllerTrackingData &controllerData = g_controllerData[i];
-        controllerData.positionsRoomspace.pop_back();
-        controllerData.positionsRoomspace.push_front(wandPositionRoomspace);
-        controllerData.ComputeAngularVelocity();
+            ControllerTrackingData &controllerData = g_controllerData[isLeft];
+            controllerData.positionsRoomspace.pop_back();
+            controllerData.positionsRoomspace.push_front(wandPositionRoomspace);
+            controllerData.ComputeAngularVelocity();
+        }
 
-        NiAVObjectPtr handNode = GetFirstPersonHandNode(isLeft);
-        g_rawHandTransforms[isLeft] = handNode->m_worldTransform;
+        if (NiAVObjectPtr handNode = GetFirstPersonHandNode(isLeft)) {
+            g_rawHandTransforms[isLeft] = handNode->m_worldTransform;
+        }
     }
 }
 
