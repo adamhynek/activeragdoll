@@ -25,6 +25,10 @@ struct Events {PlanckToken client=0,sub=0;unsigned count=0;PlanckStatus removal=
 void PLANCK_CALL Event(const PlanckEvent* e,void* p){auto& x=*static_cast<Events*>(p);++x.count;assert(e->size==sizeof(*e));if(x.selfRemove)x.removal=api->Unsubscribe(x.client,x.sub);if(x.closeClient)x.removal=api->ReleaseClient(x.client);}
 void PLANCK_CALL Deny(const PlanckHitSnapshot* h,PlanckHitDecision* d,void* p){assert(h->outcome==PLANCK_HIT_PENDING);++*static_cast<unsigned*>(p);d->deny=1;}
 void PLANCK_CALL Reduce(const PlanckHitSnapshot*,PlanckHitDecision* d,void*){d->damageScale=.25f;}
+void PLANCK_CALL RequireOriginalScale(const PlanckHitSnapshot* h,PlanckHitDecision* d,void* p){
+    ++*static_cast<unsigned*>(p);
+    d->deny=h->damageScale!=1.f;
+}
 void PLANCK_CALL ResetPolicy(const PlanckHitSnapshot*,PlanckHitDecision*,void*){Reset();}
 void PLANCK_CALL Malformed(const PlanckHitSnapshot*,PlanckHitDecision* d,void*){d->damageScale=NAN;}
 PlanckGeometryRequest Geometry(PlanckBodyPhysics b){return {sizeof(PlanckGeometryRequest),0,b.body,b.geometryRevision,{0,0,0},{0,0,.6f},.12f,0};}
@@ -94,6 +98,22 @@ void HitPolicies(){
     PlanckToken malformed=0;assert(api->RegisterHitPolicy(c,&policy,Malformed,nullptr,&malformed)==PLANCK_OK);assert(Hit().outcome==PLANCK_HIT_DENIED);assert(Hit().outcome==PLANCK_HIT_PENDING); // bad policy retired
     PlanckToken reset=0;assert(api->RegisterHitPolicy(c,&policy,ResetPolicy,nullptr,&reset)==PLANCK_OK);assert(Hit().outcome==PLANCK_HIT_CANCELLED);
     assert(api->ReleaseClient(c)==PLANCK_OK);
+}
+void HitPolicyCandidate(){
+    Reset();const auto client=Client("hits.original");Publish();
+    PlanckHitPolicy policy{sizeof(policy),PLANCK_HIT_CLUTTER,{}};
+    for(const bool reducerFirst:{true,false}){
+        unsigned observed=0;
+        PlanckToken first=0,last=0;
+        assert(api->RegisterHitPolicy(client,&policy,reducerFirst?Reduce:RequireOriginalScale,&observed,&first)==PLANCK_OK);
+        assert(api->RegisterHitPolicy(client,&policy,reducerFirst?RequireOriginalScale:Reduce,&observed,&last)==PLANCK_OK);
+        const auto hit=Hit();
+        assert(observed==1&&hit.outcome==PLANCK_HIT_PENDING&&hit.damageScale==.25f);
+        FinishHit(hit.hitId,true);
+        assert(api->Unsubscribe(client,first)==PLANCK_OK);
+        assert(api->Unsubscribe(client,last)==PLANCK_OK);
+    }
+    assert(api->ReleaseClient(client)==PLANCK_OK);
 }
 void Drainage(){
     Reset();auto c=Client("drain.self");Publish();Events e{c};e.selfRemove=true;
@@ -178,25 +198,61 @@ void PhysicalBridge(){
     Publish(200);assert(bridge->WithAttachmentEndpoint(c,e.lease,visit,&calls)==PLANCK_STALE&&calls==1);
     assert(api->ReleaseClient(c)==PLANCK_OK);InstallNativeEndpointResolver(nullptr);
 }
-void PLANCK_CALL InvalidatePolicy(const PlanckHitSnapshot*,PlanckHitDecision*,void*){InvalidateActor(42);}
+void PLANCK_CALL InvalidatePolicy(const PlanckHitSnapshot*,PlanckHitDecision* d,void* p){
+    InvalidateActor(42);
+    d->damageScale=.25f;
+    d->deny=p!=nullptr;
+}
 void InvalidationDuringPolicy(){
     Reset();auto c=Client("hits.invalidate");Publish();PlanckHitPolicy p{sizeof(p),3,{}};PlanckToken policy=0;
     Events terminal{c};assert(api->Subscribe(c,PLANCK_HIT_COMMITTED,Event,&terminal,&terminal.sub)==PLANCK_OK);
     assert(api->RegisterHitPolicy(c,&p,InvalidatePolicy,nullptr,&policy)==PLANCK_OK);
-    // More than the retained hit pool: none may remain pending after cancellation.
+    // Retained attempts remain pending until the native path reports its result,
+    // including when an actor was replaced after initial policy evaluation.
     for(unsigned i=0;i<300;++i){
-        Publish();auto h=Hit(PLANCK_HIT_MELEE);assert(h.hitId&&h.outcome==PLANCK_HIT_CANCELLED);
+        Publish();
+        const bool invoked=(i%2)==0;
+        const auto h=BeginHit(invoked?PLANCK_HIT_CLUTTER:PLANCK_HIT_MELEE,42,1,{},{},10.f,2,10,20,
+            {CaptureHitEpoch(),123});
+        assert(h.hitId&&h.outcome==PLANCK_HIT_PENDING&&h.damageScale==1.f);
+        assert(!PrepareHitForHandler(h,true));
+        assert(terminal.count==i);
+        FinishHit(h.hitId,invoked);
+        FinishHit(h.hitId,!invoked);
         PlanckHitSnapshot copied{sizeof(copied)};
-        assert(api->CopyHitSnapshot(c,h.hitId,&copied)==PLANCK_OK&&copied.outcome==PLANCK_HIT_CANCELLED);
-        assert(terminal.count==i+1);FinishHit(h.hitId,true);FinishHit(h.hitId,false);assert(terminal.count==i+1);
+        PlanckHitEvidence evidence{sizeof(evidence)};
+        assert(api->CopyHitSnapshot(c,h.hitId,&copied)==PLANCK_OK);
+        assert(copied.outcome==(invoked?PLANCK_HIT_ALLOWED:PLANCK_HIT_CANCELLED));
+        assert(GetHitApplicationAPI()->CopyEvidence(c,h.hitId,&evidence)==PLANCK_OK);
+        assert(!evidence.contactId&&static_cast<bool>(evidence.facts&PLANCK_HANDLER_INVOKED)==invoked);
+        assert(terminal.count==i+1);
     }
     assert(api->Unsubscribe(c,policy)==PLANCK_OK);
-    assert(api->RegisterHitPolicy(c,&p,ResetPolicy,nullptr,&policy)==PLANCK_OK);
-    Publish();auto reset=Hit();assert(reset.hitId&&reset.outcome==PLANCK_HIT_CANCELLED);
+    assert(api->RegisterHitPolicy(c,&p,InvalidatePolicy,&terminal,&policy)==PLANCK_OK);
+    Publish();const auto denied=Hit();
+    assert(denied.outcome==PLANCK_HIT_DENIED&&terminal.count==301);
+    FinishHit(denied.hitId,true);assert(terminal.count==301);
+    assert(api->Unsubscribe(c,policy)==PLANCK_OK);
+
+    // After policy evaluation, a separately replaced target also loses the
+    // candidate's scale/attribution, but a real call still completes the hit.
+    Publish();
+    assert(api->RegisterHitPolicy(c,&p,Reduce,nullptr,&policy)==PLANCK_OK);
+    const auto pending=BeginHit(PLANCK_HIT_CLUTTER,42,1,{},{},10.f,2,10,20,{CaptureHitEpoch(),123});
+    assert(pending.damageScale==.25f);
+    Publish(200);
+    assert(!PrepareHitForHandler(pending,true));
+    FinishHit(pending.hitId,true);
     PlanckHitSnapshot copied{sizeof(copied)};
+    PlanckHitEvidence evidence{sizeof(evidence)};
+    assert(api->CopyHitSnapshot(c,pending.hitId,&copied)==PLANCK_OK&&copied.outcome==PLANCK_HIT_ALLOWED&&copied.damageScale==1.f);
+    assert(GetHitApplicationAPI()->CopyEvidence(c,pending.hitId,&evidence)==PLANCK_OK&&!evidence.contactId&&(evidence.facts&PLANCK_HANDLER_INVOKED));
+    assert(api->Unsubscribe(c,policy)==PLANCK_OK);
+    assert(api->RegisterHitPolicy(c,&p,ResetPolicy,nullptr,&policy)==PLANCK_OK);
+    auto reset=Hit();assert(reset.hitId&&reset.outcome==PLANCK_HIT_CANCELLED);
     assert(api->CopyHitSnapshot(c,reset.hitId,&copied)==PLANCK_NOT_FOUND);
     // Reset eviction must not resurrect an old epoch or emit an unqueryable hit.
-    assert(terminal.count==300);FinishHit(reset.hitId,true);assert(terminal.count==300);
+    assert(terminal.count==302);FinishHit(reset.hitId,true);assert(terminal.count==302);
     assert(api->ReleaseClient(c)==PLANCK_OK);
 }
 
@@ -249,4 +305,4 @@ void HitObservationCapacity() {
     assert(events.count==257 && Hit().hitId && events.count==259);
     assert(api->ReleaseClient(owner)==PLANCK_OK);
 }
-int main(){SampleClock();Lifecycle();CoherentSnapshotsAndLoading();HitPolicies();HitObservationCapacity();Drainage();GeometryRequests();PhysicalBridge();InvalidationDuringPolicy();std::cout<<"PASS PLANCK production core, C consumer, lifecycle, coherent snapshots/loading, hit gates, geometry commitments, native endpoint bridge, cancellation interleavings and callback drainage\n";}
+int main(){SampleClock();Lifecycle();CoherentSnapshotsAndLoading();HitPolicies();HitPolicyCandidate();HitObservationCapacity();Drainage();GeometryRequests();PhysicalBridge();InvalidationDuringPolicy();std::cout<<"PASS PLANCK production core, C consumer, lifecycle, coherent snapshots/loading, hit gates, geometry commitments, native endpoint bridge, cancellation interleavings and callback drainage\n";}

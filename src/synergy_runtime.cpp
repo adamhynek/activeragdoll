@@ -145,6 +145,8 @@ void Emit(uint32_t type,uint64_t subject,PlanckActorRef actor,uint32_t phase) {
     auto& r=State(); Delivery delivery{}; void (*schedule)()=nullptr;
     {
         std::lock_guard lock(r.lock);
+        if ((type==PLANCK_HIT_CANDIDATE||type==PLANCK_HIT_FINALIZED) &&
+            (actor.epoch!=r.epoch||!r.hits.contains(subject))) return;
         delivery.event={sizeof(PlanckEvent),type,++r.eventSequence,r.epoch,subject,actor,phase,0,ThreadToken(r)};
         for (auto& [id,res]:r.resources)
             if (res->kind==Kind::Subscription && res->active && (res->mask&type)) delivery.recipients.push_back(id);
@@ -740,12 +742,14 @@ uint64_t CaptureHitEpoch() {
 }
 bool PrepareHitForHandler(const PlanckHitSnapshot& hit,bool contactNodeCurrent) {
     auto& r=State();std::lock_guard lock(r.lock);
-    if(r.suspended||hit.epoch!=r.epoch||(hit.target.actorGeneration&&!CurrentActor(r,hit.target)))return false;
-    if(!hit.hitId)return true; // Retention was full; actor policies are still effective.
+    if(hit.epoch!=r.epoch)return false;
+    const bool targetCurrent=!r.suspended&&(!hit.target.actorGeneration||CurrentActor(r,hit.target));
+    if(!hit.hitId)return targetCurrent; // Retention was full; current actor policies are still effective.
     auto record=r.hits.find(hit.hitId);
     if(record==r.hits.end()||record->second.snapshot.outcome!=PLANCK_HIT_PENDING)return false;
-    if(!contactNodeCurrent)record->second.evidence.contactId=0;
-    return true;
+    if(!contactNodeCurrent||!targetCurrent)record->second.evidence.contactId=0;
+    if(!targetCurrent)record->second.snapshot.damageScale=1.f;
+    return targetCurrent;
 }
 const PlanckDriveAPI* GetDriveAPI(){return &driveAPI;}
 const PlanckCompoundGeometryAPI* GetCompoundGeometryAPI(){return &compoundAPI;}
@@ -1039,6 +1043,7 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
                 contact.epoch==r.epoch?contact.id:0,-1.f,1.f,{}}});
         }
     }
+    const auto candidate=hit;
     if (hit.hitId) Emit(PLANCK_HIT_CANDIDATE,hit.hitId,hit.target,PLANCK_PHASE_HIT);
     const auto start=std::chrono::steady_clock::now();
     for(auto id:policies){
@@ -1047,7 +1052,7 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
         {std::lock_guard guard(r.lock);auto it=r.resources.find(id);if(it==r.resources.end()||!it->second->active||r.epoch!=hit.epoch)continue;res=it->second;++res->inFlight;}
         PlanckHitDecision decision{sizeof(decision),0,1.f,0};bool failed=false;
         const auto before=std::chrono::steady_clock::now();
-        {CallbackScope scope;auto copy=hit;try{res->hit(&copy,&decision,res->context);}catch(...){failed=true;}}
+        {CallbackScope scope;auto copy=candidate;try{res->hit(&copy,&decision,res->context);}catch(...){failed=true;}}
         failed|=std::chrono::steady_clock::now()-before>std::chrono::milliseconds(1);
         failed|=decision.size!=sizeof(decision)||decision.deny>1||decision.reserved||!Scale(decision.damageScale);
         {std::lock_guard guard(r.lock);--res->inFlight;if(failed)res->active=false;}
@@ -1057,21 +1062,20 @@ PlanckHitSnapshot BeginHit(uint32_t kind,uint32_t target,uint32_t source,PlanckV
     bool terminal=false;
     {
         std::lock_guard guard(r.lock);
-        if(r.epoch!=hit.epoch||(hit.target.actorGeneration&&!CurrentActor(r,hit.target))||(hit.hitId&&!r.hits.contains(hit.hitId))){
+        if(r.epoch!=hit.epoch||(hit.hitId&&!r.hits.contains(hit.hitId))){
             hit.outcome=denied ? PLANCK_HIT_DENIED : PLANCK_HIT_CANCELLED;
-            hit.damageScale=1.f; // The old scope can no longer authorize a numeric edit.
-            // Target removal can occur during a policy callback. Retire the
-            // stored pending snapshot too, even when the caller returns early.
-            // Reset may already have evicted it; never recreate that old epoch.
-            auto stored=r.hits.find(hit.hitId);
-            if(stored!=r.hits.end()&&stored->second.snapshot.outcome==PLANCK_HIT_PENDING){stored->second.snapshot=hit;terminal=true;}
+            hit.damageScale=1.f;
         } else {
-            // Pending until FinishHit: observers cannot turn this into a commitment.
+            const bool targetCurrent=!r.suspended&&(!hit.target.actorGeneration||CurrentActor(r,hit.target));
+            if(!targetCurrent)hit.damageScale=1.f;
+            // Loss of context revokes numeric changes and attribution. Only
+            // the native path can finalize whether the handler ran.
             hit.outcome=denied?PLANCK_HIT_DENIED:PLANCK_HIT_PENDING;
             if (hit.hitId) {
                 auto& record=r.hits.at(hit.hitId);
                 record.snapshot=hit;
-                if (!denied) record.evidence.facts|=PLANCK_ADMITTED;
+                if(!targetCurrent)record.evidence.contactId=0;
+                if(!denied)record.evidence.facts|=PLANCK_ADMITTED;
                 terminal=denied;
             }
         }

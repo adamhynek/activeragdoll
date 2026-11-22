@@ -1859,7 +1859,7 @@ struct DoActorHitTask : TaskDelegate
             PlanckSynergy::PrepareHitForHandler(candidate, !hitNode || DoesRefrHaveNode(hitActor, hitNode));
         bool isFatal = HitActor(player, hitActor, hitNode, hitPosition, hitVelocity, isLeft, isOffhand, isPowerAttack, isBash,
             applyCandidate ? &candidate : nullptr);
-        PlanckSynergy::FinishHit(hitScope.id, applyCandidate);
+        PlanckSynergy::FinishHit(hitScope.id, true);
         hitScope.id = 0;
 
         PlayMeleeImpactRumble(isTwoHanding ? 2 : isLeft);
@@ -2198,12 +2198,14 @@ struct PhysicsListener :
                     source ? GetOrCreateRefrHandle(source) : 0, SynergyVector(hitPos),
                     SynergyVector(HkVectorToNiPoint(collidingBody->hkBody->getLinearVelocity())),
                     hitData.totalDamage, 2, *g_currentFrameCounter, g_synergyPhysicsTick.load(), contactId);
-                if (candidate.outcome == PLANCK_HIT_DENIED || candidate.damageScale == 0.f) {
+                const float damageScale = candidate.epoch && candidate.outcome == PLANCK_HIT_PENDING &&
+                    PlanckSynergy::PrepareHitForHandler(candidate, true) ? candidate.damageScale : 1.f;
+                if (candidate.outcome == PLANCK_HIT_DENIED || damageScale == 0.f) {
                     PlanckSynergy::FinishHit(candidate.hitId, false);
                     HitData_dtor(&hitData);
                     return;
                 }
-                if (candidate.damageScale != 1.f) ScaleNumericDamage(hitData,candidate.damageScale);
+                if (damageScale != 1.f) ScaleNumericDamage(hitData,damageScale);
                 if (NiPointer<TESObjectREFR> hittingRefr = GetRefFromCollidable(collidingBody->hkBody->getCollidable())) {
                     if (TESForm *baseForm = hittingRefr->baseForm) {
                         // set an unused flag to signify that this is physics damage
