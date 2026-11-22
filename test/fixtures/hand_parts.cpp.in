@@ -1,0 +1,68 @@
+// Actual PLANCK classification functions and production native-bridge consumer.
+// Explicit engine seams; no plugin, Skyrim or Havok objects are loaded.
+#include "synergy_hand_parts.h"
+#include <cassert>
+#include "support/check.h"
+#include <iostream>
+#include <map>
+#include <stdexcept>
+using UInt32=uint32_t;
+extern "C" int hand_parts_c_contract(void);
+struct bhkRigidBody{int tag=0;};
+struct hkpRigidBody{uintptr_t m_userData=0;uint32_t layer=56;};
+bhkRigidBody leftPalm,rightPalm,leftWeapon,rightWeapon,leftHeld,rightHeld;
+bhkRigidBody *g_leftHand=&leftPalm,*g_rightHand=&rightPalm,*g_leftWeapon=&leftWeapon,*g_rightWeapon=&rightWeapon,*g_leftHeldRigidBody=&leftHeld,*g_rightHeldRigidBody=&rightHeld;
+uint32_t g_higgsCollisionLayer=56;
+uint32_t GetCollisionLayer(hkpRigidBody* body){return body->layer;}
+/*@CLASSIFICATION@*/
+bool ready=false,throwing=false;uint32_t calls=0;
+std::map<uint64_t,HIGGS_HandPartAttribution> parts;
+HIGGS_HandStatus HIGGS_HAND_CALL Resolve(uint64_t body,HIGGS_HandPartAttribution* out){
+    ++calls;if(throwing)throw std::runtime_error("synthetic provider failure");
+    assert(out&&out->structSize==sizeof(*out));if(!ready)return HIGGS_HAND_NOT_READY;
+    auto it=parts.find(body);if(it==parts.end())return HIGGS_HAND_NOT_FOUND;*out=it->second;return HIGGS_HAND_OK;
+}
+int main(){
+    assert(hand_parts_c_contract());
+    hkpRigidBody palm{reinterpret_cast<uintptr_t>(&leftPalm)},weapon{reinterpret_cast<uintptr_t>(&rightWeapon)},held{reinterpret_cast<uintptr_t>(&rightHeld)},foreign;
+    assert(IsPlayerHandRigidBody(&palm)&&IsLeftRigidBody(&palm)&&IsHiggsRigidBody(&palm));
+    assert(IsPlayerWeaponRigidBody(&weapon)&&IsHiggsRigidBody(&weapon)&&!IsPlayerHandRigidBody(&weapon));
+    assert(IsHeldRigidBody(&held)&&IsHiggsRigidBody(&held)&&!IsPlayerHandRigidBody(&held));
+    assert(!IsHiggsRigidBody(&foreign)&&!IsPlayerHandRigidBody(&foreign));
+    HIGGS_HandPartsNativeInterface table{sizeof(table),HIGGS_HAND_PARTS_NATIVE_ABI_VERSION,0,Resolve};
+    auto malformed=table;malformed.abiVersion=1;assert(!PlanckSynergy::InstallHandPartResolver(malformed));
+    malformed=table;--malformed.structSize;assert(!PlanckSynergy::InstallHandPartResolver(malformed));
+    malformed=table;malformed.ResolveBody=nullptr;assert(!PlanckSynergy::InstallHandPartResolver(malformed));
+    assert(PlanckSynergy::InstallHandPartResolver(table)); // Valid early capability0 table.
+    hkpRigidBody leftFinger,rightFinger;const auto leftKey=reinterpret_cast<uintptr_t>(&leftFinger),rightKey=reinterpret_cast<uintptr_t>(&rightFinger);
+    parts[leftKey]={sizeof(HIGGS_HandPartAttribution),HIGGS_HAND_LEFT,1,44,9,11,22,3,4};
+    parts[rightKey]={sizeof(HIGGS_HandPartAttribution),HIGGS_HAND_RIGHT,2,44,9,12,23,3,4};
+    assert(!IsHiggsRigidBody(&leftFinger)&&IsHiggsRigidBody(&palm));
+    ready=true;
+    assert(IsHiggsRigidBody(&leftFinger)&&IsPlayerHandRigidBody(&leftFinger)&&IsLeftRigidBody(&leftFinger));
+    assert(IsHiggsRigidBody(&rightFinger)&&IsPlayerHandRigidBody(&rightFinger)&&!IsLeftRigidBody(&rightFinger));
+    assert(!IsHeldRigidBody(&leftFinger)&&!IsPlayerWeaponRigidBody(&leftFinger));
+    assert(leftFinger.m_userData==0&&rightFinger.m_userData==0); // Provider key is resolved before legacy userData lookup.
+    {
+        PlanckSynergy::HandPartContactScope contact(leftKey,rightKey);
+        const auto captured=calls;
+        assert(IsHiggsRigidBody(&leftFinger));parts.erase(leftKey);
+        assert(IsLeftRigidBody(&leftFinger)&&IsPlayerHandRigidBody(&leftFinger)&&calls==captured);
+        {
+            PlanckSynergy::HandPartContactScope nested(leftKey,rightKey);
+            assert(!IsHiggsRigidBody(&leftFinger));
+        }
+        assert(IsLeftRigidBody(&leftFinger)); // Nested processing restores the outer observation.
+    }
+    assert(!IsHiggsRigidBody(&leftFinger));
+    parts[leftKey]={sizeof(HIGGS_HandPartAttribution),HIGGS_HAND_LEFT,1,44,9,11,22,3,4};
+    rightFinger.layer=42;assert(!IsHiggsRigidBody(&rightFinger));rightFinger.layer=56;
+    parts[leftKey].physicalHand=3;assert(!IsHiggsRigidBody(&leftFinger));parts[leftKey].physicalHand=HIGGS_HAND_LEFT;
+    parts[leftKey].bodyGeneration=0;assert(!IsHiggsRigidBody(&leftFinger));parts[leftKey].bodyGeneration=11;
+    parts.erase(leftKey);assert(!IsHiggsRigidBody(&leftFinger));
+    parts[leftKey]={sizeof(HIGGS_HandPartAttribution),HIGGS_HAND_RIGHT,7,44,10,90,91,0,4};
+    assert(IsHiggsRigidBody(&leftFinger)&&!IsLeftRigidBody(&leftFinger)); // Fresh resolution, no cached side/lifetime.
+    const auto before=calls;assert(PlanckSynergy::PhysicalHandPart(leftKey)==HIGGS_HAND_RIGHT&&calls==before+1);
+    throwing=true;assert(!IsHiggsRigidBody(&leftFinger)&&IsHiggsRigidBody(&palm));
+    std::cout<<"PASS actual PLANCK palm/weapon/held and articulated-part classification, early readiness, validation, fresh lifetime attribution and safe fallback\n";
+}

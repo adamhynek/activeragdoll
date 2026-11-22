@@ -1,0 +1,74 @@
+// Actual native point wrapper, forwarder, admission guard and own-item branches.
+// Explicit engine doubles; no game/Havok ABI or feedback delivery qualification.
+#include "synergy_own_contact.h"
+#include <atomic>
+#include <optional>
+#include "planck_synergy.h"
+#include <cassert>
+#include "support/check.h"
+#include <cmath>
+#include <cstdio>
+#include <stdexcept>
+using UInt32=uint32_t;
+struct NiPoint3{float x=0,y=0,z=0;};
+struct hkVector4{float v[4]{};float operator()(unsigned i)const{return v[i];}};
+NiPoint3 HkVectorToNiPoint(const hkVector4& p){return {p(0),p(1),p(2)};}
+struct hkpWorld{};
+struct hkpRigidBody{
+    hkpWorld* world=nullptr;bool moveable=false;
+    NiPoint3 linear{},angular{},center{};mutable unsigned pointReads=0;
+    hkpWorld* getWorld()const{return world;}
+    void getPointVelocity(const hkVector4& point,hkVector4& out)const{
+        ++pointReads;const NiPoint3 r{point(0)-center.x,point(1)-center.y,point(2)-center.z};
+        out.v[0]=linear.x+angular.y*r.z-angular.z*r.y;
+        out.v[1]=linear.y+angular.z*r.x-angular.x*r.z;
+        out.v[2]=linear.z+angular.x*r.y-angular.y*r.x;
+    }
+};
+bool IsMoveableEntity(const hkpRigidBody* body){return body->moveable;}
+struct hkpContactPointProperties{enum{CONTACT_IS_DISABLED=1};uint32_t m_flags=0;bool potential=true;bool isPotential()const{return potential;}};
+struct hkContactPointMaterial{enum FlagEnum{CONTACT_IS_DISABLED=1};};
+struct Point{hkVector4 position{},normal{{0,-1,0,0}};const hkVector4& getPosition()const{return position;}const hkVector4& getNormal()const{return normal;}};
+struct hkpContactPointEvent{hkpRigidBody* m_bodies[2]{};Point* m_contactPoint=nullptr;hkpContactPointProperties* m_contactPointProperties=nullptr;};
+uint32_t frame=30;uint32_t* g_currentFrameCounter=&frame;std::atomic<uint64_t> g_synergyPhysicsTick{50};
+PlanckVec3 SynergyVector(NiPoint3 p){return {p.x,p.y,p.z};}
+/*@POINT_WRAPPER@*/
+/*@FORWARDER@*/
+int continued=0;
+void Process(const hkpContactPointEvent& evnt,bool isAhiggs,bool isBhiggs,bool isAheld,bool isBheld){
+    /*@ENTRY_GUARD@*/
+    auto* rigidBodyA=evnt.m_bodies[0];auto* rigidBodyB=evnt.m_bodies[1];
+    ContactPairSample pair{evnt,{}};
+    /*@OWN_BRANCH@*/
+    ++continued; // The unchanged continuation is not a damage-success assertion.
+}
+HIGGS_NativeOwnContact captured{};unsigned observations=0;bool throwing=false;
+HIGGS_HandStatus HIGGS_HAND_CALL Observe(const HIGGS_NativeOwnContact* input,uint64_t* out){++observations;if(throwing)throw std::runtime_error("provider");assert(input&&out);captured=*input;*out=100;return HIGGS_HAND_OK;}
+extern "C" int own_contact_c_contract(void);
+int main(){
+    assert(own_contact_c_contract());hkpWorld world,other;hkpRigidBody a,b;a.world=b.world=&world;a.angular.z=1;
+    Point point;point.position.v[0]=1;hkpContactPointProperties properties;hkpContactPointEvent event{{&a,&b},&point,&properties};
+    Process(event,true,true,false,false);assert(properties.m_flags==1&&continued==0&&observations==0&&a.pointReads==0);
+    HIGGS_OwnContactNativeInterface table{sizeof(table),1,0,Observe};assert(PlanckSynergy::InstallOwnContactObserver(table));
+    properties.m_flags=0;Process(event,true,true,false,false);assert(observations==1&&continued==0&&properties.m_flags==1);
+    assert(captured.bodyA==reinterpret_cast<uintptr_t>(&a)&&captured.bodyB==reinterpret_cast<uintptr_t>(&b)&&captured.world==reinterpret_cast<uintptr_t>(&world));
+    assert(captured.mainFrame==frame&&captured.physicsTick==50&&captured.contactFlags==3);
+    assert(captured.positionMetres[0]==1&&captured.pointVelocityA[1]==1&&captured.pointVelocityB[1]==0); // Rotation-only actual point speed.
+    assert(a.pointReads==1&&b.pointReads==1);
+    // Each mixed order forwards once, and still reaches the old native path.
+    a.moveable=true;properties.m_flags=0;Process(event,true,true,true,false);assert(observations==2&&continued==1&&properties.m_flags==0&&captured.contactFlags==0);
+    a.moveable=false;b.moveable=true;Process(event,true,true,false,true);assert(observations==3&&continued==2&&properties.m_flags==0);
+    a.moveable=true;Process(event,true,true,true,true);assert(observations==4&&continued==2&&captured.contactFlags==HIGGS_NATIVE_OWN_HIT_PATH_SKIPPED);
+    // A non-HIGGS pair is outside this bridge; earlier disabled/nonpotential
+    // contacts keep the actual callback's early-return behavior.
+    const auto before=observations;Process(event,false,true,true,false);assert(observations==before&&continued==3);
+    properties.m_flags=1;Process(event,true,true,true,false);assert(observations==before&&continued==3);
+    properties.m_flags=0;properties.potential=false;Process(event,true,true,true,false);assert(observations==before&&continued==3);properties.potential=true;
+    b.world=&other;Process(event,true,true,true,false);assert(observations==before&&continued==4);b.world=&world;
+    event.m_contactPoint=nullptr;Process(event,true,true,true,false);assert(observations==before&&continued==5);event.m_contactPoint=&point;
+    // Same world translation is supplied bilaterally, never replaced by a max.
+    a.angular={};a.linear={20,0,0};b.linear={20,0,0};Process(event,true,true,true,false);assert(captured.pointVelocityA[0]==20&&captured.pointVelocityB[0]==20);
+    throwing=true;Process(event,true,true,true,false);assert(continued==7);throwing=false;
+    auto bad=table;bad.abiVersion=2;assert(!PlanckSynergy::InstallOwnContactObserver(bad));
+    std::puts("PASS actual PLANCK contact branch/wrapper/bridge: angular paired velocity, mixed directions, unchanged legacy continuation and optional failure");
+}

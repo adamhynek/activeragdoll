@@ -1,0 +1,23 @@
+// Current pluginapi.cpp dispatch on trivial table-provider/legacy seams.
+#include "synergy_runtime.h"
+#include "planck_actor_pose.h"
+#include <cassert>
+#include "support/check.h"
+#include <cstdio>
+struct LegacyInterface {} g_interface001;
+PlanckActorPoseAPI pose{sizeof(pose),2,nullptr};
+PlanckActorPoseAPI* GetActorPoseAPI(){return &pose;}
+#define _MESSAGE(...) ((void)0)
+/*@GET_API@*/
+int main(){
+    using namespace PlanckSynergy;
+    assert(GetApi(0)==nullptr && GetApi(999)==nullptr);
+    assert(GetApi(1)==&g_interface001 && GetApi(PLANCK_QUERY_ACTOR_POSE)==&pose);
+    assert(GetApi(2)==GetAPI() && GetAPI()->version==2 && GetAPI()->size>=sizeof(PlanckSynergyAPI));
+    assert(GetApi(3)==GetPhysicalInteropAPI() && GetPhysicalInteropAPI()->version==1);
+    assert(GetApi(4)==GetDriveAPI() && GetDriveAPI()->version==1);
+    assert(GetApi(5)==GetCompoundGeometryAPI() && GetCompoundGeometryAPI()->version==1);
+    assert(GetApi(6)==GetContactsAPI() && GetContactsAPI()->version==1 && GetContactsAPI()->size>=sizeof(PlanckContactsAPI));
+    assert(GetApi(7)==GetHitApplicationAPI() && GetHitApplicationAPI()->version==1);
+    puts("PASS current API dispatch, stable legacy/pose routing, proposal table versions and contact tail size");
+}
